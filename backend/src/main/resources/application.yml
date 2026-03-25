@@ -3,9 +3,19 @@ server:
 
 spring:
   application:
-    name: qa-flex-platform-backend
+    name: data-collection-platform-backend
   datasource:
     url: jdbc:postgresql://localhost:15432/qaflex
     username: qaflex
     password: qaflex_dev_2026
     driver-class-name: org.postgresql.Driver
+  sql:
+    init:
+      mode: always
+
+platform:
+  gitlab-mirror:
+    scheduler-enabled: true
+    scheduler-delay-ms: 60000
+    webhook-base-url: http://localhost:18080/api/gitlab-sync/webhook
+    docker-command: docker
