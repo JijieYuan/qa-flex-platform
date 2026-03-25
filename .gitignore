@@ -1,0 +1,14 @@
+frontend/node_modules/
+frontend/dist/
+frontend/logs/
+frontend/.vite/
+
+backend/target/
+backend/logs/
+
+tools/
+infra/postgres-data/
+
+*.log
+.DS_Store
+Thumbs.db

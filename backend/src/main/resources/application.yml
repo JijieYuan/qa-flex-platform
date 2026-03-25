@@ -1,0 +1,11 @@
+server:
+  port: 18080
+
+spring:
+  application:
+    name: qa-flex-platform-backend
+  datasource:
+    url: jdbc:postgresql://localhost:15432/qaflex
+    username: qaflex
+    password: qaflex_dev_2026
+    driver-class-name: org.postgresql.Driver
