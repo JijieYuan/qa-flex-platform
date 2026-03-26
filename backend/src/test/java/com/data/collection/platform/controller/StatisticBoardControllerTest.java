@@ -29,6 +29,13 @@ class StatisticBoardControllerTest {
     assertThat(response.definition().filters().get(0).key()).isEqualTo("tableName");
     assertThat(response.definition().filters().get(0).type()).isEqualTo("select");
     assertThat(response.definition().filters().get(0).options()).isNotEmpty();
+    assertThat(response.definition().columnGroups())
+        .allSatisfy(group -> assertThat(group.columns()).isNotEmpty());
+    assertThat(
+            response.definition().columnGroups().stream()
+                .flatMap(group -> group.columns().stream())
+                .map(column -> column.metricType()))
+        .allMatch(metricType -> metricType != null && !metricType.isBlank());
   }
 
   @Test

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue';
-import { ArrowDown, ArrowRight, ArrowUp, Download, RefreshRight, Search } from '@element-plus/icons-vue';
+import { ArrowDown, ArrowRight, Download, RefreshRight, Search, Sort } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
 import {
   api,
@@ -117,6 +117,43 @@ const sortedRows = computed(() => {
 
 const currentVisibleColumnCount = computed(() => boardViewPrefs.value.visibleColumnKeys.length);
 
+const tableRenderKey = computed(
+  () =>
+    [
+      props.boardKey,
+      boardViewPrefs.value.widthStrategy,
+      boardViewPrefs.value.groupOrder.join('|'),
+      Object.entries(boardViewPrefs.value.columnOrderByGroup)
+        .map(([groupKey, columnKeys]) => `${groupKey}:${columnKeys.join(',')}`)
+        .join('|'),
+      boardViewPrefs.value.visibleColumnKeys.join('|'),
+    ].join('::'),
+);
+
+const firstColumnWidth = computed(() => {
+  if (!board.value) {
+    return 132;
+  }
+  const longestLabelLength = board.value.rows.reduce((max, row) => Math.max(max, row.rowLabel.length), 4);
+  if (boardViewPrefs.value.widthStrategy === 'compact') {
+    return Math.min(148, Math.max(112, longestLabelLength * 14 + 24));
+  }
+  if (boardViewPrefs.value.widthStrategy === 'header') {
+    return Math.min(176, Math.max(120, longestLabelLength * 16 + 30));
+  }
+  return Math.min(220, Math.max(128, longestLabelLength * 18 + 42));
+});
+
+const firstColumnMinWidth = computed(() => {
+  if (boardViewPrefs.value.widthStrategy === 'compact') {
+    return 108;
+  }
+  if (boardViewPrefs.value.widthStrategy === 'header') {
+    return 120;
+  }
+  return 132;
+});
+
 function initializeFilters(fields: StatisticFilterField[], appliedFilters?: Record<string, string>) {
   const activeKeys = new Set(fields.map((field) => field.key));
   Object.keys(filters).forEach((key) => {
@@ -206,6 +243,10 @@ function handleSettingsCommand(command: string) {
     openSettings();
     return;
   }
+  if (command === 'clear-sort') {
+    clearCurrentSort();
+    return;
+  }
   if (command === 'restore-default-view') {
     restoreDefaultView();
   }
@@ -232,15 +273,30 @@ function restoreDefaultView() {
   if (!board.value) {
     return;
   }
-  boardViewPrefs.value = loadStatisticBoardViewPrefs('__reset__', board.value.definition);
   boardViewPrefs.value = {
-    ...boardViewPrefs.value,
     visibleColumnKeys: defaultVisibleColumnKeys(board.value.definition),
+    groupOrder: board.value.definition.columnGroups.map((group) => group.key),
+    columnOrderByGroup: Object.fromEntries(
+      board.value.definition.columnGroups.map((group) => [group.key, group.columns.map((column) => column.key)]),
+    ),
+    sortColumnKey: '',
+    sortDirection: 'default',
+    widthStrategy: 'compact',
   };
   draftVisibleColumnKeys.value = [...boardViewPrefs.value.visibleColumnKeys];
   resetStatisticBoardViewPrefs(props.boardKey);
   settingsVisible.value = false;
   ElMessage.success('已恢复默认视图');
+}
+
+function clearCurrentSort() {
+  boardViewPrefs.value = {
+    ...boardViewPrefs.value,
+    sortColumnKey: '',
+    sortDirection: 'default',
+  };
+  persistViewPrefs();
+  ElMessage.success('已恢复默认排序');
 }
 
 function detailCellValue(record: Record<string, unknown>, column: StatisticDetailColumn) {
@@ -341,13 +397,23 @@ function sortDirectionForColumn(columnKey: string): SortDirection {
 
 function toggleColumnSort(column: StatisticColumnLeaf) {
   const current = sortDirectionForColumn(column.key);
-  const next = current === 'default' ? 'asc' : current === 'asc' ? 'desc' : 'default';
+  const next = current === 'default' ? 'desc' : current === 'desc' ? 'asc' : 'desc';
   boardViewPrefs.value = {
     ...boardViewPrefs.value,
-    sortColumnKey: next === 'default' ? '' : column.key,
+    sortColumnKey: column.key,
     sortDirection: next,
   };
   persistViewPrefs();
+}
+
+function sortStateLabel(direction: SortDirection) {
+  if (direction === 'asc') {
+    return '当前为升序，点击切换为降序';
+  }
+  if (direction === 'desc') {
+    return '当前为降序，点击切换为升序';
+  }
+  return '当前为默认顺序，点击开始排序';
 }
 
 function onGroupDragStart(groupKey: string) {
@@ -435,7 +501,7 @@ function clearDragState() {
 
 function columnWidth(column: StatisticColumnLeaf) {
   if (column.metricType.includes('count') || column.metricType.includes('ratio') || column.metricType.includes('number')) {
-    return 136;
+    return boardViewPrefs.value.widthStrategy === 'compact' ? 96 : boardViewPrefs.value.widthStrategy === 'header' ? 124 : 156;
   }
   if (boardViewPrefs.value.widthStrategy === 'compact') {
     return compactColumnWidth(column);
@@ -452,13 +518,13 @@ function columnResizable(column: StatisticColumnLeaf) {
 
 function compactColumnWidth(column: StatisticColumnLeaf) {
   if (column.metricType.includes('time') || column.metricType.includes('date')) {
-    return 164;
+    return 132;
   }
-  return Math.min(180, Math.max(128, column.label.length * 16 + 44));
+  return Math.min(136, Math.max(88, column.label.length * 11 + 24));
 }
 
 function headerBasedWidth(column: StatisticColumnLeaf) {
-  return Math.min(240, Math.max(132, column.label.length * 18 + 58));
+  return Math.min(196, Math.max(116, column.label.length * 16 + 34));
 }
 
 function contentBasedWidth(column: StatisticColumnLeaf) {
@@ -470,9 +536,9 @@ function contentBasedWidth(column: StatisticColumnLeaf) {
     return Math.max(current, valueLength);
   }, column.label.length);
   if (column.metricType.includes('time') || column.metricType.includes('date')) {
-    return Math.min(240, Math.max(164, maxLength * 10 + 42));
+    return Math.min(240, Math.max(156, maxLength * 9 + 34));
   }
-  return Math.min(260, Math.max(132, maxLength * 14 + 44));
+  return Math.min(280, Math.max(132, maxLength * 13 + 26));
 }
 
 watch(detailVisible, (visible) => {
@@ -547,6 +613,7 @@ onMounted(async () => {
               <template #dropdown>
                 <el-dropdown-menu>
                   <el-dropdown-item command="open-settings">列显示设置</el-dropdown-item>
+                  <el-dropdown-item command="clear-sort">恢复默认排序</el-dropdown-item>
                   <el-dropdown-item command="restore-default-view">恢复默认视图</el-dropdown-item>
                 </el-dropdown-menu>
               </template>
@@ -565,8 +632,23 @@ onMounted(async () => {
       />
 
       <div v-if="board && sortedRows.length" class="stat-matrix-wrapper">
-        <el-table :data="sortedRows" border stripe class="stat-matrix-table" :class="props.uiHooks.tableClass">
-          <el-table-column prop="rowLabel" label="统计对象" fixed="left" min-width="180" :resizable="true" />
+        <el-table
+          :key="tableRenderKey"
+          :data="sortedRows"
+          border
+          stripe
+          class="stat-matrix-table"
+          :class="props.uiHooks.tableClass"
+          style="width: 100%"
+        >
+          <el-table-column
+            prop="rowLabel"
+            label="统计对象"
+            fixed="left"
+            :width="firstColumnWidth"
+            :min-width="firstColumnMinWidth"
+            :resizable="true"
+          />
           <el-table-column
             v-for="group in orderedColumnGroups"
             :key="group.key"
@@ -582,6 +664,11 @@ onMounted(async () => {
                 @drop.prevent="onGroupDrop(group.key)"
                 @dragend="clearDragState"
               >
+                <span class="drag-handle group" aria-hidden="true">
+                  <span></span>
+                  <span></span>
+                  <span></span>
+                </span>
                 <span>{{ group.label }}</span>
                 <span class="drag-handle" aria-hidden="true">
                   <span></span>
@@ -598,8 +685,8 @@ onMounted(async () => {
             >
               <template #header>
                 <div
-                  class="stat-column-header"
-                  :class="{ dragging: isColumnDragging(group.key, column.key) }"
+                class="stat-column-header"
+                :class="{ dragging: isColumnDragging(group.key, column.key) }"
                   draggable="true"
                   @dragstart="onColumnDragStart(group.key, column.key)"
                   @dragover.prevent
@@ -609,11 +696,20 @@ onMounted(async () => {
                   <span class="drag-handle subtle" aria-hidden="true">
                     <span></span>
                     <span></span>
+                    <span></span>
                   </span>
                   <span class="stat-column-header-label">{{ column.label }}</span>
-                  <button class="sort-trigger" type="button" @click.stop="toggleColumnSort(column)">
-                    <el-icon :class="{ active: sortDirectionForColumn(column.key) === 'asc' }"><ArrowUp /></el-icon>
-                    <el-icon :class="{ active: sortDirectionForColumn(column.key) === 'desc' }"><ArrowDown /></el-icon>
+                  <button
+                    class="sort-trigger"
+                    :class="`is-${sortDirectionForColumn(column.key)}`"
+                    type="button"
+                    :title="sortStateLabel(sortDirectionForColumn(column.key))"
+                    @click.stop="toggleColumnSort(column)"
+                  >
+                    <el-icon class="sort-trigger-icon"><Sort /></el-icon>
+                    <span class="sort-trigger-state">
+                      {{ sortDirectionForColumn(column.key) === 'asc' ? '升' : sortDirectionForColumn(column.key) === 'desc' ? '降' : '序' }}
+                    </span>
                   </button>
                 </div>
               </template>
@@ -641,12 +737,15 @@ onMounted(async () => {
       />
     </el-card>
 
-    <el-drawer
+    <el-dialog
       v-model="detailVisible"
-      size="56%"
       :title="detail?.title || '明细数据'"
-      class="stat-detail-drawer"
+      class="stat-detail-dialog"
+      width="72%"
+      top="8vh"
+      align-center
       destroy-on-close
+      append-to-body
     >
       <div class="stat-detail-shell" v-loading="detailLoading">
         <el-table
@@ -693,7 +792,7 @@ onMounted(async () => {
           />
         </div>
       </div>
-    </el-drawer>
+    </el-dialog>
 
     <el-drawer v-model="settingsVisible" title="表格视图设置" size="360px" append-to-body>
       <div class="view-settings-panel" :class="props.uiHooks.settingsPanelClass" v-if="board">
@@ -709,7 +808,7 @@ onMounted(async () => {
             <el-radio-button value="header">按字段长度</el-radio-button>
             <el-radio-button value="content">按内容长度</el-radio-button>
           </el-radio-group>
-          <div class="view-settings-strategy-tip">首列仍保留特殊处理，纯数字统计列继续使用固定宽度。</div>
+          <div class="view-settings-strategy-tip">首列继续单独压缩处理，纯数字统计列固定宽度，但会随策略在紧凑、标准、宽松之间切换。</div>
         </div>
 
         <el-checkbox-group v-model="draftVisibleColumnKeys" class="view-settings-checklist">
