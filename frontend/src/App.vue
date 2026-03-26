@@ -17,7 +17,6 @@ import {
 } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
 import { api, type GitlabSyncConfig, type GitlabSyncLog, type MirrorStatusResponse, type SyncProgress } from './api';
-import QualitySummaryBoard from './components/QualitySummaryBoard.vue';
 
 type ModuleKey =
   | 'quality-board'
@@ -188,8 +187,6 @@ const form = ref<GitlabSyncConfig>({
 const activeModule = computed(() => modules.find((item) => item.key === activeModuleKey.value) ?? modules[0]);
 const activePage = computed(() => activeModule.value.pages.find((item) => item.key === activePageKey.value) ?? activeModule.value.pages[0]);
 const showingMirrorSettings = computed(() => activePageKey.value === 'mirror-settings');
-const showingQualityBoard = computed(() => activePageKey.value === 'quality-board-home');
-
 const whitelistOptions = computed(() => status.value?.whitelistOptions ?? []);
 const recommendedCount = computed(() => whitelistOptions.value.filter((item) => item.recommended).length);
 const isDockerMode = computed(() => form.value.sourceMode === 'DOCKER');
@@ -728,10 +725,6 @@ onBeforeUnmount(() => {
               </el-card>
             </div>
           </div>
-        </template>
-
-        <template v-else-if="showingQualityBoard">
-          <QualitySummaryBoard />
         </template>
 
         <template v-else>
