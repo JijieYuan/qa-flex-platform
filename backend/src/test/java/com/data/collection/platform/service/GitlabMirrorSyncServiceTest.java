@@ -69,4 +69,11 @@ class GitlabMirrorSyncServiceTest {
     verify(configService).updateSyncTime(2L, true);
     verify(configService, never()).updateSyncTime(2L, false);
   }
+
+  @Test
+  void reconcileRunningStateShouldCloseStaleRunningLogsWhenNoTaskIsActive() {
+    syncService.reconcileRunningState(9L);
+
+    verify(logService).markRunningAsFailed(9L, "Recovered stale running task after process interruption");
+  }
 }

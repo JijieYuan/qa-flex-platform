@@ -81,6 +81,8 @@ class GitlabSyncControllerTest {
         .andExpect(jsonPath("$.data.progress.completedTables").value(5))
         .andExpect(jsonPath("$.data.progress.syncedRecords").value(120))
         .andExpect(jsonPath("$.data.progress.currentTable").value("issues"));
+
+    org.mockito.Mockito.verify(syncService).reconcileRunningState(1L);
   }
 
   @Test
@@ -98,6 +100,8 @@ class GitlabSyncControllerTest {
         .andExpect(jsonPath("$.success").value(true))
         .andExpect(jsonPath("$.data.currentStatus").value("IDLE"))
         .andExpect(jsonPath("$.data.progress").isEmpty());
+
+    org.mockito.Mockito.verify(syncService).reconcileRunningState(1L);
   }
 
   private GitlabSyncConfig baseConfig() {

@@ -21,8 +21,13 @@ import {
   type StatisticBoardViewPrefs,
 } from './statistic-board-view-prefs';
 import type { StatisticBoardUiHooks } from './statistic-board-ui';
-
-type SortDirection = 'default' | 'asc' | 'desc';
+import {
+  clearSortState,
+  nextColumnSortState,
+  ROW_LABEL_SORT_KEY,
+  sortDirectionForColumn as resolveSortDirectionForColumn,
+  sortRowsFromSource,
+} from './statistic-board-sorting';
 
 const props = withDefaults(
   defineProps<{
@@ -99,26 +104,20 @@ const orderedColumnGroups = computed(() => {
 
 const sortedRows = computed(() => {
   const rows = board.value?.rows ?? [];
-  const { sortColumnKey, sortDirection } = boardViewPrefs.value;
-  if (!sortColumnKey || sortDirection === 'default') {
-    return rows;
-  }
-
-  const column = board.value?.definition.columnGroups
-    .flatMap((group) => group.columns)
-    .find((item) => item.key === sortColumnKey);
-  if (!column) {
-    return rows;
-  }
-
-  const sorted = [...rows].sort((left, right) => compareRows(left, right, column, sortDirection));
-  return sorted;
+  const columns = board.value?.definition.columnGroups.flatMap((group) => group.columns) ?? [];
+  return sortRowsFromSource(rows, columns, boardViewPrefs.value);
 });
 
 const currentVisibleColumnCount = computed(() => boardViewPrefs.value.visibleColumnKeys.length);
 const currentSortColumn = computed(() => {
   if (!board.value || !boardViewPrefs.value.sortColumnKey || boardViewPrefs.value.sortDirection === 'default') {
     return null;
+  }
+  if (boardViewPrefs.value.sortColumnKey === ROW_LABEL_SORT_KEY) {
+    return {
+      key: ROW_LABEL_SORT_KEY,
+      label: '统计对象',
+    };
   }
   return (
     board.value.definition.columnGroups
@@ -308,8 +307,7 @@ function restoreDefaultView() {
 function clearCurrentSort() {
   boardViewPrefs.value = {
     ...boardViewPrefs.value,
-    sortColumnKey: '',
-    sortDirection: 'default',
+    ...clearSortState(),
   };
   persistViewPrefs();
   ElMessage.success('已恢复默认排序');
@@ -380,44 +378,14 @@ function cellForColumn(row: StatisticRowData, columnKey: string) {
   return row.cells.find((item) => item.columnKey === columnKey);
 }
 
-function compareRows(
-  left: StatisticRowData,
-  right: StatisticRowData,
-  column: StatisticColumnLeaf,
-  direction: SortDirection,
-) {
-  const leftCell = cellForColumn(left, column.key);
-  const rightCell = cellForColumn(right, column.key);
-  const multiplier = direction === 'asc' ? 1 : -1;
-
-  if (column.metricType.includes('count') || column.metricType.includes('ratio') || column.metricType.includes('number')) {
-    return (((leftCell?.numericValue ?? 0) - (rightCell?.numericValue ?? 0)) || left.rowLabel.localeCompare(right.rowLabel)) * multiplier;
-  }
-
-  if (column.metricType.includes('time') || column.metricType.includes('date')) {
-    const leftValue = Date.parse(leftCell?.displayValue ?? '') || 0;
-    const rightValue = Date.parse(rightCell?.displayValue ?? '') || 0;
-    return ((leftValue - rightValue) || left.rowLabel.localeCompare(right.rowLabel)) * multiplier;
-  }
-
-  return (String(leftCell?.displayValue ?? '').localeCompare(String(rightCell?.displayValue ?? '')) ||
-    left.rowLabel.localeCompare(right.rowLabel)) * multiplier;
+function sortDirectionForColumn(columnKey: string) {
+  return resolveSortDirectionForColumn(boardViewPrefs.value, columnKey);
 }
 
-function sortDirectionForColumn(columnKey: string): SortDirection {
-  if (boardViewPrefs.value.sortColumnKey !== columnKey) {
-    return 'default';
-  }
-  return boardViewPrefs.value.sortDirection;
-}
-
-function toggleColumnSort(column: StatisticColumnLeaf) {
-  const current = sortDirectionForColumn(column.key);
-  const next = current === 'default' ? 'desc' : current === 'desc' ? 'asc' : 'desc';
+function toggleColumnSort(columnKey: string) {
   boardViewPrefs.value = {
     ...boardViewPrefs.value,
-    sortColumnKey: column.key,
-    sortDirection: next,
+    ...nextColumnSortState(boardViewPrefs.value, columnKey),
   };
   persistViewPrefs();
 }
@@ -674,7 +642,28 @@ onMounted(async () => {
             :width="firstColumnWidth"
             :min-width="firstColumnMinWidth"
             :resizable="true"
-          />
+          >
+            <template #header>
+              <div
+                class="stat-column-header first-column"
+                :class="{ sorting: sortDirectionForColumn(ROW_LABEL_SORT_KEY) !== 'default' }"
+              >
+                <span class="stat-column-header-label">统计对象</span>
+                <button
+                  class="sort-trigger"
+                  :class="`is-${sortDirectionForColumn(ROW_LABEL_SORT_KEY)}`"
+                  type="button"
+                  :title="sortStateLabel(sortDirectionForColumn(ROW_LABEL_SORT_KEY))"
+                  @click.stop="toggleColumnSort(ROW_LABEL_SORT_KEY)"
+                >
+                  <el-icon class="sort-trigger-icon"><Sort /></el-icon>
+                  <span class="sort-trigger-state">
+                    {{ sortDirectionForColumn(ROW_LABEL_SORT_KEY) === 'asc' ? '升序' : sortDirectionForColumn(ROW_LABEL_SORT_KEY) === 'desc' ? '降序' : '排序' }}
+                  </span>
+                </button>
+              </div>
+            </template>
+          </el-table-column>
           <el-table-column
             v-for="group in orderedColumnGroups"
             :key="group.key"
@@ -733,7 +722,7 @@ onMounted(async () => {
                     :class="`is-${sortDirectionForColumn(column.key)}`"
                     type="button"
                     :title="sortStateLabel(sortDirectionForColumn(column.key))"
-                    @click.stop="toggleColumnSort(column)"
+                    @click.stop="toggleColumnSort(column.key)"
                   >
                     <el-icon class="sort-trigger-icon"><Sort /></el-icon>
                     <span class="sort-trigger-state">

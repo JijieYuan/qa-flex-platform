@@ -62,6 +62,24 @@ public class GitlabSyncLogService {
     return logs.isEmpty() ? null : logs.get(0);
   }
 
+  public GitlabSyncLog findLatest(Long configId) {
+    List<GitlabSyncLog> logs = jdbcTemplate.query("""
+        select * from gitlab_sync_logs
+        where config_id = ?
+        order by started_at desc
+        limit 1
+        """, (rs, rowNum) -> map(rs), configId);
+    return logs.isEmpty() ? null : logs.get(0);
+  }
+
+  public int markRunningAsFailed(Long configId, String message) {
+    return jdbcTemplate.update("""
+        update gitlab_sync_logs
+        set status = ?, message = ?, finished_at = current_timestamp
+        where config_id = ? and status = ?
+        """, SyncStatus.FAILED.name(), message, configId, SyncStatus.RUNNING.name());
+  }
+
   private GitlabSyncLog map(ResultSet rs) throws SQLException {
     GitlabSyncLog log = new GitlabSyncLog();
     log.setId(rs.getLong("id"));

@@ -47,6 +47,13 @@ public class GitlabMirrorSyncService {
     return progress.get();
   }
 
+  public void reconcileRunningState(Long configId) {
+    if (running.get() || configId == null) {
+      return;
+    }
+    logService.markRunningAsFailed(configId, "Recovered stale running task after process interruption");
+  }
+
   public void testConnection() {
     externalDbService.testConnection(configService.getConfig());
   }
@@ -71,6 +78,7 @@ public class GitlabMirrorSyncService {
       return;
     }
     GitlabSyncConfig config = configService.getConfig();
+    reconcileRunningState(config.getId());
     List<TableWhitelistOption> tables = whitelistService.resolveOptions(config);
     long logId = logService.start(config.getId(), type, tables.stream().map(TableWhitelistOption::tableName).toList(), message);
     int tableCount = 0;

@@ -54,6 +54,7 @@ public class GitlabSyncController {
   @GetMapping("/status")
   public ApiResponse<MirrorStatusResponse> status() {
     GitlabSyncConfig config = configService.getConfig();
+    syncService.reconcileRunningState(config.getId());
     List<GitlabSyncLog> logs = config.getId() == null ? List.of() : logService.listRecent(config.getId(), 20);
     SyncProgress progress = syncService.getProgress();
     boolean runningNow = syncService.isRunning();
