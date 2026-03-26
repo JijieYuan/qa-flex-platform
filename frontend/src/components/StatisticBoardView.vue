@@ -116,6 +116,22 @@ const sortedRows = computed(() => {
 });
 
 const currentVisibleColumnCount = computed(() => boardViewPrefs.value.visibleColumnKeys.length);
+const currentSortColumn = computed(() => {
+  if (!board.value || !boardViewPrefs.value.sortColumnKey || boardViewPrefs.value.sortDirection === 'default') {
+    return null;
+  }
+  return (
+    board.value.definition.columnGroups
+      .flatMap((group) => group.columns)
+      .find((column) => column.key === boardViewPrefs.value.sortColumnKey) ?? null
+  );
+});
+const currentSortSummary = computed(() => {
+  if (!currentSortColumn.value) {
+    return '';
+  }
+  return `${currentSortColumn.value.label} / ${boardViewPrefs.value.sortDirection === 'asc' ? '升序' : '降序'}`;
+});
 
 const tableRenderKey = computed(
   () =>
@@ -635,6 +651,11 @@ onMounted(async () => {
         class="stat-board-alert"
       />
 
+      <div v-if="currentSortColumn" class="stat-board-sortbar">
+        <span class="stat-board-sortbar-label">当前排序</span>
+        <el-tag size="small" type="primary" effect="plain">{{ currentSortSummary }}</el-tag>
+      </div>
+
       <div v-if="board && sortedRows.length" class="stat-matrix-wrapper">
         <el-table
           :key="tableRenderKey"
@@ -690,8 +711,11 @@ onMounted(async () => {
             >
               <template #header>
                 <div
-                class="stat-column-header"
-                :class="{ dragging: isColumnDragging(group.key, column.key) }"
+                  class="stat-column-header"
+                  :class="{
+                    dragging: isColumnDragging(group.key, column.key),
+                    sorting: sortDirectionForColumn(column.key) !== 'default',
+                  }"
                   draggable="true"
                   @dragstart="onColumnDragStart(group.key, column.key)"
                   @dragover.prevent
@@ -713,7 +737,7 @@ onMounted(async () => {
                   >
                     <el-icon class="sort-trigger-icon"><Sort /></el-icon>
                     <span class="sort-trigger-state">
-                      {{ sortDirectionForColumn(column.key) === 'asc' ? '升' : sortDirectionForColumn(column.key) === 'desc' ? '降' : '序' }}
+                      {{ sortDirectionForColumn(column.key) === 'asc' ? '升序' : sortDirectionForColumn(column.key) === 'desc' ? '降序' : '排序' }}
                     </span>
                   </button>
                 </div>
