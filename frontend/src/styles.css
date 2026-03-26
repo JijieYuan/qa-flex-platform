@@ -350,6 +350,10 @@ button {
   padding: 16px 0 0;
 }
 
+.stat-board-alert {
+  margin-bottom: 18px;
+}
+
 .section-title {
   font-size: 16px;
   font-weight: 700;
@@ -385,6 +389,21 @@ button {
   align-items: center;
   gap: 10px;
   padding-bottom: 2px;
+}
+
+.stat-board-meta {
+  margin-top: 16px;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.stat-board-meta-item {
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: rgba(245, 249, 253, 0.92);
+  border: 1px solid rgba(219, 229, 240, 0.96);
+  min-width: 140px;
 }
 
 .stat-matrix-wrapper {

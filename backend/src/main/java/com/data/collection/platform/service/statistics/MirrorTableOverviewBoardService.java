@@ -2,6 +2,7 @@ package com.data.collection.platform.service.statistics;
 
 import com.data.collection.platform.common.exception.BizException;
 import com.data.collection.platform.entity.statistics.StatisticBoardDefinition;
+import com.data.collection.platform.entity.statistics.StatisticBoardMeta;
 import com.data.collection.platform.entity.statistics.StatisticBoardResponse;
 import com.data.collection.platform.entity.statistics.StatisticCellData;
 import com.data.collection.platform.entity.statistics.StatisticColumnGroup;
@@ -13,6 +14,7 @@ import com.data.collection.platform.entity.statistics.StatisticFilterField;
 import com.data.collection.platform.entity.statistics.StatisticFilterOption;
 import com.data.collection.platform.entity.statistics.StatisticRowData;
 import java.sql.Timestamp;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -104,6 +106,7 @@ public class MirrorTableOverviewBoardService extends AbstractStatisticBoardServi
 
   @Override
   protected StatisticBoardResponse doLoadBoard(Map<String, String> filters) {
+    long startedAt = System.currentTimeMillis();
     String keyword = trimToNull(filters.get("tableKeyword"));
     int limit = parsePositiveInt(filters.get("limit"), 20);
     List<Map<String, Object>> rows = querySummaryRows(keyword, limit);
@@ -111,7 +114,21 @@ public class MirrorTableOverviewBoardService extends AbstractStatisticBoardServi
     Map<String, String> appliedFilters = new LinkedHashMap<>();
     appliedFilters.put("tableKeyword", keyword == null ? "" : keyword);
     appliedFilters.put("limit", String.valueOf(limit));
-    return new StatisticBoardResponse(buildDefinition(), appliedFilters, boardRows);
+    StatisticBoardDefinition definition = buildDefinition();
+    int columnCount = definition.columnGroups().stream().mapToInt(group -> group.columns().size()).sum();
+    int drilldownColumnCount =
+        definition.columnGroups().stream()
+            .flatMap(group -> group.columns().stream())
+            .mapToInt(column -> column.drilldown() ? 1 : 0)
+            .sum();
+    StatisticBoardMeta meta =
+        new StatisticBoardMeta(
+            LocalDateTime.now(),
+            System.currentTimeMillis() - startedAt,
+            boardRows.size(),
+            columnCount,
+            drilldownColumnCount);
+    return new StatisticBoardResponse(definition, appliedFilters, boardRows, meta);
   }
 
   @Override

@@ -19,6 +19,7 @@ const props = defineProps<{
 const loading = ref(false);
 const detailLoading = ref(false);
 const board = ref<StatisticBoardResponse | null>(null);
+const errorMessage = ref('');
 const filters = reactive<Record<string, string>>({});
 const detailVisible = ref(false);
 const activeRow = ref<StatisticRowData | null>(null);
@@ -53,6 +54,7 @@ function buildFilterPayload() {
 
 async function loadBoard(showError = true) {
   loading.value = true;
+  errorMessage.value = '';
   try {
     const response = await api.getStatisticBoard(props.boardKey, buildFilterPayload());
     board.value = response;
@@ -61,11 +63,41 @@ async function loadBoard(showError = true) {
       detailPagination.size = response.definition.defaultPageSize ?? 10;
     }
   } catch (error) {
+    errorMessage.value = (error as Error).message;
     if (showError) {
       ElMessage.error((error as Error).message);
     }
   } finally {
     loading.value = false;
+  }
+}
+
+function formatDateTime(value?: string | null) {
+  if (!value) {
+    return '-';
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return date.toLocaleString('zh-CN', { hour12: false });
+}
+
+async function exportBoard() {
+  try {
+    const csv = await api.exportStatisticBoard(props.boardKey, buildFilterPayload());
+    const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `${props.boardKey}.csv`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+    URL.revokeObjectURL(url);
+    ElMessage.success('导出成功');
+  } catch (error) {
+    ElMessage.error((error as Error).message);
   }
 }
 
@@ -162,10 +194,19 @@ onMounted(async () => {
           </div>
           <div class="stat-board-header-actions">
             <el-button :icon="RefreshRight" @click="loadBoard()">刷新</el-button>
-            <el-button type="primary" plain :icon="Download" disabled>导出预留</el-button>
+            <el-button type="primary" plain :icon="Download" @click="exportBoard">导出</el-button>
           </div>
         </div>
       </template>
+
+      <el-alert
+        v-if="errorMessage"
+        :title="errorMessage"
+        type="error"
+        :closable="false"
+        show-icon
+        class="stat-board-alert"
+      />
 
       <section class="stat-query-section">
         <div class="section-title">{{ board?.definition.queryTitle || '查询与操作' }}</div>
@@ -196,6 +237,29 @@ onMounted(async () => {
             <el-button @click="resetFilters">重置</el-button>
           </div>
         </el-form>
+
+        <div v-if="board?.meta" class="stat-board-meta">
+          <div class="stat-board-meta-item">
+            <span class="meta-label">生成时间</span>
+            <span class="meta-value">{{ formatDateTime(board.meta.generatedAt) }}</span>
+          </div>
+          <div class="stat-board-meta-item">
+            <span class="meta-label">查询耗时</span>
+            <span class="meta-value">{{ board.meta.queryDurationMs }} ms</span>
+          </div>
+          <div class="stat-board-meta-item">
+            <span class="meta-label">行数</span>
+            <span class="meta-value">{{ board.meta.rowCount }}</span>
+          </div>
+          <div class="stat-board-meta-item">
+            <span class="meta-label">列数</span>
+            <span class="meta-value">{{ board.meta.columnCount }}</span>
+          </div>
+          <div class="stat-board-meta-item">
+            <span class="meta-label">可下钻列</span>
+            <span class="meta-value">{{ board.meta.drilldownColumnCount }}</span>
+          </div>
+        </div>
       </section>
 
       <section class="stat-matrix-section">

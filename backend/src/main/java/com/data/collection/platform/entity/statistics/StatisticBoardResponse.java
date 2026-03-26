@@ -6,5 +6,6 @@ import java.util.Map;
 public record StatisticBoardResponse(
     StatisticBoardDefinition definition,
     Map<String, String> appliedFilters,
-    List<StatisticRowData> rows) {
+    List<StatisticRowData> rows,
+    StatisticBoardMeta meta) {
 }

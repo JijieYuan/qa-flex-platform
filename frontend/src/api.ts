@@ -110,6 +110,14 @@ export interface StatisticBoardDefinition {
   emptyText?: string | null;
 }
 
+export interface StatisticBoardMeta {
+  generatedAt: string;
+  queryDurationMs: number;
+  rowCount: number;
+  columnCount: number;
+  drilldownColumnCount: number;
+}
+
 export interface StatisticCellData {
   columnKey: string;
   numericValue: number;
@@ -129,6 +137,7 @@ export interface StatisticBoardResponse {
   definition: StatisticBoardDefinition;
   appliedFilters: Record<string, string>;
   rows: StatisticRowData[];
+  meta: StatisticBoardMeta;
 }
 
 export interface StatisticDetailResponse {
@@ -224,5 +233,15 @@ export const api = {
       ...(params.filters ?? {}),
     });
     return request<StatisticDetailResponse>(`/api/statistic-boards/${boardKey}/details?${query.toString()}`);
+  },
+  async exportStatisticBoard(boardKey: string, filters?: Record<string, string>) {
+    const params = new URLSearchParams(filters ?? {});
+    const queryString = params.toString();
+    const response = await fetch(`/api/statistic-boards/${boardKey}/export${queryString ? `?${queryString}` : ''}`);
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(text || `Export failed: ${response.status}`);
+    }
+    return response.text();
   },
 };
