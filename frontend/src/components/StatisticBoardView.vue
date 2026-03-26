@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue';
-import { Download, RefreshRight, Search } from '@element-plus/icons-vue';
+import { ArrowRight, Download, RefreshRight, Search } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
 import {
   api,
@@ -142,6 +142,16 @@ function openSettings() {
   }
   draftVisibleColumnKeys.value = [...persistedVisibleColumnKeys.value];
   settingsVisible.value = true;
+}
+
+function handleSettingsCommand(command: string) {
+  if (command === 'open-settings') {
+    openSettings();
+    return;
+  }
+  if (command === 'restore-default-view') {
+    restoreDefaultView();
+  }
 }
 
 function saveViewPrefs() {
@@ -298,14 +308,22 @@ onMounted(async () => {
             <el-button @click="resetFilters">重置</el-button>
             <el-button :icon="RefreshRight" @click="loadBoard()">刷新</el-button>
             <el-button plain :icon="Download" @click="exportBoard">导出</el-button>
-            <el-button class="view-settings-trigger" @click="openSettings">
-              <span class="hamburger-icon" aria-hidden="true">
-                <span></span>
-                <span></span>
-                <span></span>
-              </span>
-              设置
-            </el-button>
+            <el-dropdown trigger="click" @command="handleSettingsCommand">
+              <el-button class="view-settings-trigger">
+                <span class="hamburger-icon" aria-hidden="true">
+                  <span></span>
+                  <span></span>
+                  <span></span>
+                </span>
+                <span>设置</span>
+              </el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="open-settings">列显示设置</el-dropdown-item>
+                  <el-dropdown-item command="restore-default-view">恢复默认视图</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
           </div>
         </div>
       </template>
@@ -320,9 +338,6 @@ onMounted(async () => {
       />
 
       <div v-if="board && board.rows.length" class="stat-matrix-wrapper">
-        <div class="stat-table-meta">
-          <span>当前展示 {{ currentVisibleColumnCount }} 列</span>
-        </div>
         <el-table :data="board.rows" border stripe class="stat-matrix-table">
           <el-table-column prop="rowLabel" label="统计对象" fixed="left" min-width="180" />
           <el-table-column
@@ -415,31 +430,35 @@ onMounted(async () => {
       </div>
     </el-drawer>
 
-    <el-dialog v-model="settingsVisible" title="视图设置" width="420px">
+    <el-drawer v-model="settingsVisible" title="表格视图设置" size="360px" append-to-body>
       <div class="view-settings-panel" v-if="board">
-        <div class="view-settings-section-title">列显示控制</div>
+        <div class="view-settings-summary">
+          <div class="view-settings-summary-title">列显示控制</div>
+          <div class="view-settings-summary-text">当前已选择 {{ currentVisibleColumnCount }} 列，可按需调整当前页面的展示视图。</div>
+        </div>
+
         <el-checkbox-group v-model="draftVisibleColumnKeys" class="view-settings-checklist">
           <div v-for="group in board.definition.columnGroups" :key="group.key" class="view-settings-group">
             <div class="view-settings-group-title">{{ group.label }}</div>
-            <el-checkbox
-              v-for="column in group.columns"
-              :key="column.key"
-              :value="column.key"
-              class="view-settings-check"
-            >
-              {{ column.label }}
-            </el-checkbox>
+            <div class="view-settings-group-body">
+              <el-checkbox
+                v-for="column in group.columns"
+                :key="column.key"
+                :value="column.key"
+                class="view-settings-check"
+              >
+                {{ column.label }}
+              </el-checkbox>
+            </div>
           </div>
         </el-checkbox-group>
-      </div>
 
-      <template #footer>
         <div class="view-settings-actions">
           <el-button @click="restoreDefaultView">恢复默认</el-button>
           <el-button @click="settingsVisible = false">取消</el-button>
-          <el-button type="primary" @click="saveViewPrefs">保存视图</el-button>
+          <el-button type="primary" :icon="ArrowRight" @click="saveViewPrefs">保存视图</el-button>
         </div>
-      </template>
-    </el-dialog>
+      </div>
+    </el-drawer>
   </div>
 </template>
