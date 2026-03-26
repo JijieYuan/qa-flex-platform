@@ -408,6 +408,103 @@ button {
   overflow: hidden;
 }
 
+.stat-group-header,
+.stat-column-header {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  color: #27415d;
+  transition: color 160ms ease, background-color 160ms ease, transform 160ms ease;
+}
+
+.stat-group-header {
+  padding: 0 8px;
+  cursor: grab;
+}
+
+.stat-column-header {
+  padding: 0 4px;
+  cursor: grab;
+}
+
+.stat-group-header:hover,
+.stat-column-header:hover {
+  color: #184a90;
+}
+
+.stat-group-header.dragging,
+.stat-column-header.dragging {
+  color: #1658c2;
+  transform: scale(0.985);
+}
+
+.stat-column-header-label {
+  white-space: nowrap;
+}
+
+.drag-handle {
+  width: 14px;
+  height: 18px;
+  display: inline-grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 2px 3px;
+  align-content: center;
+  opacity: 0.56;
+  transition: opacity 160ms ease, transform 160ms ease, color 160ms ease;
+}
+
+.drag-handle span {
+  width: 3px;
+  height: 3px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.drag-handle.subtle {
+  width: 12px;
+  margin-right: 2px;
+}
+
+.stat-group-header:hover .drag-handle,
+.stat-column-header:hover .drag-handle,
+.stat-group-header.dragging .drag-handle,
+.stat-column-header.dragging .drag-handle {
+  opacity: 1;
+  transform: translateY(-1px);
+}
+
+.sort-trigger {
+  width: 22px;
+  height: 28px;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  color: #9aaabd;
+  cursor: pointer;
+  transition: color 160ms ease, opacity 160ms ease;
+}
+
+.sort-trigger:hover {
+  color: #6e83a0;
+}
+
+.sort-trigger .el-icon {
+  font-size: 12px;
+  line-height: 1;
+}
+
+.sort-trigger .el-icon.active {
+  color: #1658c2;
+}
+
 .stat-cell {
   display: inline-flex;
   min-width: 44px;
@@ -482,6 +579,26 @@ button {
   color: #61748b;
   font-size: 13px;
   line-height: 1.7;
+}
+
+.view-settings-strategy {
+  padding: 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(220, 230, 240, 0.92);
+  background: rgba(255, 255, 255, 0.9);
+  display: grid;
+  gap: 12px;
+}
+
+.width-strategy-group {
+  display: inline-flex;
+  flex-wrap: wrap;
+}
+
+.view-settings-strategy-tip {
+  color: #6a7f95;
+  font-size: 12px;
+  line-height: 1.6;
 }
 
 .view-settings-checklist {

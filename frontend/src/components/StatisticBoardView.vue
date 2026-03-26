@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue';
-import { ArrowRight, Download, RefreshRight, Search } from '@element-plus/icons-vue';
+import { ArrowDown, ArrowRight, ArrowUp, Download, RefreshRight, Search } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
 import {
   api,
   type StatisticBoardResponse,
   type StatisticCellData,
+  type StatisticColumnGroup,
+  type StatisticColumnLeaf,
   type StatisticDetailColumn,
   type StatisticDetailResponse,
   type StatisticFilterField,
@@ -16,11 +18,21 @@ import {
   loadStatisticBoardViewPrefs,
   resetStatisticBoardViewPrefs,
   saveStatisticBoardViewPrefs,
+  type StatisticBoardViewPrefs,
 } from './statistic-board-view-prefs';
+import type { StatisticBoardUiHooks } from './statistic-board-ui';
 
-const props = defineProps<{
-  boardKey: string;
-}>();
+type SortDirection = 'default' | 'asc' | 'desc';
+
+const props = withDefaults(
+  defineProps<{
+    boardKey: string;
+    uiHooks?: StatisticBoardUiHooks;
+  }>(),
+  {
+    uiHooks: () => ({}),
+  },
+);
 
 const loading = ref(false);
 const detailLoading = ref(false);
@@ -32,7 +44,14 @@ const activeRow = ref<StatisticRowData | null>(null);
 const activeCell = ref<StatisticCellData | null>(null);
 const detail = ref<StatisticDetailResponse | null>(null);
 const settingsVisible = ref(false);
-const persistedVisibleColumnKeys = ref<string[]>([]);
+const boardViewPrefs = ref<StatisticBoardViewPrefs>({
+  visibleColumnKeys: [],
+  groupOrder: [],
+  columnOrderByGroup: {},
+  sortColumnKey: '',
+  sortDirection: 'default',
+  widthStrategy: 'compact',
+});
 const draftVisibleColumnKeys = ref<string[]>([]);
 
 const detailPagination = reactive({
@@ -42,25 +61,61 @@ const detailPagination = reactive({
   sortOrder: 'descending',
 });
 
-const flatColumns = computed(() => board.value?.definition.columnGroups.flatMap((group) => group.columns) ?? []);
+const dragState = reactive<{
+  type: 'group' | 'column' | '';
+  sourceGroupKey: string;
+  sourceColumnKey: string;
+}>({
+  type: '',
+  sourceGroupKey: '',
+  sourceColumnKey: '',
+});
 
 const activeFilterFields = computed(() => board.value?.definition.filters ?? []);
 
-const visibleColumnKeySet = computed(() => new Set(persistedVisibleColumnKeys.value));
+const visibleColumnKeySet = computed(() => new Set(boardViewPrefs.value.visibleColumnKeys));
 
-const visibleColumnGroups = computed(() => {
+const orderedColumnGroups = computed(() => {
   if (!board.value) {
     return [];
   }
-  return board.value.definition.columnGroups
-    .map((group) => ({
-      ...group,
-      columns: group.columns.filter((column) => visibleColumnKeySet.value.has(column.key)),
-    }))
+  const groupMap = new Map(board.value.definition.columnGroups.map((group) => [group.key, group]));
+  return boardViewPrefs.value.groupOrder
+    .map((groupKey) => groupMap.get(groupKey))
+    .filter((group): group is StatisticColumnGroup => Boolean(group))
+    .map((group) => {
+      const columnOrder = boardViewPrefs.value.columnOrderByGroup[group.key] ?? group.columns.map((column) => column.key);
+      const columnMap = new Map(group.columns.map((column) => [column.key, column]));
+      return {
+        ...group,
+        columns: columnOrder
+          .map((columnKey) => columnMap.get(columnKey))
+          .filter((column): column is StatisticColumnLeaf => Boolean(column))
+          .filter((column) => visibleColumnKeySet.value.has(column.key)),
+      };
+    })
     .filter((group) => group.columns.length > 0);
 });
 
-const currentVisibleColumnCount = computed(() => persistedVisibleColumnKeys.value.length);
+const sortedRows = computed(() => {
+  const rows = board.value?.rows ?? [];
+  const { sortColumnKey, sortDirection } = boardViewPrefs.value;
+  if (!sortColumnKey || sortDirection === 'default') {
+    return rows;
+  }
+
+  const column = board.value?.definition.columnGroups
+    .flatMap((group) => group.columns)
+    .find((item) => item.key === sortColumnKey);
+  if (!column) {
+    return rows;
+  }
+
+  const sorted = [...rows].sort((left, right) => compareRows(left, right, column, sortDirection));
+  return sorted;
+});
+
+const currentVisibleColumnCount = computed(() => boardViewPrefs.value.visibleColumnKeys.length);
 
 function initializeFilters(fields: StatisticFilterField[], appliedFilters?: Record<string, string>) {
   const activeKeys = new Set(fields.map((field) => field.key));
@@ -70,15 +125,17 @@ function initializeFilters(fields: StatisticFilterField[], appliedFilters?: Reco
     }
   });
   for (const field of fields) {
-    const value = appliedFilters?.[field.key] ?? field.defaultValue ?? '';
-    filters[field.key] = value;
+    filters[field.key] = appliedFilters?.[field.key] ?? field.defaultValue ?? '';
   }
 }
 
 function applyStoredViewPrefs(response: StatisticBoardResponse) {
-  const prefs = loadStatisticBoardViewPrefs(props.boardKey, response.definition);
-  persistedVisibleColumnKeys.value = prefs.visibleColumnKeys;
-  draftVisibleColumnKeys.value = [...prefs.visibleColumnKeys];
+  boardViewPrefs.value = loadStatisticBoardViewPrefs(props.boardKey, response.definition);
+  draftVisibleColumnKeys.value = [...boardViewPrefs.value.visibleColumnKeys];
+}
+
+function persistViewPrefs() {
+  saveStatisticBoardViewPrefs(props.boardKey, boardViewPrefs.value);
 }
 
 function buildFilterPayload() {
@@ -140,7 +197,7 @@ function openSettings() {
   if (!board.value) {
     return;
   }
-  draftVisibleColumnKeys.value = [...persistedVisibleColumnKeys.value];
+  draftVisibleColumnKeys.value = [...boardViewPrefs.value.visibleColumnKeys];
   settingsVisible.value = true;
 }
 
@@ -162,10 +219,11 @@ function saveViewPrefs() {
     ElMessage.warning('至少保留一列用于展示');
     return;
   }
-  persistedVisibleColumnKeys.value = [...draftVisibleColumnKeys.value];
-  saveStatisticBoardViewPrefs(props.boardKey, {
-    visibleColumnKeys: persistedVisibleColumnKeys.value,
-  });
+  boardViewPrefs.value = {
+    ...boardViewPrefs.value,
+    visibleColumnKeys: [...draftVisibleColumnKeys.value],
+  };
+  persistViewPrefs();
   settingsVisible.value = false;
   ElMessage.success('视图配置已保存');
 }
@@ -174,9 +232,12 @@ function restoreDefaultView() {
   if (!board.value) {
     return;
   }
-  const defaultKeys = defaultVisibleColumnKeys(board.value.definition);
-  draftVisibleColumnKeys.value = [...defaultKeys];
-  persistedVisibleColumnKeys.value = [...defaultKeys];
+  boardViewPrefs.value = loadStatisticBoardViewPrefs('__reset__', board.value.definition);
+  boardViewPrefs.value = {
+    ...boardViewPrefs.value,
+    visibleColumnKeys: defaultVisibleColumnKeys(board.value.definition),
+  };
+  draftVisibleColumnKeys.value = [...boardViewPrefs.value.visibleColumnKeys];
   resetStatisticBoardViewPrefs(props.boardKey);
   settingsVisible.value = false;
   ElMessage.success('已恢复默认视图');
@@ -194,7 +255,7 @@ function detailCellValue(record: Record<string, unknown>, column: StatisticDetai
 }
 
 async function loadDetail() {
-  if (!activeRow.value || !activeCell.value || !board.value) {
+  if (!activeRow.value || !activeCell.value) {
     return;
   }
   detailLoading.value = true;
@@ -247,6 +308,173 @@ function cellForColumn(row: StatisticRowData, columnKey: string) {
   return row.cells.find((item) => item.columnKey === columnKey);
 }
 
+function compareRows(
+  left: StatisticRowData,
+  right: StatisticRowData,
+  column: StatisticColumnLeaf,
+  direction: SortDirection,
+) {
+  const leftCell = cellForColumn(left, column.key);
+  const rightCell = cellForColumn(right, column.key);
+  const multiplier = direction === 'asc' ? 1 : -1;
+
+  if (column.metricType.includes('count') || column.metricType.includes('ratio') || column.metricType.includes('number')) {
+    return (((leftCell?.numericValue ?? 0) - (rightCell?.numericValue ?? 0)) || left.rowLabel.localeCompare(right.rowLabel)) * multiplier;
+  }
+
+  if (column.metricType.includes('time') || column.metricType.includes('date')) {
+    const leftValue = Date.parse(leftCell?.displayValue ?? '') || 0;
+    const rightValue = Date.parse(rightCell?.displayValue ?? '') || 0;
+    return ((leftValue - rightValue) || left.rowLabel.localeCompare(right.rowLabel)) * multiplier;
+  }
+
+  return (String(leftCell?.displayValue ?? '').localeCompare(String(rightCell?.displayValue ?? '')) ||
+    left.rowLabel.localeCompare(right.rowLabel)) * multiplier;
+}
+
+function sortDirectionForColumn(columnKey: string): SortDirection {
+  if (boardViewPrefs.value.sortColumnKey !== columnKey) {
+    return 'default';
+  }
+  return boardViewPrefs.value.sortDirection;
+}
+
+function toggleColumnSort(column: StatisticColumnLeaf) {
+  const current = sortDirectionForColumn(column.key);
+  const next = current === 'default' ? 'asc' : current === 'asc' ? 'desc' : 'default';
+  boardViewPrefs.value = {
+    ...boardViewPrefs.value,
+    sortColumnKey: next === 'default' ? '' : column.key,
+    sortDirection: next,
+  };
+  persistViewPrefs();
+}
+
+function onGroupDragStart(groupKey: string) {
+  dragState.type = 'group';
+  dragState.sourceGroupKey = groupKey;
+  dragState.sourceColumnKey = '';
+}
+
+function isGroupDragging(groupKey: string) {
+  return dragState.type === 'group' && dragState.sourceGroupKey === groupKey;
+}
+
+function onGroupDrop(targetGroupKey: string) {
+  if (dragState.type !== 'group' || dragState.sourceGroupKey === targetGroupKey) {
+    clearDragState();
+    return;
+  }
+
+  const nextOrder = [...boardViewPrefs.value.groupOrder];
+  const sourceIndex = nextOrder.indexOf(dragState.sourceGroupKey);
+  const targetIndex = nextOrder.indexOf(targetGroupKey);
+  if (sourceIndex < 0 || targetIndex < 0) {
+    clearDragState();
+    return;
+  }
+  const [moved] = nextOrder.splice(sourceIndex, 1);
+  nextOrder.splice(targetIndex, 0, moved);
+  boardViewPrefs.value = {
+    ...boardViewPrefs.value,
+    groupOrder: nextOrder,
+  };
+  persistViewPrefs();
+  clearDragState();
+}
+
+function onColumnDragStart(groupKey: string, columnKey: string) {
+  dragState.type = 'column';
+  dragState.sourceGroupKey = groupKey;
+  dragState.sourceColumnKey = columnKey;
+}
+
+function isColumnDragging(groupKey: string, columnKey: string) {
+  return (
+    dragState.type === 'column' &&
+    dragState.sourceGroupKey === groupKey &&
+    dragState.sourceColumnKey === columnKey
+  );
+}
+
+function onColumnDrop(targetGroupKey: string, targetColumnKey: string) {
+  if (
+    dragState.type !== 'column' ||
+    dragState.sourceGroupKey !== targetGroupKey ||
+    dragState.sourceColumnKey === targetColumnKey
+  ) {
+    clearDragState();
+    return;
+  }
+
+  const nextColumns = [...(boardViewPrefs.value.columnOrderByGroup[targetGroupKey] ?? [])];
+  const sourceIndex = nextColumns.indexOf(dragState.sourceColumnKey);
+  const targetIndex = nextColumns.indexOf(targetColumnKey);
+  if (sourceIndex < 0 || targetIndex < 0) {
+    clearDragState();
+    return;
+  }
+  const [moved] = nextColumns.splice(sourceIndex, 1);
+  nextColumns.splice(targetIndex, 0, moved);
+  boardViewPrefs.value = {
+    ...boardViewPrefs.value,
+    columnOrderByGroup: {
+      ...boardViewPrefs.value.columnOrderByGroup,
+      [targetGroupKey]: nextColumns,
+    },
+  };
+  persistViewPrefs();
+  clearDragState();
+}
+
+function clearDragState() {
+  dragState.type = '';
+  dragState.sourceGroupKey = '';
+  dragState.sourceColumnKey = '';
+}
+
+function columnWidth(column: StatisticColumnLeaf) {
+  if (column.metricType.includes('count') || column.metricType.includes('ratio') || column.metricType.includes('number')) {
+    return 136;
+  }
+  if (boardViewPrefs.value.widthStrategy === 'compact') {
+    return compactColumnWidth(column);
+  }
+  if (boardViewPrefs.value.widthStrategy === 'header') {
+    return headerBasedWidth(column);
+  }
+  return contentBasedWidth(column);
+}
+
+function columnResizable(column: StatisticColumnLeaf) {
+  return !(column.metricType.includes('count') || column.metricType.includes('ratio') || column.metricType.includes('number'));
+}
+
+function compactColumnWidth(column: StatisticColumnLeaf) {
+  if (column.metricType.includes('time') || column.metricType.includes('date')) {
+    return 164;
+  }
+  return Math.min(180, Math.max(128, column.label.length * 16 + 44));
+}
+
+function headerBasedWidth(column: StatisticColumnLeaf) {
+  return Math.min(240, Math.max(132, column.label.length * 18 + 58));
+}
+
+function contentBasedWidth(column: StatisticColumnLeaf) {
+  if (!board.value) {
+    return headerBasedWidth(column);
+  }
+  const maxLength = board.value.rows.reduce((current, row) => {
+    const valueLength = (cellForColumn(row, column.key)?.displayValue ?? '').length;
+    return Math.max(current, valueLength);
+  }, column.label.length);
+  if (column.metricType.includes('time') || column.metricType.includes('date')) {
+    return Math.min(240, Math.max(164, maxLength * 10 + 42));
+  }
+  return Math.min(260, Math.max(132, maxLength * 14 + 44));
+}
+
 watch(detailVisible, (visible) => {
   if (!visible) {
     detail.value = null;
@@ -261,15 +489,14 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="stat-board">
-    <el-card shadow="never" class="stat-board-card" v-loading="loading">
+  <div class="stat-board" :class="props.uiHooks.rootClass">
+    <el-card shadow="never" class="stat-board-card" :class="props.uiHooks.cardClass" v-loading="loading">
       <template #header>
-        <div class="stat-board-toolbar">
-          <div class="stat-board-toolbar-main">
+        <div class="stat-board-toolbar" :class="props.uiHooks.toolbarClass">
+          <div class="stat-board-toolbar-main" :class="props.uiHooks.toolbarMainClass">
             <div class="stat-board-heading">
               <div class="stat-board-title">{{ board?.definition.title || '统计表' }}</div>
             </div>
-
             <el-form class="stat-toolbar-form" inline>
               <el-form-item
                 v-for="field in activeFilterFields"
@@ -303,7 +530,7 @@ onMounted(async () => {
             </el-form>
           </div>
 
-          <div class="stat-board-toolbar-actions">
+          <div class="stat-board-toolbar-actions" :class="props.uiHooks.toolbarActionsClass">
             <el-button type="primary" :icon="Search" @click="loadBoard()">查询</el-button>
             <el-button @click="resetFilters">重置</el-button>
             <el-button :icon="RefreshRight" @click="loadBoard()">刷新</el-button>
@@ -337,22 +564,59 @@ onMounted(async () => {
         class="stat-board-alert"
       />
 
-      <div v-if="board && board.rows.length" class="stat-matrix-wrapper">
-        <el-table :data="board.rows" border stripe class="stat-matrix-table">
-          <el-table-column prop="rowLabel" label="统计对象" fixed="left" min-width="180" />
+      <div v-if="board && sortedRows.length" class="stat-matrix-wrapper">
+        <el-table :data="sortedRows" border stripe class="stat-matrix-table" :class="props.uiHooks.tableClass">
+          <el-table-column prop="rowLabel" label="统计对象" fixed="left" min-width="180" :resizable="true" />
           <el-table-column
-            v-for="group in visibleColumnGroups"
+            v-for="group in orderedColumnGroups"
             :key="group.key"
-            :label="group.label"
             align="center"
           >
+            <template #header>
+              <div
+                class="stat-group-header"
+                :class="{ dragging: isGroupDragging(group.key) }"
+                draggable="true"
+                @dragstart="onGroupDragStart(group.key)"
+                @dragover.prevent
+                @drop.prevent="onGroupDrop(group.key)"
+                @dragend="clearDragState"
+              >
+                <span>{{ group.label }}</span>
+                <span class="drag-handle" aria-hidden="true">
+                  <span></span>
+                  <span></span>
+                </span>
+              </div>
+            </template>
             <el-table-column
               v-for="column in group.columns"
               :key="column.key"
-              :label="column.label"
-              min-width="132"
               align="center"
+              :width="columnWidth(column)"
+              :resizable="columnResizable(column)"
             >
+              <template #header>
+                <div
+                  class="stat-column-header"
+                  :class="{ dragging: isColumnDragging(group.key, column.key) }"
+                  draggable="true"
+                  @dragstart="onColumnDragStart(group.key, column.key)"
+                  @dragover.prevent
+                  @drop.prevent="onColumnDrop(group.key, column.key)"
+                  @dragend="clearDragState"
+                >
+                  <span class="drag-handle subtle" aria-hidden="true">
+                    <span></span>
+                    <span></span>
+                  </span>
+                  <span class="stat-column-header-label">{{ column.label }}</span>
+                  <button class="sort-trigger" type="button" @click.stop="toggleColumnSort(column)">
+                    <el-icon :class="{ active: sortDirectionForColumn(column.key) === 'asc' }"><ArrowUp /></el-icon>
+                    <el-icon :class="{ active: sortDirectionForColumn(column.key) === 'desc' }"><ArrowDown /></el-icon>
+                  </button>
+                </div>
+              </template>
               <template #default="{ row }">
                 <button
                   v-if="cellForColumn(row, column.key)?.drilldown"
@@ -391,6 +655,7 @@ onMounted(async () => {
           border
           stripe
           class="stat-detail-table"
+          :class="props.uiHooks.detailTableClass"
           @sort-change="handleDetailSortChange"
         >
           <el-table-column
@@ -431,10 +696,20 @@ onMounted(async () => {
     </el-drawer>
 
     <el-drawer v-model="settingsVisible" title="表格视图设置" size="360px" append-to-body>
-      <div class="view-settings-panel" v-if="board">
+      <div class="view-settings-panel" :class="props.uiHooks.settingsPanelClass" v-if="board">
         <div class="view-settings-summary">
           <div class="view-settings-summary-title">列显示控制</div>
           <div class="view-settings-summary-text">当前已选择 {{ currentVisibleColumnCount }} 列，可按需调整当前页面的展示视图。</div>
+        </div>
+
+        <div class="view-settings-strategy">
+          <div class="view-settings-group-title">列宽展示策略</div>
+          <el-radio-group v-model="boardViewPrefs.widthStrategy" class="width-strategy-group">
+            <el-radio-button value="compact">统一紧凑</el-radio-button>
+            <el-radio-button value="header">按字段长度</el-radio-button>
+            <el-radio-button value="content">按内容长度</el-radio-button>
+          </el-radio-group>
+          <div class="view-settings-strategy-tip">首列仍保留特殊处理，纯数字统计列继续使用固定宽度。</div>
         </div>
 
         <el-checkbox-group v-model="draftVisibleColumnKeys" class="view-settings-checklist">
