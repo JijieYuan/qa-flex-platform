@@ -1,0 +1,13 @@
+package com.data.collection.platform.entity.statistics;
+
+import java.util.List;
+
+public record StatisticFilterField(
+    String key,
+    String label,
+    String type,
+    String placeholder,
+    String defaultValue,
+    Integer width,
+    List<StatisticFilterOption> options) {
+}

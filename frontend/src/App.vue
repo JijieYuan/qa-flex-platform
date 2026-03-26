@@ -5,8 +5,6 @@ import {
   Bell,
   DataAnalysis,
   Document,
-  FolderOpened,
-  Grid,
   Histogram,
   Monitor,
   Operation,
@@ -16,6 +14,7 @@ import {
   Tools,
 } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
+import StatisticBoardView from './components/StatisticBoardView.vue';
 import { api, type GitlabSyncConfig, type GitlabSyncLog, type MirrorStatusResponse, type SyncProgress } from './api';
 
 type ModuleKey =
@@ -46,7 +45,7 @@ interface ShellPage {
 interface ShellModule {
   key: ModuleKey;
   label: string;
-  icon: any;
+  icon: unknown;
   title: string;
   description: string;
   pages: ShellPage[];
@@ -55,15 +54,15 @@ interface ShellModule {
 const modules: ShellModule[] = [
   {
     key: 'quality-board',
-    label: '研发质量看板',
+    label: '统计分析',
     icon: Histogram,
-    title: '研发质量看板',
-    description: '用于承载质量指标、统计矩阵和后续自定义表格。',
+    title: '统计分析',
+    description: '统一承载汇总统计表与明细下钻视图。',
     pages: [
       {
         key: 'quality-board-home',
-        label: '研发质量看板',
-        description: '当前模块已就绪，等待后续添加区块和表格内容。',
+        label: '镜像表基础统计',
+        description: '基于当前 GitLab 镜像数据，展示标准字段的汇总统计与明细下钻。',
       },
     ],
   },
@@ -72,12 +71,12 @@ const modules: ShellModule[] = [
     label: '评审数据',
     icon: Document,
     title: '评审数据',
-    description: '用于展示设计评审、代码评审和评审追踪数据。',
+    description: '预留后续统计分析页面。',
     pages: [
       {
         key: 'review-data-home',
         label: '评审数据',
-        description: '当前模块为空，可作为后续评审数据展示入口。',
+        description: '当前模块为空，可在后续接入新的统计表。',
       },
     ],
   },
@@ -86,12 +85,12 @@ const modules: ShellModule[] = [
     label: '代码走查',
     icon: Operation,
     title: '代码走查',
-    description: '用于承载代码质量、走查记录与问题归集。',
+    description: '预留后续统计分析页面。',
     pages: [
       {
         key: 'code-review-home',
         label: '代码走查',
-        description: '当前模块为空，可按业务需要补充页面与区块。',
+        description: '当前模块为空，可在后续接入新的统计表。',
       },
     ],
   },
@@ -100,40 +99,40 @@ const modules: ShellModule[] = [
     label: '集成测试',
     icon: Monitor,
     title: '集成测试',
-    description: '用于汇总接口联调、环境验证和自动化测试结果。',
+    description: '预留后续统计分析页面。',
     pages: [
       {
         key: 'integration-test-home',
         label: '集成测试',
-        description: '当前模块为空，可作为后续测试指标的展示空间。',
+        description: '当前模块为空，可在后续接入新的统计表。',
       },
     ],
   },
   {
     key: 'question-metrics',
-    label: '设疑统计',
+    label: '议题统计',
     icon: DataAnalysis,
-    title: '设疑统计',
-    description: '用于汇总设疑趋势、口径指标与分类数据。',
+    title: '议题统计',
+    description: '预留后续统计分析页面。',
     pages: [
       {
         key: 'question-metrics-home',
-        label: '设疑统计',
-        description: '当前模块为空，后续可按维度拓展统计表格。',
+        label: '议题统计',
+        description: '当前模块为空，可在后续接入新的统计表。',
       },
     ],
   },
   {
     key: 'customer-issues',
-    label: '客户问题统计',
+    label: '客户问题',
     icon: Bell,
-    title: '客户问题统计',
-    description: '用于呈现客户问题、响应情况和闭环状态。',
+    title: '客户问题',
+    description: '预留后续统计分析页面。',
     pages: [
       {
         key: 'customer-issues-home',
-        label: '客户问题统计',
-        description: '当前模块为空，等待接入客户问题相关数据。',
+        label: '客户问题',
+        description: '当前模块为空，可在后续接入新的统计表。',
       },
     ],
   },
@@ -142,7 +141,7 @@ const modules: ShellModule[] = [
     label: '系统设置',
     icon: Setting,
     title: '系统设置',
-    description: '用于维护数据镜像、系统配置和模块管理。',
+    description: '维护 GitLab 数据镜像、配置与模块管理。',
     pages: [
       {
         key: 'mirror-settings',
@@ -152,7 +151,7 @@ const modules: ShellModule[] = [
       {
         key: 'module-management',
         label: '模块管理',
-        description: '预留模块管理入口，后续可扩展菜单和页面配置。',
+        description: '预留模块和菜单管理功能。',
       },
     ],
   },
@@ -187,6 +186,7 @@ const form = ref<GitlabSyncConfig>({
 const activeModule = computed(() => modules.find((item) => item.key === activeModuleKey.value) ?? modules[0]);
 const activePage = computed(() => activeModule.value.pages.find((item) => item.key === activePageKey.value) ?? activeModule.value.pages[0]);
 const showingMirrorSettings = computed(() => activePageKey.value === 'mirror-settings');
+const showingStatisticBoard = computed(() => activePageKey.value === 'quality-board-home');
 const whitelistOptions = computed(() => status.value?.whitelistOptions ?? []);
 const recommendedCount = computed(() => whitelistOptions.value.filter((item) => item.recommended).length);
 const isDockerMode = computed(() => form.value.sourceMode === 'DOCKER');
@@ -245,7 +245,7 @@ const progressHint = computed(() => {
   return '同步任务已启动，正在准备表扫描。';
 });
 
-async function loadStatus() {
+async function loadStatus(showError = true) {
   loading.value = true;
   try {
     const data = await api.getStatus();
@@ -264,7 +264,9 @@ async function loadStatus() {
       webhookProjectId: data.config.webhookProjectId ?? null,
     };
   } catch (error) {
-    ElMessage.error((error as Error).message);
+    if (showError) {
+      ElMessage.error((error as Error).message);
+    }
   } finally {
     loading.value = false;
   }
@@ -273,7 +275,7 @@ async function loadStatus() {
 function startRunningRefresh() {
   stopRunningRefresh();
   refreshTimer.value = window.setInterval(() => {
-    void loadStatus();
+    void loadStatus(false);
   }, 4000);
 }
 
@@ -311,7 +313,7 @@ async function saveConfig(showSuccess = true) {
     if (showSuccess) {
       ElMessage.success('配置已保存');
     }
-    await loadStatus();
+    await loadStatus(false);
   } catch (error) {
     ElMessage.error((error as Error).message);
     throw error;
@@ -325,7 +327,7 @@ async function testConnection() {
     await saveConfig(false);
     await api.testConnection();
     ElMessage.success('连接测试成功');
-    await loadStatus();
+    await loadStatus(false);
   } catch (error) {
     ElMessage.error((error as Error).message);
   }
@@ -337,7 +339,7 @@ async function startFullSync() {
     await saveConfig(false);
     await api.startFullSync();
     ElMessage.success('首次全量同步已开始');
-    await loadStatus();
+    await loadStatus(false);
   } catch (error) {
     ElMessage.error((error as Error).message);
   } finally {
@@ -351,7 +353,7 @@ async function startIncrementalSync() {
     await saveConfig(false);
     await api.startIncrementalSync();
     ElMessage.success('增量同步已开始');
-    await loadStatus();
+    await loadStatus(false);
   } catch (error) {
     ElMessage.error((error as Error).message);
   } finally {
@@ -430,7 +432,7 @@ function syncTypeText(syncType: string) {
 }
 
 onMounted(async () => {
-  await loadStatus();
+  await loadStatus(false);
 });
 
 onBeforeUnmount(() => {
@@ -445,7 +447,7 @@ onBeforeUnmount(() => {
         <div class="brand-mark">DC</div>
         <div class="brand-copy">
           <div class="brand-title">Data Collection Platform</div>
-          <div class="brand-subtitle">可配置的数据展示与镜像平台</div>
+          <div class="brand-subtitle">统一的数据采集、镜像与统计分析平台</div>
         </div>
       </div>
 
@@ -462,9 +464,7 @@ onBeforeUnmount(() => {
       </nav>
 
       <div class="header-actions">
-        <el-badge :is-dot="status?.currentStatus === 'RUNNING'" class="status-badge">
-          <el-tag :type="displayStatus.type" round>{{ displayStatus.text }}</el-tag>
-        </el-badge>
+        <el-tag :type="displayStatus.type" round>{{ displayStatus.text }}</el-tag>
         <el-button class="ghost-button" :icon="Plus">添加菜单项</el-button>
       </div>
     </header>
@@ -511,11 +511,15 @@ onBeforeUnmount(() => {
           </div>
 
           <div class="content-head-actions">
-            <el-button v-if="showingMirrorSettings" :icon="Refresh" @click="loadStatus">刷新状态</el-button>
+            <el-button v-if="showingMirrorSettings" :icon="Refresh" @click="loadStatus()">刷新</el-button>
           </div>
         </section>
 
-        <template v-if="showingMirrorSettings">
+        <template v-if="showingStatisticBoard">
+          <StatisticBoardView board-key="mirror-table-overview" />
+        </template>
+
+        <template v-else-if="showingMirrorSettings">
           <div class="settings-grid">
             <el-card shadow="never" class="panel-card" v-loading="loading">
               <template #header>
@@ -553,7 +557,7 @@ onBeforeUnmount(() => {
                     <el-input v-model="form.dbUsername" />
                   </el-form-item>
                   <el-alert
-                    title="Docker 模式会通过 docker exec 进入 GitLab 容器内部读取 PostgreSQL，不需要额外数据库密码。"
+                    title="Docker 模式通过 docker exec 进入 GitLab 容器内部读取 PostgreSQL，不需要额外数据库密码。"
                     type="info"
                     :closable="false"
                     show-icon
@@ -696,9 +700,9 @@ onBeforeUnmount(() => {
                   <div class="panel-header">
                     <div>
                       <div class="panel-title">最近同步日志</div>
-                      <div class="panel-caption">帮助快速确认最近一次全量、增量或补偿执行结果。</div>
+                      <div class="panel-caption">快速确认最近一次全量、增量或补偿执行结果。</div>
                     </div>
-                    <el-button link :icon="Refresh" @click="loadStatus">刷新</el-button>
+                    <el-button link :icon="Refresh" @click="loadStatus()">刷新</el-button>
                   </div>
                 </template>
 
@@ -728,7 +732,9 @@ onBeforeUnmount(() => {
         </template>
 
         <template v-else>
-          <section class="blank-stage" />
+          <section class="blank-stage">
+            <el-empty description="当前模块暂未接入统计表。" />
+          </section>
         </template>
       </main>
     </div>

@@ -61,6 +61,88 @@ export interface MirrorStatusResponse {
   webhookUrl: string;
 }
 
+export interface StatisticFilterOption {
+  label: string;
+  value: string;
+}
+
+export interface StatisticFilterField {
+  key: string;
+  label: string;
+  type: 'text' | 'select';
+  placeholder?: string | null;
+  defaultValue?: string | null;
+  width?: number | null;
+  options: StatisticFilterOption[];
+}
+
+export interface StatisticColumnLeaf {
+  key: string;
+  label: string;
+  drilldown: boolean;
+  metricType: string;
+}
+
+export interface StatisticColumnGroup {
+  key: string;
+  label: string;
+  columns: StatisticColumnLeaf[];
+}
+
+export interface StatisticDetailColumn {
+  key: string;
+  label: string;
+  width?: number | null;
+  minWidth?: number | null;
+  sortable: boolean;
+}
+
+export interface StatisticBoardDefinition {
+  boardKey: string;
+  title: string;
+  description: string;
+  queryTitle: string;
+  queryDescription: string;
+  filters: StatisticFilterField[];
+  columnGroups: StatisticColumnGroup[];
+  detailColumns: StatisticDetailColumn[];
+  defaultPageSize?: number | null;
+  emptyText?: string | null;
+}
+
+export interface StatisticCellData {
+  columnKey: string;
+  numericValue: number;
+  displayValue: string;
+  drilldown: boolean;
+  detailViewKey?: string | null;
+  detailParams: Record<string, string>;
+}
+
+export interface StatisticRowData {
+  rowKey: string;
+  rowLabel: string;
+  cells: StatisticCellData[];
+}
+
+export interface StatisticBoardResponse {
+  definition: StatisticBoardDefinition;
+  appliedFilters: Record<string, string>;
+  rows: StatisticRowData[];
+}
+
+export interface StatisticDetailResponse {
+  title: string;
+  description: string;
+  columns: StatisticDetailColumn[];
+  records: Record<string, unknown>[];
+  total: number;
+  page: number;
+  size: number;
+  sortField?: string | null;
+  sortOrder?: string | null;
+}
+
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, {
     headers: { 'Content-Type': 'application/json' },
@@ -112,5 +194,35 @@ export const api = {
     return request<{ accepted: boolean; message: string }>('/api/gitlab-sync/incremental-sync', {
       method: 'POST',
     });
+  },
+  getStatisticBoard(boardKey: string, filters?: Record<string, string>) {
+    const params = new URLSearchParams(filters ?? {});
+    const queryString = params.toString();
+    return request<StatisticBoardResponse>(
+      `/api/statistic-boards/${boardKey}${queryString ? `?${queryString}` : ''}`,
+    );
+  },
+  getStatisticBoardDetails(
+    boardKey: string,
+    params: {
+      rowKey: string;
+      columnKey: string;
+      page?: number;
+      size?: number;
+      sortField?: string;
+      sortOrder?: string;
+      filters?: Record<string, string>;
+    },
+  ) {
+    const query = new URLSearchParams({
+      rowKey: params.rowKey,
+      columnKey: params.columnKey,
+      page: String(params.page ?? 1),
+      size: String(params.size ?? 10),
+      ...(params.sortField ? { sortField: params.sortField } : {}),
+      ...(params.sortOrder ? { sortOrder: params.sortOrder } : {}),
+      ...(params.filters ?? {}),
+    });
+    return request<StatisticDetailResponse>(`/api/statistic-boards/${boardKey}/details?${query.toString()}`);
   },
 };
