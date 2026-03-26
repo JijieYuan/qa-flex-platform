@@ -6,6 +6,7 @@ import com.data.collection.platform.entity.GitlabSyncConfig;
 import com.data.collection.platform.entity.GitlabSyncLog;
 import com.data.collection.platform.entity.MirrorStatusResponse;
 import com.data.collection.platform.entity.SourceMode;
+import com.data.collection.platform.entity.SyncProgress;
 import com.data.collection.platform.entity.SyncStatus;
 import com.data.collection.platform.entity.WhitelistMode;
 import com.data.collection.platform.service.GitlabConfigService;
@@ -54,14 +55,17 @@ public class GitlabSyncController {
   public ApiResponse<MirrorStatusResponse> status() {
     GitlabSyncConfig config = configService.getConfig();
     List<GitlabSyncLog> logs = config.getId() == null ? List.of() : logService.listRecent(config.getId(), 20);
-    GitlabSyncLog running = config.getId() == null ? null : logService.findRunning(config.getId());
+    SyncProgress progress = syncService.getProgress();
+    boolean runningNow = syncService.isRunning();
+    GitlabSyncLog running = runningNow && config.getId() != null ? logService.findRunning(config.getId()) : null;
     return ApiResponse.success(new MirrorStatusResponse(
         config,
-        syncService.isRunning() ? SyncStatus.RUNNING : SyncStatus.IDLE,
+        runningNow ? SyncStatus.RUNNING : SyncStatus.IDLE,
         running == null ? "" : running.getMessage(),
         running == null ? null : running.getStartedAt(),
+        progress,
         logs,
-        whitelistService.listOptions(),
+        whitelistService.listOptions(config),
         properties.getWebhookBaseUrl()));
   }
 

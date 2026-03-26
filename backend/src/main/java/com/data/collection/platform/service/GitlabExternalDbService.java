@@ -19,6 +19,7 @@ import java.sql.Timestamp;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -52,6 +53,50 @@ public class GitlabExternalDbService {
     }
   }
 
+  public List<TableWhitelistOption> discoverTables(GitlabSyncConfig config, Map<String, String> labels, List<String> recommendedTables) {
+    String sql = """
+        select
+          t.table_name,
+          string_agg(kcu.column_name, ',' order by kcu.ordinal_position) as primary_key,
+          case
+            when exists (
+              select 1 from information_schema.columns c
+              where c.table_schema = 'public' and c.table_name = t.table_name and c.column_name = 'updated_at'
+            ) then 'updated_at'
+            when exists (
+              select 1 from information_schema.columns c
+              where c.table_schema = 'public' and c.table_name = t.table_name and c.column_name = 'created_at'
+            ) then 'created_at'
+            else null
+          end as updated_at_column
+        from information_schema.tables t
+        join information_schema.table_constraints tc
+          on tc.table_schema = t.table_schema
+         and tc.table_name = t.table_name
+         and tc.constraint_type = 'PRIMARY KEY'
+        join information_schema.key_column_usage kcu
+          on kcu.table_schema = tc.table_schema
+         and kcu.table_name = tc.table_name
+         and kcu.constraint_name = tc.constraint_name
+        where t.table_schema = 'public'
+          and t.table_type = 'BASE TABLE'
+        group by t.table_name
+        order by t.table_name
+        """;
+    List<Map<String, Object>> rows = isDockerMode(config) ? executeDockerQuery(config, sql) : executeJdbcQuery(config, sql);
+    List<TableWhitelistOption> result = new ArrayList<>(rows.size());
+    for (Map<String, Object> row : rows) {
+      String tableName = String.valueOf(row.get("table_name"));
+      String primaryKey = String.valueOf(row.get("primary_key"));
+      Object updatedAtValue = row.get("updated_at_column");
+      String updatedAtColumn = updatedAtValue == null ? null : String.valueOf(updatedAtValue);
+      String label = labels.getOrDefault(tableName, tableName);
+      boolean recommended = recommendedTables.contains(tableName);
+      result.add(new TableWhitelistOption(tableName, label, primaryKey, updatedAtColumn, recommended));
+    }
+    return result;
+  }
+
   public List<Map<String, Object>> fullTableScan(GitlabSyncConfig config, TableWhitelistOption option) {
     String sql = "select * from public.%s".formatted(option.tableName());
     return isDockerMode(config) ? executeDockerQuery(config, sql) : executeJdbcQuery(config, sql);
@@ -61,10 +106,11 @@ public class GitlabExternalDbService {
     if (since == null || option.updatedAtColumn() == null || option.updatedAtColumn().isBlank()) {
       return fullTableScan(config, option);
     }
+    LocalDateTime gitlabSince = toGitlabSourceTime(since);
     String sql = "select * from public.%s where %s >= timestamp '%s'".formatted(
         option.tableName(),
         option.updatedAtColumn(),
-        since.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+        gitlabSince.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
     return isDockerMode(config) ? executeDockerQuery(config, sql) : executeJdbcQuery(config, sql);
   }
 
@@ -129,6 +175,9 @@ public class GitlabExternalDbService {
       for (String line : lines) {
         if (line == null || line.isBlank()) {
           continue;
+        }
+        if (line.startsWith("ERROR:") || line.startsWith("FATAL:")) {
+          throw new BizException(line);
         }
         rows.add(objectMapper.readValue(line, MAP_TYPE));
       }
@@ -215,5 +264,11 @@ public class GitlabExternalDbService {
     } catch (Exception ignored) {
     }
     return null;
+  }
+
+  private LocalDateTime toGitlabSourceTime(LocalDateTime localTime) {
+    return localTime.atZone(ZoneId.systemDefault())
+        .withZoneSameInstant(ZoneOffset.UTC)
+        .toLocalDateTime();
   }
 }

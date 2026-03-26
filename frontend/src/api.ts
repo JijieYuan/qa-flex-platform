@@ -41,11 +41,21 @@ export interface GitlabSyncLog {
   finishedAt?: string | null;
 }
 
+export interface SyncProgress {
+  phase: string;
+  totalTables: number;
+  completedTables: number;
+  syncedRecords: number;
+  currentTable?: string | null;
+  startedAt?: string | null;
+}
+
 export interface MirrorStatusResponse {
   config: GitlabSyncConfig;
   currentStatus: string;
   currentMessage: string;
   currentStartedAt?: string | null;
+  progress?: SyncProgress | null;
   logs: GitlabSyncLog[];
   whitelistOptions: TableWhitelistOption[];
   webhookUrl: string;

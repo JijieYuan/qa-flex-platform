@@ -8,6 +8,7 @@ public record MirrorStatusResponse(
     SyncStatus currentStatus,
     String currentMessage,
     LocalDateTime currentStartedAt,
+    SyncProgress progress,
     List<GitlabSyncLog> logs,
     List<TableWhitelistOption> whitelistOptions,
     String webhookUrl) {

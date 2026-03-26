@@ -1,12 +1,171 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import {
+  ArrowLeft,
+  Bell,
+  DataAnalysis,
+  Document,
+  FolderOpened,
+  Grid,
+  Histogram,
+  Monitor,
+  Operation,
+  Plus,
+  Refresh,
+  Setting,
+  Tools,
+} from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
-import { api, type GitlabSyncConfig, type MirrorStatusResponse } from './api';
+import { api, type GitlabSyncConfig, type GitlabSyncLog, type MirrorStatusResponse, type SyncProgress } from './api';
+import QualitySummaryBoard from './components/QualitySummaryBoard.vue';
 
+type ModuleKey =
+  | 'quality-board'
+  | 'review-data'
+  | 'code-review'
+  | 'integration-test'
+  | 'question-metrics'
+  | 'customer-issues'
+  | 'system-settings';
+
+type PageKey =
+  | 'quality-board-home'
+  | 'review-data-home'
+  | 'code-review-home'
+  | 'integration-test-home'
+  | 'question-metrics-home'
+  | 'customer-issues-home'
+  | 'mirror-settings'
+  | 'module-management';
+
+interface ShellPage {
+  key: PageKey;
+  label: string;
+  description: string;
+}
+
+interface ShellModule {
+  key: ModuleKey;
+  label: string;
+  icon: any;
+  title: string;
+  description: string;
+  pages: ShellPage[];
+}
+
+const modules: ShellModule[] = [
+  {
+    key: 'quality-board',
+    label: '研发质量看板',
+    icon: Histogram,
+    title: '研发质量看板',
+    description: '用于承载质量指标、统计矩阵和后续自定义表格。',
+    pages: [
+      {
+        key: 'quality-board-home',
+        label: '研发质量看板',
+        description: '当前模块已就绪，等待后续添加区块和表格内容。',
+      },
+    ],
+  },
+  {
+    key: 'review-data',
+    label: '评审数据',
+    icon: Document,
+    title: '评审数据',
+    description: '用于展示设计评审、代码评审和评审追踪数据。',
+    pages: [
+      {
+        key: 'review-data-home',
+        label: '评审数据',
+        description: '当前模块为空，可作为后续评审数据展示入口。',
+      },
+    ],
+  },
+  {
+    key: 'code-review',
+    label: '代码走查',
+    icon: Operation,
+    title: '代码走查',
+    description: '用于承载代码质量、走查记录与问题归集。',
+    pages: [
+      {
+        key: 'code-review-home',
+        label: '代码走查',
+        description: '当前模块为空，可按业务需要补充页面与区块。',
+      },
+    ],
+  },
+  {
+    key: 'integration-test',
+    label: '集成测试',
+    icon: Monitor,
+    title: '集成测试',
+    description: '用于汇总接口联调、环境验证和自动化测试结果。',
+    pages: [
+      {
+        key: 'integration-test-home',
+        label: '集成测试',
+        description: '当前模块为空，可作为后续测试指标的展示空间。',
+      },
+    ],
+  },
+  {
+    key: 'question-metrics',
+    label: '设疑统计',
+    icon: DataAnalysis,
+    title: '设疑统计',
+    description: '用于汇总设疑趋势、口径指标与分类数据。',
+    pages: [
+      {
+        key: 'question-metrics-home',
+        label: '设疑统计',
+        description: '当前模块为空，后续可按维度拓展统计表格。',
+      },
+    ],
+  },
+  {
+    key: 'customer-issues',
+    label: '客户问题统计',
+    icon: Bell,
+    title: '客户问题统计',
+    description: '用于呈现客户问题、响应情况和闭环状态。',
+    pages: [
+      {
+        key: 'customer-issues-home',
+        label: '客户问题统计',
+        description: '当前模块为空，等待接入客户问题相关数据。',
+      },
+    ],
+  },
+  {
+    key: 'system-settings',
+    label: '系统设置',
+    icon: Setting,
+    title: '系统设置',
+    description: '用于维护数据镜像、系统配置和模块管理。',
+    pages: [
+      {
+        key: 'mirror-settings',
+        label: '数据镜像设置',
+        description: '管理 GitLab 数据镜像的连接、同步和日志。',
+      },
+      {
+        key: 'module-management',
+        label: '模块管理',
+        description: '预留模块管理入口，后续可扩展菜单和页面配置。',
+      },
+    ],
+  },
+];
+
+const activeModuleKey = ref<ModuleKey>('quality-board');
+const activePageKey = ref<PageKey>('quality-board-home');
 const loading = ref(false);
 const saving = ref(false);
 const syncing = ref(false);
 const status = ref<MirrorStatusResponse | null>(null);
+const refreshTimer = ref<number | null>(null);
 
 const form = ref<GitlabSyncConfig>({
   name: 'GitLab 默认数据源',
@@ -26,9 +185,68 @@ const form = ref<GitlabSyncConfig>({
   compensationIntervalMinutes: 10,
 });
 
+const activeModule = computed(() => modules.find((item) => item.key === activeModuleKey.value) ?? modules[0]);
+const activePage = computed(() => activeModule.value.pages.find((item) => item.key === activePageKey.value) ?? activeModule.value.pages[0]);
+const showingMirrorSettings = computed(() => activePageKey.value === 'mirror-settings');
+const showingQualityBoard = computed(() => activePageKey.value === 'quality-board-home');
+
 const whitelistOptions = computed(() => status.value?.whitelistOptions ?? []);
 const recommendedCount = computed(() => whitelistOptions.value.filter((item) => item.recommended).length);
 const isDockerMode = computed(() => form.value.sourceMode === 'DOCKER');
+const progress = computed<SyncProgress | null>(() => status.value?.progress ?? null);
+const recentLogs = computed(() => status.value?.logs ?? []);
+const latestLog = computed(() => recentLogs.value[0] ?? null);
+
+const progressPercent = computed(() => {
+  const current = progress.value;
+  if (!current) {
+    return 0;
+  }
+  if (current.totalTables <= 0) {
+    return status.value?.currentStatus === 'RUNNING' ? 5 : 0;
+  }
+  return Math.min(100, Math.round((current.completedTables / current.totalTables) * 100));
+});
+
+const displayStatus = computed(() => {
+  const raw = status.value?.currentStatus ?? 'IDLE';
+  if (raw === 'RUNNING') {
+    return { text: '同步中', type: 'warning' as const };
+  }
+  const log = latestLog.value;
+  if (log?.status === 'FAILED') {
+    return { text: '最近一次失败', type: 'danger' as const };
+  }
+  if (log?.status === 'SUCCESS') {
+    return { text: '最近一次成功', type: 'success' as const };
+  }
+  return { text: '空闲', type: 'info' as const };
+});
+
+const phaseText = computed(() => {
+  const phase = progress.value?.phase;
+  switch (phase) {
+    case 'FULL_SYNC':
+      return '首次全量同步';
+    case 'INCREMENTAL_SYNC':
+      return '增量同步';
+    case 'COMPENSATION_SYNC':
+      return '补偿同步';
+    default:
+      return '空闲';
+  }
+});
+
+const progressHint = computed(() => {
+  const current = progress.value;
+  if (!current) {
+    return '当前没有正在执行的同步任务。';
+  }
+  if (current.currentTable) {
+    return `正在处理表 ${current.currentTable}，已同步 ${current.syncedRecords} 条记录。`;
+  }
+  return '同步任务已启动，正在准备表扫描。';
+});
 
 async function loadStatus() {
   loading.value = true;
@@ -37,6 +255,7 @@ async function loadStatus() {
     status.value = data;
     form.value = {
       ...data.config,
+      name: data.config.name || 'GitLab 默认数据源',
       sourceMode: data.config.sourceMode ?? 'DOCKER',
       whitelistTables: data.config.whitelistTables ?? [],
       dockerContainerName: data.config.dockerContainerName ?? 'gitlab-data-web-1',
@@ -52,6 +271,40 @@ async function loadStatus() {
   } finally {
     loading.value = false;
   }
+}
+
+function startRunningRefresh() {
+  stopRunningRefresh();
+  refreshTimer.value = window.setInterval(() => {
+    void loadStatus();
+  }, 4000);
+}
+
+function stopRunningRefresh() {
+  if (refreshTimer.value != null) {
+    window.clearInterval(refreshTimer.value);
+    refreshTimer.value = null;
+  }
+}
+
+watch(
+  () => status.value?.currentStatus,
+  (nextStatus) => {
+    if (nextStatus === 'RUNNING') {
+      startRunningRefresh();
+    } else {
+      stopRunningRefresh();
+    }
+  },
+);
+
+function switchModule(moduleKey: ModuleKey) {
+  activeModuleKey.value = moduleKey;
+  activePageKey.value = modules.find((item) => item.key === moduleKey)?.pages[0]?.key ?? activePageKey.value;
+}
+
+function switchPage(pageKey: PageKey) {
+  activePageKey.value = pageKey;
 }
 
 async function saveConfig(showSuccess = true) {
@@ -73,8 +326,8 @@ async function saveConfig(showSuccess = true) {
 async function testConnection() {
   try {
     await saveConfig(false);
-    const result = await api.testConnection();
-    ElMessage.success(result.message ?? '连接测试成功');
+    await api.testConnection();
+    ElMessage.success('连接测试成功');
     await loadStatus();
   } catch (error) {
     ElMessage.error((error as Error).message);
@@ -85,8 +338,8 @@ async function startFullSync() {
   syncing.value = true;
   try {
     await saveConfig(false);
-    const result = await api.startFullSync();
-    ElMessage.success(result.message ?? '首次全量同步已开始');
+    await api.startFullSync();
+    ElMessage.success('首次全量同步已开始');
     await loadStatus();
   } catch (error) {
     ElMessage.error((error as Error).message);
@@ -99,8 +352,8 @@ async function startIncrementalSync() {
   syncing.value = true;
   try {
     await saveConfig(false);
-    const result = await api.startIncrementalSync();
-    ElMessage.success(result.message ?? '增量同步已开始');
+    await api.startIncrementalSync();
+    ElMessage.success('增量同步已开始');
     await loadStatus();
   } catch (error) {
     ElMessage.error((error as Error).message);
@@ -109,172 +362,382 @@ async function startIncrementalSync() {
   }
 }
 
+function formatDateTime(value?: string | null) {
+  if (!value) {
+    return '-';
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return date.toLocaleString('zh-CN', { hour12: false });
+}
+
+function formatDuration(log: GitlabSyncLog) {
+  if (!log.finishedAt || !log.startedAt) {
+    return log.status === 'RUNNING' ? '进行中' : '-';
+  }
+  const start = new Date(log.startedAt).getTime();
+  const end = new Date(log.finishedAt).getTime();
+  if (Number.isNaN(start) || Number.isNaN(end)) {
+    return '-';
+  }
+  const seconds = Math.max(0, Math.round((end - start) / 1000));
+  if (seconds < 60) {
+    return `${seconds} 秒`;
+  }
+  const minutes = Math.floor(seconds / 60);
+  const remain = seconds % 60;
+  return `${minutes} 分 ${remain} 秒`;
+}
+
+function logStatusType(statusValue: string) {
+  switch (statusValue) {
+    case 'SUCCESS':
+      return 'success';
+    case 'FAILED':
+      return 'danger';
+    case 'RUNNING':
+      return 'warning';
+    default:
+      return 'info';
+  }
+}
+
+function logStatusText(statusValue: string) {
+  switch (statusValue) {
+    case 'SUCCESS':
+      return '成功';
+    case 'FAILED':
+      return '失败';
+    case 'RUNNING':
+      return '进行中';
+    default:
+      return statusValue;
+  }
+}
+
+function syncTypeText(syncType: string) {
+  switch (syncType) {
+    case 'FULL':
+      return '全量同步';
+    case 'INCREMENTAL':
+      return '增量同步';
+    case 'COMPENSATION':
+      return '补偿同步';
+    case 'WEBHOOK':
+      return 'Webhook';
+    default:
+      return syncType;
+  }
+}
+
 onMounted(async () => {
   await loadStatus();
-  window.setInterval(loadStatus, 10000);
+});
+
+onBeforeUnmount(() => {
+  stopRunningRefresh();
 });
 </script>
 
 <template>
-  <div class="page">
-    <el-page-header content="GitLab 数据镜像设置" />
-    <div class="grid">
-      <el-card shadow="never" class="main-card" v-loading="loading">
-        <template #header>
-          <div class="card-header">
-            <span>数据源设置</span>
-            <el-tag type="success">全量靠 DB / 增量靠 Webhook / 一致性靠补偿</el-tag>
+  <div class="app-shell">
+    <header class="shell-header">
+      <div class="brand-wrap">
+        <div class="brand-mark">DC</div>
+        <div class="brand-copy">
+          <div class="brand-title">Data Collection Platform</div>
+          <div class="brand-subtitle">可配置的数据展示与镜像平台</div>
+        </div>
+      </div>
+
+      <nav class="top-nav">
+        <button
+          v-for="module in modules"
+          :key="module.key"
+          class="top-nav-item"
+          :class="{ active: activeModuleKey === module.key }"
+          @click="switchModule(module.key)"
+        >
+          {{ module.label }}
+        </button>
+      </nav>
+
+      <div class="header-actions">
+        <el-badge :is-dot="status?.currentStatus === 'RUNNING'" class="status-badge">
+          <el-tag :type="displayStatus.type" round>{{ displayStatus.text }}</el-tag>
+        </el-badge>
+        <el-button class="ghost-button" :icon="Plus">添加菜单项</el-button>
+      </div>
+    </header>
+
+    <div class="shell-body">
+      <aside class="shell-sidebar">
+        <div class="sidebar-title">
+          <component :is="activeModule.icon" class="sidebar-title-icon" />
+          <span>{{ activeModule.title }}</span>
+        </div>
+
+        <div class="sidebar-menu">
+          <button
+            v-for="page in activeModule.pages"
+            :key="page.key"
+            class="sidebar-menu-item"
+            :class="{ active: activePageKey === page.key }"
+            @click="switchPage(page.key)"
+          >
+            {{ page.label }}
+          </button>
+        </div>
+
+        <button class="sidebar-add-button">
+          <el-icon><Plus /></el-icon>
+          <span>添加菜单项</span>
+        </button>
+      </aside>
+
+      <main class="shell-content">
+        <section class="content-head">
+          <div>
+            <div class="content-title-row">
+              <el-button
+                v-if="showingMirrorSettings"
+                class="back-button"
+                circle
+                :icon="ArrowLeft"
+                @click="switchModule('quality-board')"
+              />
+              <h1 class="content-title">{{ activePage.label }}</h1>
+            </div>
+            <p class="content-description">{{ activePage.description }}</p>
+          </div>
+
+          <div class="content-head-actions">
+            <el-button v-if="showingMirrorSettings" :icon="Refresh" @click="loadStatus">刷新状态</el-button>
+          </div>
+        </section>
+
+        <template v-if="showingMirrorSettings">
+          <div class="settings-grid">
+            <el-card shadow="never" class="panel-card" v-loading="loading">
+              <template #header>
+                <div class="panel-header">
+                  <div>
+                    <div class="panel-title">GitLab 数据镜像设置</div>
+                    <div class="panel-caption">全量靠 DB，增量靠 Webhook，一致性靠补偿。</div>
+                  </div>
+                  <el-tag type="primary" effect="dark">数据源设置</el-tag>
+                </div>
+              </template>
+
+              <el-form label-width="150px">
+                <el-form-item label="数据源名称">
+                  <el-input v-model="form.name" />
+                </el-form-item>
+
+                <el-divider>源数据库模式</el-divider>
+
+                <el-form-item label="读取方式">
+                  <el-radio-group v-model="form.sourceMode">
+                    <el-radio value="DOCKER">Docker 模式</el-radio>
+                    <el-radio value="DIRECT">直连 PostgreSQL</el-radio>
+                  </el-radio-group>
+                </el-form-item>
+
+                <template v-if="isDockerMode">
+                  <el-form-item label="GitLab 容器名">
+                    <el-input v-model="form.dockerContainerName" placeholder="例如 gitlab-data-web-1" />
+                  </el-form-item>
+                  <el-form-item label="数据库名称">
+                    <el-input v-model="form.dbName" />
+                  </el-form-item>
+                  <el-form-item label="数据库用户名">
+                    <el-input v-model="form.dbUsername" />
+                  </el-form-item>
+                  <el-alert
+                    title="Docker 模式会通过 docker exec 进入 GitLab 容器内部读取 PostgreSQL，不需要额外数据库密码。"
+                    type="info"
+                    :closable="false"
+                    show-icon
+                  />
+                </template>
+
+                <template v-else>
+                  <el-row :gutter="16">
+                    <el-col :span="12">
+                      <el-form-item label="数据库主机">
+                        <el-input v-model="form.dbHost" />
+                      </el-form-item>
+                    </el-col>
+                    <el-col :span="12">
+                      <el-form-item label="数据库端口">
+                        <el-input-number v-model="form.dbPort" :min="1" :max="65535" style="width: 100%" />
+                      </el-form-item>
+                    </el-col>
+                  </el-row>
+
+                  <el-row :gutter="16">
+                    <el-col :span="12">
+                      <el-form-item label="数据库名称">
+                        <el-input v-model="form.dbName" />
+                      </el-form-item>
+                    </el-col>
+                    <el-col :span="12">
+                      <el-form-item label="数据库用户名">
+                        <el-input v-model="form.dbUsername" />
+                      </el-form-item>
+                    </el-col>
+                  </el-row>
+
+                  <el-form-item label="数据库密码">
+                    <el-input v-model="form.dbPassword" type="password" show-password />
+                  </el-form-item>
+                </template>
+
+                <el-divider>同步策略</el-divider>
+
+                <el-form-item label="启用数据源">
+                  <el-switch v-model="form.enabled" />
+                </el-form-item>
+                <el-form-item label="自动同步">
+                  <el-switch v-model="form.autoSyncEnabled" />
+                </el-form-item>
+                <el-form-item label="补偿间隔(分钟)">
+                  <el-input-number v-model="form.compensationIntervalMinutes" :min="1" :max="1440" />
+                </el-form-item>
+                <el-form-item label="白名单模式">
+                  <el-radio-group v-model="form.whitelistMode">
+                    <el-radio value="RECOMMENDED">推荐业务表（{{ recommendedCount }} 张）</el-radio>
+                    <el-radio value="ALL">全部表</el-radio>
+                    <el-radio value="CUSTOM">自定义白名单</el-radio>
+                  </el-radio-group>
+                </el-form-item>
+                <el-form-item v-if="form.whitelistMode === 'CUSTOM'" label="自定义白名单">
+                  <el-select v-model="form.whitelistTables" multiple filterable style="width: 100%">
+                    <el-option
+                      v-for="option in whitelistOptions"
+                      :key="option.tableName"
+                      :label="`${option.label} (${option.tableName})`"
+                      :value="option.tableName"
+                    />
+                  </el-select>
+                </el-form-item>
+
+                <el-divider>Webhook 增量同步</el-divider>
+
+                <el-form-item label="Webhook URL">
+                  <el-input :model-value="status?.webhookUrl || ''" readonly />
+                </el-form-item>
+                <el-form-item label="Webhook Secret">
+                  <el-input v-model="form.webhookSecret" />
+                </el-form-item>
+                <el-form-item label="GitLab Project ID">
+                  <el-input-number v-model="form.webhookProjectId" :min="1" style="width: 100%" />
+                </el-form-item>
+
+                <el-space wrap>
+                  <el-button type="primary" :loading="saving" @click="saveConfig()">保存配置</el-button>
+                  <el-button :icon="Tools" @click="testConnection">测试连接</el-button>
+                  <el-button type="success" :loading="syncing" @click="startFullSync">首次全量同步</el-button>
+                  <el-button :loading="syncing" @click="startIncrementalSync">立即增量同步</el-button>
+                </el-space>
+              </el-form>
+            </el-card>
+
+            <div class="settings-side-panel">
+              <el-card shadow="never" class="panel-card progress-panel">
+                <template #header>
+                  <div class="panel-header">
+                    <div>
+                      <div class="panel-title">同步状态</div>
+                      <div class="panel-caption">仅在同步中自动轮询刷新。</div>
+                    </div>
+                    <el-tag :type="displayStatus.type">{{ displayStatus.text }}</el-tag>
+                  </div>
+                </template>
+
+                <div class="status-message">{{ status?.currentMessage || '当前没有正在执行的同步任务。' }}</div>
+
+                <div class="progress-shell">
+                  <div class="progress-head">
+                    <div>
+                      <div class="progress-title">同步进度</div>
+                      <div class="progress-subtitle">{{ phaseText }}</div>
+                    </div>
+                    <div class="progress-percentage">{{ progressPercent }}%</div>
+                  </div>
+                  <el-progress
+                    :percentage="progressPercent"
+                    :stroke-width="18"
+                    :status="status?.currentStatus === 'RUNNING' ? undefined : 'success'"
+                  />
+                  <div class="progress-tip">{{ progressHint }}</div>
+                  <div class="progress-meta-grid">
+                    <div class="meta-item">
+                      <span class="meta-label">当前表</span>
+                      <span class="meta-value mono">{{ progress?.currentTable || '-' }}</span>
+                    </div>
+                    <div class="meta-item">
+                      <span class="meta-label">表进度</span>
+                      <span class="meta-value">{{ progress?.completedTables || 0 }}/{{ progress?.totalTables || 0 }}</span>
+                    </div>
+                    <div class="meta-item">
+                      <span class="meta-label">已同步记录</span>
+                      <span class="meta-value">{{ progress?.syncedRecords || 0 }}</span>
+                    </div>
+                    <div class="meta-item">
+                      <span class="meta-label">开始时间</span>
+                      <span class="meta-value">{{ formatDateTime(progress?.startedAt || status?.currentStartedAt) }}</span>
+                    </div>
+                  </div>
+                </div>
+              </el-card>
+
+              <el-card shadow="never" class="panel-card">
+                <template #header>
+                  <div class="panel-header">
+                    <div>
+                      <div class="panel-title">最近同步日志</div>
+                      <div class="panel-caption">帮助快速确认最近一次全量、增量或补偿执行结果。</div>
+                    </div>
+                    <el-button link :icon="Refresh" @click="loadStatus">刷新</el-button>
+                  </div>
+                </template>
+
+                <el-table :data="recentLogs" size="small" border class="sync-log-table">
+                  <el-table-column label="类型" width="110">
+                    <template #default="{ row }">
+                      <el-tag size="small" effect="plain">{{ syncTypeText(row.syncType) }}</el-tag>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="状态" width="96">
+                    <template #default="{ row }">
+                      <el-tag size="small" :type="logStatusType(row.status)">{{ logStatusText(row.status) }}</el-tag>
+                    </template>
+                  </el-table-column>
+                  <el-table-column prop="tableCount" label="表数" width="76" />
+                  <el-table-column prop="recordCount" label="记录数" width="90" />
+                  <el-table-column label="耗时" width="100">
+                    <template #default="{ row }">{{ formatDuration(row) }}</template>
+                  </el-table-column>
+                  <el-table-column label="说明" min-width="220" show-overflow-tooltip>
+                    <template #default="{ row }">{{ row.message || '-' }}</template>
+                  </el-table-column>
+                </el-table>
+              </el-card>
+            </div>
           </div>
         </template>
 
-        <el-form label-width="150px">
-          <el-form-item label="数据源名称">
-            <el-input v-model="form.name" />
-          </el-form-item>
+        <template v-else-if="showingQualityBoard">
+          <QualitySummaryBoard />
+        </template>
 
-          <el-divider>源数据库模式</el-divider>
-
-          <el-form-item label="读取方式">
-            <el-radio-group v-model="form.sourceMode">
-              <el-radio value="DOCKER">Docker 模式（推荐当前 GitLab 环境）</el-radio>
-              <el-radio value="DIRECT">直连 PostgreSQL</el-radio>
-            </el-radio-group>
-          </el-form-item>
-
-          <template v-if="isDockerMode">
-            <el-form-item label="GitLab 容器名">
-              <el-input v-model="form.dockerContainerName" placeholder="例如 gitlab-data-web-1" />
-            </el-form-item>
-            <el-form-item label="数据库名称">
-              <el-input v-model="form.dbName" />
-            </el-form-item>
-            <el-form-item label="数据库用户名">
-              <el-input v-model="form.dbUsername" />
-            </el-form-item>
-            <el-alert
-              title="Docker 模式会通过 docker exec 进入 GitLab 容器内部读取 PostgreSQL，不需要外部数据库密码。"
-              type="info"
-              :closable="false"
-              show-icon
-            />
-          </template>
-
-          <template v-else>
-            <el-row :gutter="16">
-              <el-col :span="12">
-                <el-form-item label="数据库主机">
-                  <el-input v-model="form.dbHost" />
-                </el-form-item>
-              </el-col>
-              <el-col :span="12">
-                <el-form-item label="数据库端口">
-                  <el-input-number v-model="form.dbPort" :min="1" :max="65535" style="width: 100%" />
-                </el-form-item>
-              </el-col>
-            </el-row>
-
-            <el-row :gutter="16">
-              <el-col :span="12">
-                <el-form-item label="数据库名称">
-                  <el-input v-model="form.dbName" />
-                </el-form-item>
-              </el-col>
-              <el-col :span="12">
-                <el-form-item label="数据库用户名">
-                  <el-input v-model="form.dbUsername" />
-                </el-form-item>
-              </el-col>
-            </el-row>
-
-            <el-form-item label="数据库密码">
-              <el-input v-model="form.dbPassword" type="password" show-password />
-            </el-form-item>
-          </template>
-
-          <el-divider>同步策略</el-divider>
-
-          <el-form-item label="启用数据源">
-            <el-switch v-model="form.enabled" />
-          </el-form-item>
-          <el-form-item label="自动同步">
-            <el-switch v-model="form.autoSyncEnabled" />
-          </el-form-item>
-          <el-form-item label="补偿间隔(分钟)">
-            <el-input-number v-model="form.compensationIntervalMinutes" :min="1" :max="1440" />
-          </el-form-item>
-          <el-form-item label="白名单模式">
-            <el-radio-group v-model="form.whitelistMode">
-              <el-radio value="RECOMMENDED">推荐业务表（{{ recommendedCount }} 张）</el-radio>
-              <el-radio value="ALL">全部表</el-radio>
-              <el-radio value="CUSTOM">自定义白名单</el-radio>
-            </el-radio-group>
-          </el-form-item>
-          <el-form-item v-if="form.whitelistMode === 'CUSTOM'" label="自定义白名单">
-            <el-select v-model="form.whitelistTables" multiple filterable style="width: 100%">
-              <el-option
-                v-for="option in whitelistOptions"
-                :key="option.tableName"
-                :label="`${option.label} (${option.tableName})`"
-                :value="option.tableName"
-              />
-            </el-select>
-          </el-form-item>
-
-          <el-divider>Webhook 增量同步</el-divider>
-
-          <el-form-item label="Webhook URL">
-            <el-input :model-value="status?.webhookUrl || ''" readonly />
-          </el-form-item>
-          <el-form-item label="Webhook Secret">
-            <el-input v-model="form.webhookSecret" />
-          </el-form-item>
-          <el-form-item label="GitLab Project ID">
-            <el-input-number v-model="form.webhookProjectId" :min="1" style="width: 100%" />
-          </el-form-item>
-
-          <el-space wrap>
-            <el-button type="primary" :loading="saving" @click="saveConfig()">保存配置</el-button>
-            <el-button @click="testConnection">测试连接</el-button>
-            <el-button type="success" :loading="syncing" @click="startFullSync">首次全量同步</el-button>
-            <el-button :loading="syncing" @click="startIncrementalSync">立即增量同步</el-button>
-          </el-space>
-        </el-form>
-      </el-card>
-
-      <div class="side-panel">
-        <el-card shadow="never" class="side-card">
-          <template #header>
-            <div class="card-header">
-              <span>当前状态</span>
-              <el-tag :type="status?.currentStatus === 'RUNNING' ? 'warning' : 'success'">
-                {{ status?.currentStatus || 'IDLE' }}
-              </el-tag>
-            </div>
-          </template>
-          <el-descriptions :column="1" border>
-            <el-descriptions-item label="当前消息">{{ status?.currentMessage || '-' }}</el-descriptions-item>
-            <el-descriptions-item label="上次全量同步">{{ status?.config?.lastFullSyncAt || '-' }}</el-descriptions-item>
-            <el-descriptions-item label="上次增量同步">{{ status?.config?.lastIncrementalSyncAt || '-' }}</el-descriptions-item>
-          </el-descriptions>
-        </el-card>
-
-        <el-card shadow="never" class="side-card">
-          <template #header>
-            <div class="card-header">
-              <span>最近同步日志</span>
-              <el-button link @click="loadStatus">刷新</el-button>
-            </div>
-          </template>
-          <el-table :data="status?.logs || []" size="small" border>
-            <el-table-column prop="syncType" label="类型" width="110" />
-            <el-table-column prop="status" label="状态" width="110" />
-            <el-table-column prop="tableCount" label="表数" width="80" />
-            <el-table-column prop="recordCount" label="记录数" width="100" />
-            <el-table-column prop="message" label="说明" min-width="180" show-overflow-tooltip />
-            <el-table-column prop="startedAt" label="开始时间" min-width="180" />
-          </el-table>
-        </el-card>
-      </div>
+        <template v-else>
+          <section class="blank-stage" />
+        </template>
+      </main>
     </div>
   </div>
 </template>
