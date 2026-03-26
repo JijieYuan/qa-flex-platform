@@ -512,6 +512,10 @@ function columnWidth(column: StatisticColumnLeaf) {
   return contentBasedWidth(column);
 }
 
+function columnMinWidth(column: StatisticColumnLeaf) {
+  return columnWidth(column);
+}
+
 function columnResizable(column: StatisticColumnLeaf) {
   return !(column.metricType.includes('count') || column.metricType.includes('ratio') || column.metricType.includes('number'));
 }
@@ -637,6 +641,7 @@ onMounted(async () => {
           :data="sortedRows"
           border
           stripe
+          fit
           class="stat-matrix-table"
           :class="props.uiHooks.tableClass"
           style="width: 100%"
@@ -680,7 +685,7 @@ onMounted(async () => {
               v-for="column in group.columns"
               :key="column.key"
               align="center"
-              :width="columnWidth(column)"
+              :min-width="columnMinWidth(column)"
               :resizable="columnResizable(column)"
             >
               <template #header>

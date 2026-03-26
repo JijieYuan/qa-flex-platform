@@ -418,6 +418,7 @@ button {
   margin-top: 8px;
   width: 100%;
   min-width: 0;
+  display: block;
   overflow-x: auto;
   overflow-y: hidden;
 }
@@ -429,11 +430,20 @@ button {
   min-width: 100%;
 }
 
+.stat-matrix-table .el-table__header-wrapper,
+.stat-matrix-table .el-table__body-wrapper {
+  width: 100%;
+}
+
 .stat-matrix-table .el-table__inner-wrapper,
 .stat-matrix-table .el-scrollbar,
 .stat-matrix-table .el-scrollbar__wrap,
 .stat-matrix-table .el-scrollbar__view {
   width: 100%;
+}
+
+.stat-matrix-table table {
+  width: 100% !important;
 }
 
 .stat-group-header,
