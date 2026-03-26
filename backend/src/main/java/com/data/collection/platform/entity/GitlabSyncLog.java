@@ -1,37 +1,41 @@
 package com.data.collection.platform.entity;
 
+import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
+import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableName;
 import java.time.LocalDateTime;
+import lombok.Data;
+import lombok.NoArgsConstructor;
 
+@Data
+@NoArgsConstructor
+@TableName("gitlab_sync_logs")
 public class GitlabSyncLog {
+  @TableId(type = IdType.AUTO)
   private Long id;
+
+  @TableField("config_id")
   private Long configId;
+
+  @TableField("sync_type")
   private SyncType syncType;
+
   private SyncStatus status;
   private String message;
-  private String whitelistSnapshot;
-  private Integer tableCount;
-  private Integer recordCount;
-  private LocalDateTime startedAt;
-  private LocalDateTime finishedAt;
 
-  public Long getId() { return id; }
-  public void setId(Long id) { this.id = id; }
-  public Long getConfigId() { return configId; }
-  public void setConfigId(Long configId) { this.configId = configId; }
-  public SyncType getSyncType() { return syncType; }
-  public void setSyncType(SyncType syncType) { this.syncType = syncType; }
-  public SyncStatus getStatus() { return status; }
-  public void setStatus(SyncStatus status) { this.status = status; }
-  public String getMessage() { return message; }
-  public void setMessage(String message) { this.message = message; }
-  public String getWhitelistSnapshot() { return whitelistSnapshot; }
-  public void setWhitelistSnapshot(String whitelistSnapshot) { this.whitelistSnapshot = whitelistSnapshot; }
-  public Integer getTableCount() { return tableCount; }
-  public void setTableCount(Integer tableCount) { this.tableCount = tableCount; }
-  public Integer getRecordCount() { return recordCount; }
-  public void setRecordCount(Integer recordCount) { this.recordCount = recordCount; }
-  public LocalDateTime getStartedAt() { return startedAt; }
-  public void setStartedAt(LocalDateTime startedAt) { this.startedAt = startedAt; }
-  public LocalDateTime getFinishedAt() { return finishedAt; }
-  public void setFinishedAt(LocalDateTime finishedAt) { this.finishedAt = finishedAt; }
+  @TableField("whitelist_snapshot")
+  private String whitelistSnapshot;
+
+  @TableField("table_count")
+  private Integer tableCount;
+
+  @TableField("record_count")
+  private Integer recordCount;
+
+  @TableField("started_at")
+  private LocalDateTime startedAt;
+
+  @TableField("finished_at")
+  private LocalDateTime finishedAt;
 }

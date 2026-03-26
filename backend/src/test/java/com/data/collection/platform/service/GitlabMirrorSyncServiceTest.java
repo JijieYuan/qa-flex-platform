@@ -11,9 +11,11 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.data.collection.platform.common.JsonUtils;
 import com.data.collection.platform.entity.GitlabSyncConfig;
 import com.data.collection.platform.entity.SyncStatus;
 import com.data.collection.platform.entity.SyncType;
+import com.data.collection.platform.mapper.GitlabMirrorRecordMapper;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -23,8 +25,9 @@ class GitlabMirrorSyncServiceTest {
   private GitlabConfigService configService;
   private GitlabWhitelistService whitelistService;
   private GitlabExternalDbService externalDbService;
-  private GitlabMirrorRepository mirrorRepository;
+  private GitlabMirrorRecordMapper mirrorRecordMapper;
   private GitlabSyncLogService logService;
+  private JsonUtils jsonUtils;
   private GitlabMirrorSyncService syncService;
 
   @BeforeEach
@@ -32,11 +35,12 @@ class GitlabMirrorSyncServiceTest {
     configService = mock(GitlabConfigService.class);
     whitelistService = mock(GitlabWhitelistService.class);
     externalDbService = mock(GitlabExternalDbService.class);
-    mirrorRepository = mock(GitlabMirrorRepository.class);
+    mirrorRecordMapper = mock(GitlabMirrorRecordMapper.class);
     logService = mock(GitlabSyncLogService.class);
+    jsonUtils = mock(JsonUtils.class);
     syncService =
         new GitlabMirrorSyncService(
-            configService, whitelistService, externalDbService, mirrorRepository, logService);
+            configService, whitelistService, externalDbService, mirrorRecordMapper, logService, jsonUtils);
   }
 
   @Test

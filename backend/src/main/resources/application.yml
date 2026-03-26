@@ -13,6 +13,10 @@ spring:
     init:
       mode: always
 
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+
 platform:
   gitlab-mirror:
     scheduler-enabled: true

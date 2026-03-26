@@ -1,10 +1,13 @@
 package com.data.collection.platform.service;
 
+import com.data.collection.platform.common.JsonUtils;
 import com.data.collection.platform.entity.GitlabSyncConfig;
+import com.data.collection.platform.entity.GitlabMirrorRecord;
 import com.data.collection.platform.entity.SyncProgress;
 import com.data.collection.platform.entity.SyncStatus;
 import com.data.collection.platform.entity.SyncType;
 import com.data.collection.platform.entity.TableWhitelistOption;
+import com.data.collection.platform.mapper.GitlabMirrorRecordMapper;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -21,8 +24,9 @@ public class GitlabMirrorSyncService {
   private final GitlabConfigService configService;
   private final GitlabWhitelistService whitelistService;
   private final GitlabExternalDbService externalDbService;
-  private final GitlabMirrorRepository mirrorRepository;
+  private final GitlabMirrorRecordMapper mirrorRecordMapper;
   private final GitlabSyncLogService logService;
+  private final JsonUtils jsonUtils;
   private final AtomicBoolean running = new AtomicBoolean(false);
   private final AtomicReference<SyncProgress> progress = new AtomicReference<>();
 
@@ -30,13 +34,15 @@ public class GitlabMirrorSyncService {
       GitlabConfigService configService,
       GitlabWhitelistService whitelistService,
       GitlabExternalDbService externalDbService,
-      GitlabMirrorRepository mirrorRepository,
-      GitlabSyncLogService logService) {
+      GitlabMirrorRecordMapper mirrorRecordMapper,
+      GitlabSyncLogService logService,
+      JsonUtils jsonUtils) {
     this.configService = configService;
     this.whitelistService = whitelistService;
     this.externalDbService = externalDbService;
-    this.mirrorRepository = mirrorRepository;
+    this.mirrorRecordMapper = mirrorRecordMapper;
     this.logService = logService;
+    this.jsonUtils = jsonUtils;
   }
 
   public boolean isRunning() {
@@ -74,11 +80,13 @@ public class GitlabMirrorSyncService {
   }
 
   private void runSync(SyncType type, String message) {
+    GitlabSyncConfig config = configService.getConfig();
+    if (config.getId() != null) {
+      logService.markRunningAsFailed(config.getId(), "Recovered stale running task before starting a new sync");
+    }
     if (!running.compareAndSet(false, true)) {
       return;
     }
-    GitlabSyncConfig config = configService.getConfig();
-    reconcileRunningState(config.getId());
     List<TableWhitelistOption> tables = whitelistService.resolveOptions(config);
     long logId = logService.start(config.getId(), type, tables.stream().map(TableWhitelistOption::tableName).toList(), message);
     int tableCount = 0;
@@ -100,16 +108,19 @@ public class GitlabMirrorSyncService {
         List<Map<String, Object>> rows = shouldUseFullScan(type)
             ? externalDbService.fullTableScan(config, table)
             : externalDbService.incrementalScan(config, table, since);
-        List<GitlabMirrorRepository.MirrorRow> mirrorRows = new ArrayList<>(rows.size());
+        List<GitlabMirrorRecord> mirrorRows = new ArrayList<>(rows.size());
         for (Map<String, Object> row : rows) {
-          mirrorRows.add(new GitlabMirrorRepository.MirrorRow(
-              externalDbService.buildRecordKey(table, row),
-              externalDbService.extractUpdatedAt(table, row),
-              row));
+          GitlabMirrorRecord record = new GitlabMirrorRecord();
+          record.setConfigId(config.getId());
+          record.setTableName(table.tableName());
+          record.setRecordKey(externalDbService.buildRecordKey(table, row));
+          record.setUpdatedAtSource(externalDbService.extractUpdatedAt(table, row));
+          record.setRowData(jsonUtils.toJson(row));
+          mirrorRows.add(record);
         }
         for (int index = 0; index < mirrorRows.size(); index += UPSERT_BATCH_SIZE) {
           int end = Math.min(index + UPSERT_BATCH_SIZE, mirrorRows.size());
-          mirrorRepository.upsertBatch(config.getId(), table.tableName(), mirrorRows.subList(index, end));
+          mirrorRecordMapper.upsertBatch(mirrorRows.subList(index, end));
           recordCount += (end - index);
           currentProgress.setSyncedRecords(recordCount);
         }

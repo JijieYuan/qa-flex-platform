@@ -13,13 +13,11 @@ import com.data.collection.platform.entity.statistics.StatisticDetailResponse;
 import com.data.collection.platform.entity.statistics.StatisticFilterField;
 import com.data.collection.platform.entity.statistics.StatisticFilterOption;
 import com.data.collection.platform.entity.statistics.StatisticRowData;
-import java.sql.Timestamp;
+import com.data.collection.platform.mapper.MirrorTableOverviewMapper;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -42,10 +40,10 @@ public class MirrorTableOverviewBoardService extends AbstractStatisticBoardServi
           "updatedAtSource", "updated_at_source",
           "syncedAt", "synced_at");
 
-  private final JdbcTemplate jdbcTemplate;
+  private final MirrorTableOverviewMapper overviewMapper;
 
-  public MirrorTableOverviewBoardService(JdbcTemplate jdbcTemplate) {
-    this.jdbcTemplate = jdbcTemplate;
+  public MirrorTableOverviewBoardService(MirrorTableOverviewMapper overviewMapper) {
+    this.overviewMapper = overviewMapper;
   }
 
   @Override
@@ -63,7 +61,7 @@ public class MirrorTableOverviewBoardService extends AbstractStatisticBoardServi
     long startedAt = System.currentTimeMillis();
     List<StatisticFilterOption> tableOptions = queryTableOptions();
     String tableName = trimToNull(filters.get("tableName"));
-    List<Map<String, Object>> rows = querySummaryRows(tableName);
+    List<Map<String, Object>> rows = overviewMapper.selectSummaryRows(tableName);
     List<StatisticRowData> boardRows = rows.stream().map(this::toStatisticRow).toList();
 
     StatisticBoardDefinition definition = buildDefinition(tableOptions);
@@ -104,41 +102,9 @@ public class MirrorTableOverviewBoardService extends AbstractStatisticBoardServi
     String sortField = SORT_FIELD_MAPPING.getOrDefault(request.sortField(), "synced_at");
     String sortOrder = "ascending".equalsIgnoreCase(request.sortOrder()) ? "asc" : "desc";
 
-    StringBuilder where = new StringBuilder(" where table_name = ? ");
-    List<Object> args = new ArrayList<>();
-    args.add(tableName);
-    appendColumnFilter(where, columnKey);
-
-    long total =
-        jdbcTemplate.queryForObject(
-            "select count(*) from gitlab_mirror_records" + where, Long.class, args.toArray());
-
-    List<Object> detailArgs = new ArrayList<>(args);
-    detailArgs.add(size);
-    detailArgs.add((page - 1) * size);
+    long total = overviewMapper.countDetails(tableName, columnKey);
     List<Map<String, Object>> records =
-        jdbcTemplate.query(
-            "select id, table_name, record_key, updated_at_source, synced_at, row_data::text as row_data "
-                + "from gitlab_mirror_records"
-                + where
-                + " order by "
-                + sortField
-                + " "
-                + sortOrder
-                + " nulls last limit ? offset ?",
-            detailArgs.toArray(),
-            (rs, rowNum) -> {
-              Map<String, Object> row = new LinkedHashMap<>();
-              row.put("id", rs.getLong("id"));
-              row.put("tableName", rs.getString("table_name"));
-              row.put("recordKey", rs.getString("record_key"));
-              Timestamp updatedAtSource = rs.getTimestamp("updated_at_source");
-              row.put("updatedAtSource", updatedAtSource == null ? null : updatedAtSource.toLocalDateTime());
-              Timestamp syncedAt = rs.getTimestamp("synced_at");
-              row.put("syncedAt", syncedAt == null ? null : syncedAt.toLocalDateTime());
-              row.put("rowData", rs.getString("row_data"));
-              return row;
-            });
+        overviewMapper.selectDetails(tableName, columnKey, sortField, sortOrder, size, (page - 1) * size);
 
     return new StatisticDetailResponse(
         buildDetailTitle(tableName, columnKey),
@@ -191,54 +157,9 @@ public class MirrorTableOverviewBoardService extends AbstractStatisticBoardServi
   }
 
   private List<StatisticFilterOption> queryTableOptions() {
-    return jdbcTemplate.query(
-        """
-        select table_name
-        from gitlab_mirror_records
-        group by table_name
-        order by count(*) desc, table_name asc
-        """,
-        (rs, rowNum) -> new StatisticFilterOption(rs.getString("table_name"), rs.getString("table_name")));
-  }
-
-  private List<Map<String, Object>> querySummaryRows(String tableName) {
-    StringBuilder sql =
-        new StringBuilder(
-            """
-        select
-          table_name,
-          count(*) as total_records,
-          count(updated_at_source) as with_source_update,
-          count(*) - count(updated_at_source) as without_source_update,
-          count(*) filter (where synced_at >= current_timestamp - interval '24 hours') as synced_in_24h,
-          count(*) filter (where synced_at < current_timestamp - interval '24 hours') as stale_sync
-        from gitlab_mirror_records
-        where 1 = 1
-        """);
-    List<Object> args = new ArrayList<>();
-    if (tableName != null) {
-      sql.append(" and table_name = ? ");
-      args.add(tableName);
-    }
-    sql.append(
-        """
-         group by table_name
-         order by count(*) desc, table_name asc
-        """);
-
-    return jdbcTemplate.query(
-        sql.toString(),
-        args.toArray(),
-        (rs, rowNum) -> {
-          Map<String, Object> row = new LinkedHashMap<>();
-          row.put("tableName", rs.getString("table_name"));
-          row.put("totalRecords", rs.getLong("total_records"));
-          row.put("withSourceUpdate", rs.getLong("with_source_update"));
-          row.put("withoutSourceUpdate", rs.getLong("without_source_update"));
-          row.put("syncedIn24h", rs.getLong("synced_in_24h"));
-          row.put("staleSync", rs.getLong("stale_sync"));
-          return row;
-        });
+    return overviewMapper.selectTableNames().stream()
+        .map(tableName -> new StatisticFilterOption(tableName, tableName))
+        .toList();
   }
 
   private StatisticRowData toStatisticRow(Map<String, Object> row) {
@@ -263,18 +184,6 @@ public class MirrorTableOverviewBoardService extends AbstractStatisticBoardServi
         true,
         DETAIL_VIEW_KEY,
         Map.of("tableName", tableName, "columnKey", columnKey));
-  }
-
-  private void appendColumnFilter(StringBuilder where, String columnKey) {
-    switch (columnKey) {
-      case "totalRecords" -> {
-      }
-      case "withSourceUpdate" -> where.append(" and updated_at_source is not null ");
-      case "withoutSourceUpdate" -> where.append(" and updated_at_source is null ");
-      case "syncedIn24h" -> where.append(" and synced_at >= current_timestamp - interval '24 hours' ");
-      case "staleSync" -> where.append(" and synced_at < current_timestamp - interval '24 hours' ");
-      default -> throw new BizException("不支持的统计列: " + columnKey);
-    }
   }
 
   private String buildDetailTitle(String tableName, String columnKey) {
