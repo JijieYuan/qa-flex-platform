@@ -72,17 +72,6 @@ async function loadBoard(showError = true) {
   }
 }
 
-function formatDateTime(value?: string | null) {
-  if (!value) {
-    return '-';
-  }
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-  return date.toLocaleString('zh-CN', { hour12: false });
-}
-
 async function exportBoard() {
   try {
     const csv = await api.exportStatisticBoard(props.boardKey, buildFilterPayload());
@@ -237,29 +226,6 @@ onMounted(async () => {
             <el-button @click="resetFilters">重置</el-button>
           </div>
         </el-form>
-
-        <div v-if="board?.meta" class="stat-board-meta">
-          <div class="stat-board-meta-item">
-            <span class="meta-label">生成时间</span>
-            <span class="meta-value">{{ formatDateTime(board.meta.generatedAt) }}</span>
-          </div>
-          <div class="stat-board-meta-item">
-            <span class="meta-label">查询耗时</span>
-            <span class="meta-value">{{ board.meta.queryDurationMs }} ms</span>
-          </div>
-          <div class="stat-board-meta-item">
-            <span class="meta-label">行数</span>
-            <span class="meta-value">{{ board.meta.rowCount }}</span>
-          </div>
-          <div class="stat-board-meta-item">
-            <span class="meta-label">列数</span>
-            <span class="meta-value">{{ board.meta.columnCount }}</span>
-          </div>
-          <div class="stat-board-meta-item">
-            <span class="meta-label">可下钻列</span>
-            <span class="meta-value">{{ board.meta.drilldownColumnCount }}</span>
-          </div>
-        </div>
       </section>
 
       <section class="stat-matrix-section">

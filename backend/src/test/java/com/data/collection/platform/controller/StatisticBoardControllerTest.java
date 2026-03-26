@@ -17,7 +17,7 @@ class StatisticBoardControllerTest {
 
   @Test
   void shouldLoadMirrorTableOverviewBoard() {
-    StatisticBoardResponse response = controller.getBoard("mirror-table-overview", Map.of("limit", "10")).getData();
+    StatisticBoardResponse response = controller.getBoard("mirror-table-overview", Map.of()).getData();
     assertThat(response).isNotNull();
     assertThat(response.definition().boardKey()).isEqualTo("mirror-table-overview");
     assertThat(response.definition().columnGroups()).isNotEmpty();
@@ -25,22 +25,31 @@ class StatisticBoardControllerTest {
     assertThat(response.meta()).isNotNull();
     assertThat(response.meta().rowCount()).isGreaterThan(0);
     assertThat(response.meta().columnCount()).isGreaterThan(0);
+    assertThat(response.definition().filters()).hasSize(1);
+    assertThat(response.definition().filters().get(0).key()).isEqualTo("tableName");
+    assertThat(response.definition().filters().get(0).type()).isEqualTo("select");
+    assertThat(response.definition().filters().get(0).options()).isNotEmpty();
   }
 
   @Test
   void shouldLoadDetailsForDrilldownCell() {
-    StatisticBoardResponse board = controller.getBoard("mirror-table-overview", java.util.Map.of("limit", "10")).getData();
+    StatisticBoardResponse board = controller.getBoard("mirror-table-overview", Map.of()).getData();
     assertThat(board.rows()).isNotEmpty();
+
     String rowKey = board.rows().get(0).rowKey();
-    StatisticDetailResponse detail = controller.getDetails(
-        "mirror-table-overview",
-        rowKey,
-        "totalRecords",
-        1,
-        10,
-        "syncedAt",
-        "descending",
-        Map.of()).getData();
+    StatisticDetailResponse detail =
+        controller
+            .getDetails(
+                "mirror-table-overview",
+                rowKey,
+                "totalRecords",
+                1,
+                10,
+                "syncedAt",
+                "descending",
+                Map.of())
+            .getData();
+
     assertThat(detail).isNotNull();
     assertThat(detail.columns()).isNotEmpty();
     assertThat(detail.total()).isGreaterThan(0);
@@ -48,7 +57,7 @@ class StatisticBoardControllerTest {
 
   @Test
   void shouldExportMirrorTableOverviewBoardCsv() {
-    ResponseEntity<String> response = controller.exportBoard("mirror-table-overview", Map.of("limit", "5"));
+    ResponseEntity<String> response = controller.exportBoard("mirror-table-overview", Map.of());
     assertThat(response.getBody()).isNotBlank();
     assertThat(response.getBody()).contains("统计对象");
     assertThat(response.getBody()).contains("总记录数");

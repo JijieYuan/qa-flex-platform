@@ -55,72 +55,28 @@ public class MirrorTableOverviewBoardService extends AbstractStatisticBoardServi
 
   @Override
   protected StatisticBoardDefinition buildDefinition() {
-    return new StatisticBoardDefinition(
-        BOARD_KEY,
-        "GitLab 镜像表基础统计",
-        "基于已同步到本地的镜像记录，对各张 GitLab 源表的记录规模和同步覆盖情况进行汇总展示。",
-        "查询与操作",
-        "按表名关键字和展示数量过滤当前统计范围。本页只使用镜像表中的标准字段，不引入任何额外业务规则。",
-        List.of(
-            new StatisticFilterField(
-                "tableKeyword",
-                "表名关键字",
-                "text",
-                "输入表名关键字",
-                "",
-                220,
-                List.of()),
-            new StatisticFilterField(
-                "limit",
-                "展示数量",
-                "select",
-                "",
-                "20",
-                140,
-                List.of(
-                    new StatisticFilterOption("10 张", "10"),
-                    new StatisticFilterOption("20 张", "20"),
-                    new StatisticFilterOption("50 张", "50"),
-                    new StatisticFilterOption("100 张", "100")))),
-        List.of(
-            new StatisticColumnGroup(
-                "scale",
-                "记录规模",
-                List.of(new StatisticColumnLeaf("totalRecords", "总记录数", true, "count"))),
-            new StatisticColumnGroup(
-                "sourceTime",
-                "源更新时间",
-                List.of(
-                    new StatisticColumnLeaf("withSourceUpdate", "有源更新时间", true, "count"),
-                    new StatisticColumnLeaf("withoutSourceUpdate", "缺少源更新时间", true, "count"))),
-            new StatisticColumnGroup(
-                "syncStatus",
-                "同步时效",
-                List.of(
-                    new StatisticColumnLeaf("syncedIn24h", "24 小时内同步", true, "count"),
-                    new StatisticColumnLeaf("staleSync", "24 小时前同步", true, "count")))),
-        DETAIL_COLUMNS,
-        10,
-        "当前筛选条件下没有可展示的镜像统计结果。");
+    return buildDefinition(List.of());
   }
 
   @Override
   protected StatisticBoardResponse doLoadBoard(Map<String, String> filters) {
     long startedAt = System.currentTimeMillis();
-    String keyword = trimToNull(filters.get("tableKeyword"));
-    int limit = parsePositiveInt(filters.get("limit"), 20);
-    List<Map<String, Object>> rows = querySummaryRows(keyword, limit);
+    List<StatisticFilterOption> tableOptions = queryTableOptions();
+    String tableName = trimToNull(filters.get("tableName"));
+    List<Map<String, Object>> rows = querySummaryRows(tableName);
     List<StatisticRowData> boardRows = rows.stream().map(this::toStatisticRow).toList();
+
+    StatisticBoardDefinition definition = buildDefinition(tableOptions);
     Map<String, String> appliedFilters = new LinkedHashMap<>();
-    appliedFilters.put("tableKeyword", keyword == null ? "" : keyword);
-    appliedFilters.put("limit", String.valueOf(limit));
-    StatisticBoardDefinition definition = buildDefinition();
+    appliedFilters.put("tableName", tableName == null ? "" : tableName);
+
     int columnCount = definition.columnGroups().stream().mapToInt(group -> group.columns().size()).sum();
     int drilldownColumnCount =
         definition.columnGroups().stream()
             .flatMap(group -> group.columns().stream())
             .mapToInt(column -> column.drilldown() ? 1 : 0)
             .sum();
+
     StatisticBoardMeta meta =
         new StatisticBoardMeta(
             LocalDateTime.now(),
@@ -137,10 +93,12 @@ public class MirrorTableOverviewBoardService extends AbstractStatisticBoardServi
     if (tableName == null) {
       throw new BizException("明细查询缺少行维度标识");
     }
+
     String columnKey = trimToNull(request.columnKey());
     if (columnKey == null) {
       throw new BizException("明细查询缺少列维度标识");
     }
+
     int page = request.page() <= 0 ? 1 : request.page();
     int size = request.size() <= 0 ? 10 : request.size();
     String sortField = SORT_FIELD_MAPPING.getOrDefault(request.sortField(), "synced_at");
@@ -149,7 +107,7 @@ public class MirrorTableOverviewBoardService extends AbstractStatisticBoardServi
     StringBuilder where = new StringBuilder(" where table_name = ? ");
     List<Object> args = new ArrayList<>();
     args.add(tableName);
-    appendColumnFilter(where, args, columnKey);
+    appendColumnFilter(where, columnKey);
 
     long total =
         jdbcTemplate.queryForObject(
@@ -175,9 +133,7 @@ public class MirrorTableOverviewBoardService extends AbstractStatisticBoardServi
               row.put("tableName", rs.getString("table_name"));
               row.put("recordKey", rs.getString("record_key"));
               Timestamp updatedAtSource = rs.getTimestamp("updated_at_source");
-              row.put(
-                  "updatedAtSource",
-                  updatedAtSource == null ? null : updatedAtSource.toLocalDateTime());
+              row.put("updatedAtSource", updatedAtSource == null ? null : updatedAtSource.toLocalDateTime());
               Timestamp syncedAt = rs.getTimestamp("synced_at");
               row.put("syncedAt", syncedAt == null ? null : syncedAt.toLocalDateTime());
               row.put("rowData", rs.getString("row_data"));
@@ -186,7 +142,7 @@ public class MirrorTableOverviewBoardService extends AbstractStatisticBoardServi
 
     return new StatisticDetailResponse(
         buildDetailTitle(tableName, columnKey),
-        "基于当前统计单元格生成的镜像原始记录列表。",
+        "展示当前统计单元格对应的镜像原始记录。",
         DETAIL_COLUMNS,
         records,
         total,
@@ -196,7 +152,56 @@ public class MirrorTableOverviewBoardService extends AbstractStatisticBoardServi
         "ascending".equalsIgnoreCase(request.sortOrder()) ? "ascending" : "descending");
   }
 
-  private List<Map<String, Object>> querySummaryRows(String keyword, int limit) {
+  private StatisticBoardDefinition buildDefinition(List<StatisticFilterOption> tableOptions) {
+    return new StatisticBoardDefinition(
+        BOARD_KEY,
+        "GitLab 镜像表基础统计",
+        "基于已同步到本地的镜像记录，对各张 GitLab 源表的记录规模和同步覆盖情况进行汇总展示。",
+        "查询与操作",
+        "按真实镜像表名筛选当前统计范围。本页只使用镜像表中的标准字段，不引入任何额外业务规则。",
+        List.of(
+            new StatisticFilterField(
+                "tableName",
+                "镜像表",
+                "select",
+                "",
+                "",
+                260,
+                tableOptions)),
+        List.of(
+            new StatisticColumnGroup(
+                "scale",
+                "记录规模",
+                List.of(new StatisticColumnLeaf("totalRecords", "总记录数", true, "count"))),
+            new StatisticColumnGroup(
+                "sourceTime",
+                "源更新时间",
+                List.of(
+                    new StatisticColumnLeaf("withSourceUpdate", "有源更新时间", true, "count"),
+                    new StatisticColumnLeaf("withoutSourceUpdate", "缺少源更新时间", true, "count"))),
+            new StatisticColumnGroup(
+                "syncStatus",
+                "同步时效",
+                List.of(
+                    new StatisticColumnLeaf("syncedIn24h", "24 小时内同步", true, "count"),
+                    new StatisticColumnLeaf("staleSync", "24 小时前同步", true, "count")))),
+        DETAIL_COLUMNS,
+        10,
+        "当前筛选条件下没有可展示的镜像统计结果。");
+  }
+
+  private List<StatisticFilterOption> queryTableOptions() {
+    return jdbcTemplate.query(
+        """
+        select table_name
+        from gitlab_mirror_records
+        group by table_name
+        order by count(*) desc, table_name asc
+        """,
+        (rs, rowNum) -> new StatisticFilterOption(rs.getString("table_name"), rs.getString("table_name")));
+  }
+
+  private List<Map<String, Object>> querySummaryRows(String tableName) {
     StringBuilder sql =
         new StringBuilder(
             """
@@ -211,17 +216,16 @@ public class MirrorTableOverviewBoardService extends AbstractStatisticBoardServi
         where 1 = 1
         """);
     List<Object> args = new ArrayList<>();
-    if (keyword != null) {
-      sql.append(" and table_name ilike ? ");
-      args.add("%" + keyword + "%");
+    if (tableName != null) {
+      sql.append(" and table_name = ? ");
+      args.add(tableName);
     }
     sql.append(
         """
          group by table_name
          order by count(*) desc, table_name asc
-         limit ?
         """);
-    args.add(limit);
+
     return jdbcTemplate.query(
         sql.toString(),
         args.toArray(),
@@ -243,15 +247,14 @@ public class MirrorTableOverviewBoardService extends AbstractStatisticBoardServi
         tableName,
         tableName,
         List.of(
-            buildCell(tableName, "totalRecords", "总记录数", row.get("totalRecords")),
-            buildCell(tableName, "withSourceUpdate", "有源更新时间", row.get("withSourceUpdate")),
-            buildCell(tableName, "withoutSourceUpdate", "缺少源更新时间", row.get("withoutSourceUpdate")),
-            buildCell(tableName, "syncedIn24h", "24 小时内同步", row.get("syncedIn24h")),
-            buildCell(tableName, "staleSync", "24 小时前同步", row.get("staleSync"))));
+            buildCell(tableName, "totalRecords", row.get("totalRecords")),
+            buildCell(tableName, "withSourceUpdate", row.get("withSourceUpdate")),
+            buildCell(tableName, "withoutSourceUpdate", row.get("withoutSourceUpdate")),
+            buildCell(tableName, "syncedIn24h", row.get("syncedIn24h")),
+            buildCell(tableName, "staleSync", row.get("staleSync"))));
   }
 
-  private StatisticCellData buildCell(
-      String tableName, String columnKey, String columnLabel, Object value) {
+  private StatisticCellData buildCell(String tableName, String columnKey, Object value) {
     long numericValue = value == null ? 0L : ((Number) value).longValue();
     return new StatisticCellData(
         columnKey,
@@ -259,10 +262,10 @@ public class MirrorTableOverviewBoardService extends AbstractStatisticBoardServi
         String.valueOf(numericValue),
         true,
         DETAIL_VIEW_KEY,
-        Map.of("tableName", tableName, "columnKey", columnKey, "columnLabel", columnLabel));
+        Map.of("tableName", tableName, "columnKey", columnKey));
   }
 
-  private void appendColumnFilter(StringBuilder where, List<Object> args, String columnKey) {
+  private void appendColumnFilter(StringBuilder where, String columnKey) {
     switch (columnKey) {
       case "totalRecords" -> {
       }
@@ -293,14 +296,5 @@ public class MirrorTableOverviewBoardService extends AbstractStatisticBoardServi
     }
     String trimmed = value.trim();
     return trimmed.isEmpty() ? null : trimmed;
-  }
-
-  private int parsePositiveInt(String value, int defaultValue) {
-    try {
-      int parsed = Integer.parseInt(value);
-      return parsed > 0 ? parsed : defaultValue;
-    } catch (Exception ignored) {
-      return defaultValue;
-    }
   }
 }
