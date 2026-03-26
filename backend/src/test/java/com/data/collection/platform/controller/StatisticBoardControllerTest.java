@@ -32,6 +32,19 @@ class StatisticBoardControllerTest {
   }
 
   @Test
+  void shouldFilterBoardBySelectedTableName() {
+    StatisticBoardResponse initial = controller.getBoard("mirror-table-overview", Map.of()).getData();
+    String selectedTable = initial.definition().filters().get(0).options().get(0).value();
+
+    StatisticBoardResponse filtered =
+        controller.getBoard("mirror-table-overview", Map.of("tableName", selectedTable)).getData();
+
+    assertThat(filtered.rows()).hasSize(1);
+    assertThat(filtered.rows().get(0).rowKey()).isEqualTo(selectedTable);
+    assertThat(filtered.appliedFilters()).containsEntry("tableName", selectedTable);
+  }
+
+  @Test
   void shouldLoadDetailsForDrilldownCell() {
     StatisticBoardResponse board = controller.getBoard("mirror-table-overview", Map.of()).getData();
     assertThat(board.rows()).isNotEmpty();

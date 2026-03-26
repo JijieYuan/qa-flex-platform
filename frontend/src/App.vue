@@ -495,7 +495,7 @@ onBeforeUnmount(() => {
       </aside>
 
       <main class="shell-content">
-        <section class="content-head">
+        <section v-if="!showingStatisticBoard" class="content-head">
           <div>
             <div class="content-title-row">
               <el-button
