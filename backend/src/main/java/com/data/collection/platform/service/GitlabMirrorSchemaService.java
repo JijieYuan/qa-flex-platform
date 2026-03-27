@@ -96,6 +96,29 @@ public class GitlabMirrorSchemaService {
         updatedRegistry);
   }
 
+  public PreparedMirrorTable getPreparedMirrorTableForSync(GitlabSyncConfig config, TableWhitelistOption option) {
+    GitlabMirrorTableRegistry registry = findRegistry(config.getId(), option.tableName());
+    if (registry == null || !Boolean.TRUE.equals(registry.getInitialized())) {
+      throw new BizException("镜像结构尚未初始化，请先执行“初始化镜像结构”");
+    }
+    SourceTableSchema cachedSchema = buildSchemaFromRegistry(registry);
+    return new PreparedMirrorTable(cachedSchema, registry.getMirrorTableName(), true, registry);
+  }
+
+  public void ensureReadyForSync(GitlabSyncConfig config, List<TableWhitelistOption> options) {
+    List<String> missingTables = options.stream()
+        .filter(option -> {
+          GitlabMirrorTableRegistry registry = findRegistry(config.getId(), option.tableName());
+          return registry == null || !Boolean.TRUE.equals(registry.getInitialized());
+        })
+        .map(TableWhitelistOption::tableName)
+        .limit(5)
+        .toList();
+    if (!missingTables.isEmpty()) {
+      throw new BizException("镜像结构尚未初始化，请先执行“初始化镜像结构”。未初始化表示例：" + String.join(", ", missingTables));
+    }
+  }
+
   public void markTableSyncing(Long configId, String sourceTableName) {
     updateSyncStatus(configId, sourceTableName, "SYNCING", null);
   }

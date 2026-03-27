@@ -178,6 +178,7 @@ const loading = ref(false);
 const saving = ref(false);
 const syncing = ref(false);
 const cancelling = ref(false);
+const initializingStructures = ref(false);
 const status = ref<MirrorStatusResponse | null>(null);
 const refreshTimer = ref<number | null>(null);
 
@@ -386,6 +387,20 @@ async function startFullSync() {
     ElMessage.error((error as Error).message);
   } finally {
     syncing.value = false;
+  }
+}
+
+async function initializeStructures() {
+  initializingStructures.value = true;
+  try {
+    await saveConfig(false);
+    const result = await api.initializeStructures();
+    ElMessage.success(`镜像结构初始化完成：共 ${result.totalTables} 张表，更新 ${result.schemaChanged} 张，复用 ${result.reused} 张`);
+    await loadStatus(false);
+  } catch (error) {
+    ElMessage.error((error as Error).message);
+  } finally {
+    initializingStructures.value = false;
   }
 }
 
@@ -712,6 +727,7 @@ onBeforeUnmount(() => {
                 <el-space wrap>
                   <el-button type="primary" :loading="saving" @click="saveConfig()">保存配置</el-button>
                   <el-button :icon="Tools" @click="testConnection">测试连接</el-button>
+                  <el-button :loading="initializingStructures" @click="initializeStructures">初始化镜像结构</el-button>
                   <el-button type="success" :loading="syncing" :disabled="!syncEnabled" @click="startFullSync">首次全量同步</el-button>
                   <el-button :loading="syncing" :disabled="!syncEnabled" @click="startIncrementalSync">立即增量同步</el-button>
                   <el-button type="danger" plain :loading="cancelling" :disabled="!canCancel" @click="cancelSyncTask">

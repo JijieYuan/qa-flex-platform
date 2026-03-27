@@ -136,6 +136,16 @@ public class GitlabSyncController {
     return ApiResponse.success(submissionMessage(result, SyncType.FULL), buildSubmissionResponse(result));
   }
 
+  @PostMapping("/initialize-structures")
+  public ApiResponse<Map<String, Object>> initializeStructures() {
+    try (GitlabSyncLogContext.Scope context = GitlabSyncLogContext.openConfig(configService.getConfig(), "INITIALIZE_STRUCTURES");
+         GitlabSyncLogContext.Scope action = GitlabSyncLogContext.action("Schema_Init_Request")) {
+      log.info("Manual mirror structure initialization requested");
+    }
+    Map<String, Object> result = syncService.initializeMirrorStructures();
+    return ApiResponse.success("镜像结构初始化完成", result);
+  }
+
   @PostMapping("/incremental-sync")
   public ApiResponse<Map<String, Object>> incrementalSync() {
     try (GitlabSyncLogContext.Scope context =

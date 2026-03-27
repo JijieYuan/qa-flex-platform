@@ -299,6 +299,14 @@ export const api = {
       method: 'POST',
     });
   },
+  initializeStructures() {
+    return request<{ totalTables: number; schemaChanged: number; reused: number }>(
+      '/api/gitlab-sync/initialize-structures',
+      {
+        method: 'POST',
+      },
+    );
+  },
   startIncrementalSync() {
     return request<SyncSubmissionResponse>('/api/gitlab-sync/incremental-sync', {
       method: 'POST',
