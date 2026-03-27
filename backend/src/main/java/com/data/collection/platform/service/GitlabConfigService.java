@@ -90,9 +90,10 @@ public class GitlabConfigService {
 
   private GitlabSyncConfig normalize(GitlabSyncConfig config) {
     GitlabSyncConfig normalized = new GitlabSyncConfig();
+    boolean syncEnabled = config.isAutoSyncEnabled() || config.isEnabled();
     normalized.setName(config.getName());
-    normalized.setEnabled(config.isEnabled());
-    normalized.setAutoSyncEnabled(config.isAutoSyncEnabled());
+    normalized.setEnabled(syncEnabled);
+    normalized.setAutoSyncEnabled(syncEnabled);
     normalized.setSourceMode(config.getSourceMode() == null ? SourceMode.DOCKER : config.getSourceMode());
     normalized.setWhitelistMode(config.getWhitelistMode() == null ? WhitelistMode.RECOMMENDED : config.getWhitelistMode());
     normalized.setWhitelistTables(config.getWhitelistTables() == null ? List.of() : config.getWhitelistTables());

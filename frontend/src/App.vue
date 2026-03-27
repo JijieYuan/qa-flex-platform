@@ -198,6 +198,7 @@ const showingStatisticBoard = computed(() => activePageKey.value === 'quality-bo
 const whitelistOptions = computed(() => status.value?.whitelistOptions ?? []);
 const recommendedCount = computed(() => whitelistOptions.value.filter((item) => item.recommended).length);
 const isDockerMode = computed(() => form.value.sourceMode === 'DOCKER');
+const syncEnabled = computed(() => form.value.autoSyncEnabled);
 const progress = computed<SyncProgress | null>(() => status.value?.progress ?? null);
 const currentTask = computed<GitlabSyncTask | null>(() => status.value?.currentTask ?? null);
 const recentLogs = computed(() => status.value?.logs ?? []);
@@ -282,6 +283,8 @@ async function loadStatus(showError = true) {
     form.value = {
       ...data.config,
       name: data.config.name || 'GitLab 默认数据源',
+      enabled: data.config.autoSyncEnabled ?? data.config.enabled ?? true,
+      autoSyncEnabled: data.config.autoSyncEnabled ?? data.config.enabled ?? true,
       sourceMode: data.config.sourceMode ?? 'DOCKER',
       whitelistTables: data.config.whitelistTables ?? [],
       dockerContainerName: data.config.dockerContainerName ?? 'gitlab-data-web-1',
@@ -338,6 +341,7 @@ function switchPage(pageKey: PageKey) {
 async function saveConfig(showSuccess = true) {
   saving.value = true;
   try {
+    form.value.enabled = form.value.autoSyncEnabled;
     await api.saveConfig(form.value);
     if (showSuccess) {
       ElMessage.success('配置已保存');
@@ -644,9 +648,6 @@ onBeforeUnmount(() => {
 
                 <el-divider>同步策略</el-divider>
 
-                <el-form-item label="启用数据源">
-                  <el-switch v-model="form.enabled" />
-                </el-form-item>
                 <el-form-item label="自动同步">
                   <el-switch v-model="form.autoSyncEnabled" />
                 </el-form-item>
@@ -686,8 +687,8 @@ onBeforeUnmount(() => {
                 <el-space wrap>
                   <el-button type="primary" :loading="saving" @click="saveConfig()">保存配置</el-button>
                   <el-button :icon="Tools" @click="testConnection">测试连接</el-button>
-                  <el-button type="success" :loading="syncing" :disabled="canCancel" @click="startFullSync">首次全量同步</el-button>
-                  <el-button :loading="syncing" :disabled="canCancel" @click="startIncrementalSync">立即增量同步</el-button>
+                  <el-button type="success" :loading="syncing" :disabled="canCancel || !syncEnabled" @click="startFullSync">首次全量同步</el-button>
+                  <el-button :loading="syncing" :disabled="canCancel || !syncEnabled" @click="startIncrementalSync">立即增量同步</el-button>
                   <el-button type="danger" plain :loading="cancelling" :disabled="!canCancel" @click="cancelSyncTask">
                     中止导入
                   </el-button>

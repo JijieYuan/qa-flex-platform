@@ -86,9 +86,10 @@ public class GitlabSyncController {
   @PutMapping("/config")
   public ApiResponse<GitlabSyncConfig> saveConfig(@RequestBody SaveConfigRequest request) {
     GitlabSyncConfig config = new GitlabSyncConfig();
+    boolean syncEnabled = request.autoSyncEnabled() || request.enabled();
     config.setName(request.name());
-    config.setEnabled(request.enabled());
-    config.setAutoSyncEnabled(request.autoSyncEnabled());
+    config.setEnabled(syncEnabled);
+    config.setAutoSyncEnabled(syncEnabled);
     config.setSourceMode(request.sourceMode());
     config.setWhitelistMode(request.whitelistMode());
     config.setWhitelistTables(request.whitelistTables());
@@ -105,8 +106,8 @@ public class GitlabSyncController {
          GitlabSyncLogContext.Scope action = GitlabSyncLogContext.action("Config_Save")) {
       log.info(
           "Saving GitLab sync config, enabled={}, autoSyncEnabled={}, sourceMode={}, whitelistMode={}",
-          request.enabled(),
-          request.autoSyncEnabled(),
+          syncEnabled,
+          syncEnabled,
           request.sourceMode(),
           request.whitelistMode());
     }
