@@ -43,7 +43,9 @@ public interface MirrorTableOverviewMapper {
             count(updated_at_source) as "withSourceUpdate",
             count(*) - count(updated_at_source) as "withoutSourceUpdate",
             count(*) filter (where synced_at >= current_timestamp - interval '24 hours') as "syncedIn24h",
-            count(*) filter (where synced_at < current_timestamp - interval '24 hours') as "staleSync"
+            count(*) filter (where synced_at < current_timestamp - interval '24 hours') as "staleSync",
+            max(synced_at) as "lastSyncedAt",
+            max(updated_at_source) as "lastSourceUpdatedAt"
           from gitlab_mirror_records
           where 1 = 1
           """);

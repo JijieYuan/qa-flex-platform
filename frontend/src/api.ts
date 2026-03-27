@@ -66,14 +66,45 @@ export interface StatisticFilterOption {
   value: string;
 }
 
+export type StatisticFilterFieldType = 'text' | 'select' | 'number' | 'datetime';
+export type StatisticFilterOperator =
+  | 'eq'
+  | 'ne'
+  | 'contains'
+  | 'notContains'
+  | 'gt'
+  | 'gte'
+  | 'lt'
+  | 'lte'
+  | 'between'
+  | 'year'
+  | 'month'
+  | 'day'
+  | 'at'
+  | 'before'
+  | 'after';
+
 export interface StatisticFilterField {
   key: string;
   label: string;
-  type: 'text' | 'select';
+  type: StatisticFilterFieldType;
   placeholder?: string | null;
   defaultValue?: string | null;
   width?: number | null;
+  operators: StatisticFilterOperator[];
   options: StatisticFilterOption[];
+}
+
+export interface StatisticFilterCondition {
+  fieldKey: string;
+  operator: StatisticFilterOperator;
+  value: string;
+  secondaryValue?: string | null;
+}
+
+export interface StatisticFilterGroup {
+  logic: 'AND' | 'OR';
+  conditions: StatisticFilterCondition[];
 }
 
 export interface StatisticColumnLeaf {
@@ -136,6 +167,7 @@ export interface StatisticRowData {
 export interface StatisticBoardResponse {
   definition: StatisticBoardDefinition;
   appliedFilters: Record<string, string>;
+  appliedFilterGroup?: StatisticFilterGroup | null;
   rows: StatisticRowData[];
   meta: StatisticBoardMeta;
 }
@@ -204,9 +236,12 @@ export const api = {
       method: 'POST',
     });
   },
-  getStatisticBoard(boardKey: string, filters?: Record<string, string>) {
-    const params = new URLSearchParams(filters ?? {});
-    const queryString = params.toString();
+  getStatisticBoard(boardKey: string, params?: { filters?: Record<string, string>; filterGroup?: StatisticFilterGroup | null }) {
+    const searchParams = new URLSearchParams(params?.filters ?? {});
+    if (params?.filterGroup && params.filterGroup.conditions.length) {
+      searchParams.set('filterGroup', JSON.stringify(params.filterGroup));
+    }
+    const queryString = searchParams.toString();
     return request<StatisticBoardResponse>(
       `/api/statistic-boards/${boardKey}${queryString ? `?${queryString}` : ''}`,
     );
@@ -221,6 +256,7 @@ export const api = {
       sortField?: string;
       sortOrder?: string;
       filters?: Record<string, string>;
+      filterGroup?: StatisticFilterGroup | null;
     },
   ) {
     const query = new URLSearchParams({
@@ -232,11 +268,17 @@ export const api = {
       ...(params.sortOrder ? { sortOrder: params.sortOrder } : {}),
       ...(params.filters ?? {}),
     });
+    if (params.filterGroup && params.filterGroup.conditions.length) {
+      query.set('filterGroup', JSON.stringify(params.filterGroup));
+    }
     return request<StatisticDetailResponse>(`/api/statistic-boards/${boardKey}/details?${query.toString()}`);
   },
-  async exportStatisticBoard(boardKey: string, filters?: Record<string, string>) {
-    const params = new URLSearchParams(filters ?? {});
-    const queryString = params.toString();
+  async exportStatisticBoard(boardKey: string, params?: { filters?: Record<string, string>; filterGroup?: StatisticFilterGroup | null }) {
+    const searchParams = new URLSearchParams(params?.filters ?? {});
+    if (params?.filterGroup && params.filterGroup.conditions.length) {
+      searchParams.set('filterGroup', JSON.stringify(params.filterGroup));
+    }
+    const queryString = searchParams.toString();
     const response = await fetch(`/api/statistic-boards/${boardKey}/export${queryString ? `?${queryString}` : ''}`);
     if (!response.ok) {
       const text = await response.text();

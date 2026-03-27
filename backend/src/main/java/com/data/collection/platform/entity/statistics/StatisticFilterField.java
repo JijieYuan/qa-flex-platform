@@ -9,5 +9,6 @@ public record StatisticFilterField(
     String placeholder,
     String defaultValue,
     Integer width,
+    List<String> operators,
     List<StatisticFilterOption> options) {
 }

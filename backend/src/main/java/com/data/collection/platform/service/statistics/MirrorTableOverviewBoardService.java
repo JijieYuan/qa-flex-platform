@@ -1,5 +1,6 @@
 package com.data.collection.platform.service.statistics;
 
+import com.data.collection.platform.common.JsonUtils;
 import com.data.collection.platform.common.exception.BizException;
 import com.data.collection.platform.entity.statistics.StatisticBoardDefinition;
 import com.data.collection.platform.entity.statistics.StatisticBoardMeta;
@@ -10,20 +11,30 @@ import com.data.collection.platform.entity.statistics.StatisticColumnLeaf;
 import com.data.collection.platform.entity.statistics.StatisticDetailColumn;
 import com.data.collection.platform.entity.statistics.StatisticDetailRequest;
 import com.data.collection.platform.entity.statistics.StatisticDetailResponse;
+import com.data.collection.platform.entity.statistics.StatisticFilterCondition;
 import com.data.collection.platform.entity.statistics.StatisticFilterField;
+import com.data.collection.platform.entity.statistics.StatisticFilterGroup;
 import com.data.collection.platform.entity.statistics.StatisticFilterOption;
 import com.data.collection.platform.entity.statistics.StatisticRowData;
 import com.data.collection.platform.mapper.MirrorTableOverviewMapper;
+import java.sql.Timestamp;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.YearMonth;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import org.springframework.stereotype.Service;
 
 @Service
 public class MirrorTableOverviewBoardService extends AbstractStatisticBoardService {
   private static final String BOARD_KEY = "mirror-table-overview";
   private static final String DETAIL_VIEW_KEY = "mirror-record-list";
+  private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
   private static final List<StatisticDetailColumn> DETAIL_COLUMNS =
       List.of(
           new StatisticDetailColumn("id", "镜像 ID", 96, null, true),
@@ -42,7 +53,10 @@ public class MirrorTableOverviewBoardService extends AbstractStatisticBoardServi
 
   private final MirrorTableOverviewMapper overviewMapper;
 
-  public MirrorTableOverviewBoardService(MirrorTableOverviewMapper overviewMapper) {
+  public MirrorTableOverviewBoardService(
+      MirrorTableOverviewMapper overviewMapper,
+      JsonUtils jsonUtils) {
+    super(jsonUtils);
     this.overviewMapper = overviewMapper;
   }
 
@@ -53,16 +67,17 @@ public class MirrorTableOverviewBoardService extends AbstractStatisticBoardServi
 
   @Override
   protected StatisticBoardDefinition buildDefinition() {
-    return buildDefinition(List.of());
+    return buildDefinition(queryTableOptions());
   }
 
   @Override
-  protected StatisticBoardResponse doLoadBoard(Map<String, String> filters) {
+  protected StatisticBoardResponse doLoadBoard(Map<String, String> filters, StatisticFilterGroup filterGroup) {
     long startedAt = System.currentTimeMillis();
     List<StatisticFilterOption> tableOptions = queryTableOptions();
-    String tableName = trimToNull(filters.get("tableName"));
-    List<Map<String, Object>> rows = overviewMapper.selectSummaryRows(tableName);
-    List<StatisticRowData> boardRows = rows.stream().map(this::toStatisticRow).toList();
+    String tableName = extractTableNameFilter(filterGroup);
+    List<Map<String, Object>> summaryRows = overviewMapper.selectSummaryRows(tableName);
+    List<Map<String, Object>> filteredRows = filterSummaryRows(summaryRows, filterGroup);
+    List<StatisticRowData> boardRows = filteredRows.stream().map(this::toStatisticRow).toList();
 
     StatisticBoardDefinition definition = buildDefinition(tableOptions);
     Map<String, String> appliedFilters = new LinkedHashMap<>();
@@ -82,11 +97,11 @@ public class MirrorTableOverviewBoardService extends AbstractStatisticBoardServi
             boardRows.size(),
             columnCount,
             drilldownColumnCount);
-    return new StatisticBoardResponse(definition, appliedFilters, boardRows, meta);
+    return new StatisticBoardResponse(definition, appliedFilters, filterGroup, boardRows, meta);
   }
 
   @Override
-  protected StatisticDetailResponse doLoadDetail(StatisticDetailRequest request) {
+  protected StatisticDetailResponse doLoadDetail(StatisticDetailRequest request, StatisticFilterGroup filterGroup) {
     String tableName = trimToNull(request.rowKey());
     if (tableName == null) {
       throw new BizException("明细查询缺少行维度标识");
@@ -101,6 +116,10 @@ public class MirrorTableOverviewBoardService extends AbstractStatisticBoardServi
     int size = request.size() <= 0 ? 10 : request.size();
     String sortField = SORT_FIELD_MAPPING.getOrDefault(request.sortField(), "synced_at");
     String sortOrder = "ascending".equalsIgnoreCase(request.sortOrder()) ? "asc" : "desc";
+
+    if (!isRowVisible(tableName, filterGroup)) {
+      return emptyDetail(tableName, columnKey, page, size, request);
+    }
 
     long total = overviewMapper.countDetails(tableName, columnKey);
     List<Map<String, Object>> records =
@@ -122,18 +141,18 @@ public class MirrorTableOverviewBoardService extends AbstractStatisticBoardServi
     return new StatisticBoardDefinition(
         BOARD_KEY,
         "GitLab 镜像表基础统计",
-        "基于已同步到本地的镜像记录，对各张 GitLab 源表的记录规模和同步覆盖情况进行汇总展示。",
+        "基于已同步到本地的镜像记录，对各类 GitLab 源表的记录规模和同步覆盖情况进行汇总展示。",
         "查询与操作",
-        "按真实镜像表名筛选当前统计范围。本页只使用镜像表中的标准字段，不引入任何额外业务规则。",
+        "按真实镜像字段配置筛选条件。当前页面只使用镜像表中的标准字段，不引入额外业务规则。",
         List.of(
-            new StatisticFilterField(
-                "tableName",
-                "镜像表",
-                "select",
-                "",
-                "",
-                260,
-                tableOptions)),
+            new StatisticFilterField("tableName", "统计对象", "select", "", "", 220, List.of("eq", "ne"), tableOptions),
+            new StatisticFilterField("totalRecords", "总记录数", "number", "", "", 160, List.of("eq", "gt", "gte", "lt", "lte", "between"), List.of()),
+            new StatisticFilterField("withSourceUpdate", "有源更新时间", "number", "", "", 170, List.of("eq", "gt", "gte", "lt", "lte", "between"), List.of()),
+            new StatisticFilterField("withoutSourceUpdate", "缺少源更新时间", "number", "", "", 180, List.of("eq", "gt", "gte", "lt", "lte", "between"), List.of()),
+            new StatisticFilterField("syncedIn24h", "24小时内同步", "number", "", "", 170, List.of("eq", "gt", "gte", "lt", "lte", "between"), List.of()),
+            new StatisticFilterField("staleSync", "24小时前同步", "number", "", "", 170, List.of("eq", "gt", "gte", "lt", "lte", "between"), List.of()),
+            new StatisticFilterField("lastSyncedAt", "最近同步时间", "datetime", "", "", 220, List.of("year", "month", "day", "at", "before", "after", "between"), List.of()),
+            new StatisticFilterField("lastSourceUpdatedAt", "最近源更新时间", "datetime", "", "", 220, List.of("year", "month", "day", "at", "before", "after", "between"), List.of())),
         List.of(
             new StatisticColumnGroup(
                 "scale",
@@ -149,8 +168,8 @@ public class MirrorTableOverviewBoardService extends AbstractStatisticBoardServi
                 "syncStatus",
                 "同步时效",
                 List.of(
-                    new StatisticColumnLeaf("syncedIn24h", "24 小时内同步", true, "count"),
-                    new StatisticColumnLeaf("staleSync", "24 小时前同步", true, "count")))),
+                    new StatisticColumnLeaf("syncedIn24h", "24小时内同步", true, "count"),
+                    new StatisticColumnLeaf("staleSync", "24小时前同步", true, "count")))),
         DETAIL_COLUMNS,
         10,
         "当前筛选条件下没有可展示的镜像统计结果。");
@@ -160,6 +179,122 @@ public class MirrorTableOverviewBoardService extends AbstractStatisticBoardServi
     return overviewMapper.selectTableNames().stream()
         .map(tableName -> new StatisticFilterOption(tableName, tableName))
         .toList();
+  }
+
+  private List<Map<String, Object>> filterSummaryRows(List<Map<String, Object>> rows, StatisticFilterGroup filterGroup) {
+    if (filterGroup == null || filterGroup.conditions() == null || filterGroup.conditions().isEmpty()) {
+      return rows;
+    }
+    return rows.stream().filter(row -> matchesRow(row, filterGroup)).toList();
+  }
+
+  private boolean matchesRow(Map<String, Object> row, StatisticFilterGroup filterGroup) {
+    boolean isOr = "OR".equalsIgnoreCase(filterGroup.logic());
+    boolean matched = isOr ? false : true;
+    for (StatisticFilterCondition condition : filterGroup.conditions()) {
+      boolean result = matchesCondition(row, condition);
+      if (isOr) {
+        matched = matched || result;
+        if (matched) {
+          return true;
+        }
+      } else {
+        matched = matched && result;
+        if (!matched) {
+          return false;
+        }
+      }
+    }
+    return matched;
+  }
+
+  private boolean matchesCondition(Map<String, Object> row, StatisticFilterCondition condition) {
+    return switch (condition.fieldKey()) {
+      case "tableName" -> matchesText(String.valueOf(row.get("tableName")), condition);
+      case "totalRecords", "withSourceUpdate", "withoutSourceUpdate", "syncedIn24h", "staleSync" ->
+          matchesNumber(asLong(row.get(condition.fieldKey())), condition);
+      case "lastSyncedAt", "lastSourceUpdatedAt" ->
+          matchesDateTime(asLocalDateTime(row.get(condition.fieldKey())), condition);
+      default -> true;
+    };
+  }
+
+  private boolean matchesText(String source, StatisticFilterCondition condition) {
+    String left = source == null ? "" : source;
+    String right = Objects.requireNonNullElse(condition.value(), "");
+    return switch (condition.operator()) {
+      case "eq" -> left.equals(right);
+      case "ne" -> !left.equals(right);
+      case "contains" -> left.contains(right);
+      case "notContains" -> !left.contains(right);
+      default -> true;
+    };
+  }
+
+  private boolean matchesNumber(long source, StatisticFilterCondition condition) {
+    long target = Long.parseLong(condition.value());
+    return switch (condition.operator()) {
+      case "eq" -> source == target;
+      case "gt" -> source > target;
+      case "gte" -> source >= target;
+      case "lt" -> source < target;
+      case "lte" -> source <= target;
+      case "between" -> source >= target && source <= Long.parseLong(condition.secondaryValue());
+      default -> true;
+    };
+  }
+
+  private boolean matchesDateTime(LocalDateTime source, StatisticFilterCondition condition) {
+    if (source == null) {
+      return false;
+    }
+    return switch (condition.operator()) {
+      case "year" -> source.getYear() == Integer.parseInt(condition.value());
+      case "month" -> YearMonth.from(source).equals(YearMonth.parse(condition.value()));
+      case "day" -> source.toLocalDate().equals(LocalDate.parse(condition.value()));
+      case "at" -> source.equals(parseDateTime(condition.value()));
+      case "before" -> source.isBefore(parseDateTime(condition.value()));
+      case "after" -> source.isAfter(parseDateTime(condition.value()));
+      case "between" -> {
+        LocalDateTime start = parseDateTime(condition.value());
+        LocalDateTime end = parseDateTime(condition.secondaryValue());
+        yield (source.isEqual(start) || source.isAfter(start)) && (source.isEqual(end) || source.isBefore(end));
+      }
+      default -> true;
+    };
+  }
+
+  private long asLong(Object value) {
+    return value instanceof Number number ? number.longValue() : 0L;
+  }
+
+  private LocalDateTime asLocalDateTime(Object value) {
+    if (value == null) {
+      return null;
+    }
+    if (value instanceof LocalDateTime dateTime) {
+      return dateTime;
+    }
+    if (value instanceof Timestamp timestamp) {
+      return timestamp.toLocalDateTime();
+    }
+    if (value instanceof OffsetDateTime offsetDateTime) {
+      return offsetDateTime.toLocalDateTime();
+    }
+    String raw = String.valueOf(value).replace('T', ' ');
+    try {
+      return LocalDateTime.parse(raw.substring(0, 19), DATE_TIME_FORMATTER);
+    } catch (RuntimeException ex) {
+      throw new BizException("无法解析时间值: " + value);
+    }
+  }
+
+  private LocalDateTime parseDateTime(String value) {
+    try {
+      return LocalDateTime.parse(value, DATE_TIME_FORMATTER);
+    } catch (DateTimeParseException ex) {
+      throw new BizException("时间筛选值格式不正确: " + value);
+    }
   }
 
   private StatisticRowData toStatisticRow(Map<String, Object> row) {
@@ -186,6 +321,42 @@ public class MirrorTableOverviewBoardService extends AbstractStatisticBoardServi
         Map.of("tableName", tableName, "columnKey", columnKey));
   }
 
+  private String extractTableNameFilter(StatisticFilterGroup filterGroup) {
+    if (filterGroup == null || filterGroup.conditions() == null) {
+      return null;
+    }
+    return filterGroup.conditions().stream()
+        .filter(condition -> "tableName".equals(condition.fieldKey()) && "eq".equals(condition.operator()))
+        .map(StatisticFilterCondition::value)
+        .filter(Objects::nonNull)
+        .findFirst()
+        .orElse(null);
+  }
+
+  private boolean isRowVisible(String rowKey, StatisticFilterGroup filterGroup) {
+    String tableName = extractTableNameFilter(filterGroup);
+    return filterSummaryRows(overviewMapper.selectSummaryRows(tableName), filterGroup).stream()
+        .anyMatch(row -> rowKey.equals(String.valueOf(row.get("tableName"))));
+  }
+
+  private StatisticDetailResponse emptyDetail(
+      String tableName,
+      String columnKey,
+      int page,
+      int size,
+      StatisticDetailRequest request) {
+    return new StatisticDetailResponse(
+        buildDetailTitle(tableName, columnKey),
+        "当前筛选条件下没有可展示的明细记录。",
+        DETAIL_COLUMNS,
+        List.of(),
+        0,
+        page,
+        size,
+        request.sortField() == null ? "syncedAt" : request.sortField(),
+        "ascending".equalsIgnoreCase(request.sortOrder()) ? "ascending" : "descending");
+  }
+
   private String buildDetailTitle(String tableName, String columnKey) {
     return tableName
         + " / "
@@ -193,17 +364,9 @@ public class MirrorTableOverviewBoardService extends AbstractStatisticBoardServi
           case "totalRecords" -> "总记录数";
           case "withSourceUpdate" -> "有源更新时间";
           case "withoutSourceUpdate" -> "缺少源更新时间";
-          case "syncedIn24h" -> "24 小时内同步";
-          case "staleSync" -> "24 小时前同步";
+          case "syncedIn24h" -> "24小时内同步";
+          case "staleSync" -> "24小时前同步";
           default -> columnKey;
         };
-  }
-
-  private String trimToNull(String value) {
-    if (value == null) {
-      return null;
-    }
-    String trimmed = value.trim();
-    return trimmed.isEmpty() ? null : trimmed;
   }
 }

@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { ArrowDown, ArrowRight, Download, RefreshRight, Search, Sort } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
@@ -11,6 +11,7 @@ import {
   type StatisticDetailColumn,
   type StatisticDetailResponse,
   type StatisticFilterField,
+  type StatisticFilterOperator,
   type StatisticRowData,
 } from '../api';
 import {
@@ -25,9 +26,20 @@ import {
   clearSortState,
   nextColumnSortState,
   ROW_LABEL_SORT_KEY,
+  type SortDirection,
   sortDirectionForColumn as resolveSortDirectionForColumn,
   sortRowsFromSource,
 } from './statistic-board-sorting';
+import {
+  createEmptyFilterGroup,
+  createFilterConditionDraft,
+  normalizeFilterDraftGroup,
+  operatorLabel,
+  sanitizeFilterDraftGroup,
+  usesSecondaryValue,
+  type StatisticFilterConditionDraft,
+  type StatisticFilterDraftGroup,
+} from './statistic-board-filters';
 
 const props = withDefaults(
   defineProps<{
@@ -43,7 +55,7 @@ const loading = ref(false);
 const detailLoading = ref(false);
 const board = ref<StatisticBoardResponse | null>(null);
 const errorMessage = ref('');
-const filters = reactive<Record<string, string>>({});
+const filterDraft = reactive<StatisticFilterDraftGroup>(createEmptyFilterGroup());
 const detailVisible = ref(false);
 const activeRow = ref<StatisticRowData | null>(null);
 const activeCell = ref<StatisticCellData | null>(null);
@@ -170,15 +182,9 @@ const firstColumnMinWidth = computed(() => {
 });
 
 function initializeFilters(fields: StatisticFilterField[], appliedFilters?: Record<string, string>) {
-  const activeKeys = new Set(fields.map((field) => field.key));
-  Object.keys(filters).forEach((key) => {
-    if (!activeKeys.has(key)) {
-      delete filters[key];
-    }
-  });
-  for (const field of fields) {
-    filters[field.key] = appliedFilters?.[field.key] ?? field.defaultValue ?? '';
-  }
+  const nextDraft = normalizeFilterDraftGroup(board.value?.appliedFilterGroup, fields);
+  filterDraft.logic = nextDraft.logic;
+  filterDraft.conditions.splice(0, filterDraft.conditions.length, ...nextDraft.conditions);
 }
 
 function applyStoredViewPrefs(response: StatisticBoardResponse) {
@@ -191,18 +197,16 @@ function persistViewPrefs() {
 }
 
 function buildFilterPayload() {
-  return Object.fromEntries(
-    Object.entries(filters)
-      .map(([key, value]) => [key, value?.trim?.() ?? value])
-      .filter(([, value]) => value !== '' && value != null),
-  );
+  return sanitizeFilterDraftGroup(filterDraft);
 }
 
 async function loadBoard(showError = true) {
   loading.value = true;
   errorMessage.value = '';
   try {
-    const response = await api.getStatisticBoard(props.boardKey, buildFilterPayload());
+    const response = await api.getStatisticBoard(props.boardKey, {
+      filterGroup: buildFilterPayload(),
+    });
     board.value = response;
     initializeFilters(response.definition.filters, response.appliedFilters);
     applyStoredViewPrefs(response);
@@ -221,7 +225,9 @@ async function loadBoard(showError = true) {
 
 async function exportBoard() {
   try {
-    const csv = await api.exportStatisticBoard(props.boardKey, buildFilterPayload());
+    const csv = await api.exportStatisticBoard(props.boardKey, {
+      filterGroup: buildFilterPayload(),
+    });
     const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
@@ -238,10 +244,8 @@ async function exportBoard() {
 }
 
 function resetFilters() {
-  if (!board.value) {
-    return;
-  }
-  initializeFilters(board.value.definition.filters);
+  filterDraft.logic = 'AND';
+  filterDraft.conditions.splice(0, filterDraft.conditions.length);
   void loadBoard();
 }
 
@@ -337,7 +341,7 @@ async function loadDetail() {
       size: detailPagination.size,
       sortField: detailPagination.sortField || undefined,
       sortOrder: detailPagination.sortOrder || undefined,
-      filters: buildFilterPayload(),
+      filterGroup: buildFilterPayload(),
     });
   } catch (error) {
     ElMessage.error((error as Error).message);
@@ -398,6 +402,78 @@ function sortStateLabel(direction: SortDirection) {
     return '当前为降序，点击切换为升序';
   }
   return '当前为默认顺序，点击开始排序';
+}
+
+function addFilterCondition() {
+  const field = activeFilterFields.value[0];
+  filterDraft.conditions.push(createFilterConditionDraft(field));
+}
+
+function removeFilterCondition(conditionId: string) {
+  const index = filterDraft.conditions.findIndex((condition) => condition.id === conditionId);
+  if (index >= 0) {
+    filterDraft.conditions.splice(index, 1);
+  }
+}
+
+function fieldForCondition(fieldKey: string) {
+  return activeFilterFields.value.find((field) => field.key === fieldKey) ?? null;
+}
+
+function handleConditionFieldChange(condition: StatisticFilterConditionDraft) {
+  const field = fieldForCondition(condition.fieldKey);
+  condition.operator = (field?.operators?.[0] ?? '') as StatisticFilterOperator | '';
+  condition.value = '';
+  condition.secondaryValue = '';
+}
+
+function operatorOptionsForCondition(condition: StatisticFilterConditionDraft) {
+  return fieldForCondition(condition.fieldKey)?.operators ?? [];
+}
+
+function usesDatePicker(condition: StatisticFilterConditionDraft) {
+  return fieldForCondition(condition.fieldKey)?.type === 'datetime';
+}
+
+function datePickerType(condition: StatisticFilterConditionDraft) {
+  return (
+    {
+      year: 'year',
+      month: 'month',
+      day: 'date',
+      at: 'datetime',
+      before: 'datetime',
+      after: 'datetime',
+      between: 'datetime',
+    } as Record<string, string>
+  )[condition.operator] ?? 'datetime';
+}
+
+function dateValueFormat(condition: StatisticFilterConditionDraft) {
+  return (
+    {
+      year: 'YYYY',
+      month: 'YYYY-MM',
+      day: 'YYYY-MM-DD',
+      at: 'YYYY-MM-DD HH:mm:ss',
+      before: 'YYYY-MM-DD HH:mm:ss',
+      after: 'YYYY-MM-DD HH:mm:ss',
+      between: 'YYYY-MM-DD HH:mm:ss',
+    } as Record<string, string>
+  )[condition.operator] ?? 'YYYY-MM-DD HH:mm:ss';
+}
+
+function isNumericField(condition: StatisticFilterConditionDraft) {
+  return fieldForCondition(condition.fieldKey)?.type === 'number';
+}
+
+function isSelectField(condition: StatisticFilterConditionDraft) {
+  const type = fieldForCondition(condition.fieldKey)?.type;
+  return type === 'select';
+}
+
+function fieldOptions(condition: StatisticFilterConditionDraft) {
+  return fieldForCondition(condition.fieldKey)?.options ?? [];
 }
 
 function onGroupDragStart(groupKey: string) {
@@ -551,37 +627,34 @@ onMounted(async () => {
             <div class="stat-board-heading">
               <div class="stat-board-title">{{ board?.definition.title || '统计表' }}</div>
             </div>
-            <el-form class="stat-toolbar-form" inline>
-              <el-form-item
-                v-for="field in activeFilterFields"
-                :key="field.key"
-                :label="field.label"
-                class="stat-toolbar-item"
-              >
-                <el-select
-                  v-if="field.type === 'select'"
-                  v-model="filters[field.key]"
-                  clearable
-                  filterable
-                  :placeholder="field.placeholder || `请选择${field.label}`"
-                  :style="{ width: `${field.width || 220}px` }"
-                >
-                  <el-option
-                    v-for="option in field.options"
-                    :key="option.value"
-                    :label="option.label"
-                    :value="option.value"
-                  />
-                </el-select>
-                <el-input
-                  v-else
-                  v-model="filters[field.key]"
-                  :placeholder="field.placeholder || ''"
-                  clearable
-                  :style="{ width: `${field.width || 220}px` }"
-                />
-              </el-form-item>
-            </el-form>
+            <div class="stat-filter-builder">
+              <el-segmented
+                v-model="filterDraft.logic"
+                :options="[{ label: '满足全部', value: 'AND' }, { label: '满足任意', value: 'OR' }]"
+                class="stat-filter-logic"
+              />
+              <div v-if="filterDraft.conditions.length" class="stat-filter-list">
+                <div v-for="condition in filterDraft.conditions" :key="condition.id" class="stat-filter-row">
+                  <el-select v-model="condition.fieldKey" class="stat-filter-field" placeholder="字段" @change="handleConditionFieldChange(condition)">
+                    <el-option v-for="field in activeFilterFields" :key="field.key" :label="field.label" :value="field.key" />
+                  </el-select>
+                  <el-select v-model="condition.operator" class="stat-filter-operator" placeholder="关系">
+                    <el-option v-for="operator in operatorOptionsForCondition(condition)" :key="operator" :label="operatorLabel(operator)" :value="operator" />
+                  </el-select>
+                  <el-select v-if="isSelectField(condition)" v-model="condition.value" class="stat-filter-value" placeholder="值" clearable filterable>
+                    <el-option v-for="option in fieldOptions(condition)" :key="option.value" :label="option.label" :value="option.value" />
+                  </el-select>
+                  <el-input-number v-else-if="isNumericField(condition)" v-model="condition.value" class="stat-filter-value" controls-position="right" placeholder="值" />
+                  <el-date-picker v-else-if="usesDatePicker(condition)" v-model="condition.value" class="stat-filter-value" :type="datePickerType(condition)" :value-format="dateValueFormat(condition)" placeholder="时间" />
+                  <el-input v-else v-model="condition.value" class="stat-filter-value" placeholder="值" clearable />
+                  <el-input-number v-if="usesSecondaryValue(condition.operator) && isNumericField(condition)" v-model="condition.secondaryValue" class="stat-filter-value secondary" controls-position="right" placeholder="结束值" />
+                  <el-date-picker v-else-if="usesSecondaryValue(condition.operator) && usesDatePicker(condition)" v-model="condition.secondaryValue" class="stat-filter-value secondary" :type="datePickerType(condition)" :value-format="dateValueFormat(condition)" placeholder="结束时间" />
+                  <el-input v-else-if="usesSecondaryValue(condition.operator)" v-model="condition.secondaryValue" class="stat-filter-value secondary" placeholder="结束值" clearable />
+                  <el-button text type="danger" @click="removeFilterCondition(condition.id)">删除</el-button>
+                </div>
+              </div>
+              <el-button plain @click="addFilterCondition">添加条件</el-button>
+            </div>
           </div>
 
           <div class="stat-board-toolbar-actions" :class="props.uiHooks.toolbarActionsClass">
@@ -826,7 +899,7 @@ onMounted(async () => {
             <el-radio-button value="header">按字段长度</el-radio-button>
             <el-radio-button value="content">按内容长度</el-radio-button>
           </el-radio-group>
-          <div class="view-settings-strategy-tip">首列继续单独压缩处理，纯数字统计列固定宽度，但会随策略在紧凑、标准、宽松之间切换。</div>
+          <div class="view-settings-strategy-tip">首列继续单独压缩处理，纯数字统计列保持固定宽度，但会随策略在紧凑、标准、宽松之间切换。</div>
         </div>
 
         <el-checkbox-group v-model="draftVisibleColumnKeys" class="view-settings-checklist">

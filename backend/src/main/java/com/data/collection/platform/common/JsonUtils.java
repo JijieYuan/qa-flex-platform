@@ -45,4 +45,15 @@ public class JsonUtils {
       throw new IllegalStateException("Failed to parse map json", e);
     }
   }
+
+  public <T> T fromJson(String json, TypeReference<T> typeReference) {
+    if (json == null || json.isBlank()) {
+      return null;
+    }
+    try {
+      return objectMapper.readValue(json, typeReference);
+    } catch (JsonProcessingException e) {
+      throw new IllegalStateException("Failed to parse json", e);
+    }
+  }
 }

@@ -382,25 +382,53 @@ button {
   min-height: 40px;
 }
 
-.stat-toolbar-form {
+.stat-filter-builder {
   display: flex;
   align-items: center;
-  gap: 8px 12px;
+  gap: 10px 12px;
   flex-wrap: wrap;
+  min-height: 40px;
 }
 
-.stat-toolbar-form .el-form-item {
-  margin-right: 0;
-  margin-bottom: 0;
+.stat-filter-logic {
+  flex: 0 0 auto;
 }
 
-.stat-toolbar-form .el-form-item__content {
-  width: 100%;
+.stat-filter-list {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
 }
 
-.stat-toolbar-item .el-form-item__label {
-  padding-right: 8px;
-  color: #53677f;
+.stat-filter-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 14px;
+  background: rgba(37, 99, 235, 0.05);
+  box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.08);
+}
+
+.stat-filter-field,
+.stat-filter-operator {
+  width: 146px;
+}
+
+.stat-filter-value {
+  width: 176px;
+}
+
+.stat-filter-value.secondary {
+  width: 176px;
+}
+
+.stat-filter-row .el-input-number,
+.stat-filter-row .el-date-editor.el-input,
+.stat-filter-row .el-date-editor.el-input__wrapper,
+.stat-filter-row .el-select {
+  max-width: 100%;
 }
 
 .stat-board-toolbar-actions {
