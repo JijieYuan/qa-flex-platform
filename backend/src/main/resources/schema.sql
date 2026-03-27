@@ -94,6 +94,7 @@ create table if not exists sys_table_registry (
     last_sync_time timestamp,
     last_schema_check_time timestamp,
     sync_status varchar(32) not null default 'IDLE',
+    preview_enabled boolean not null default true,
     column_snapshot jsonb not null,
     primary_key_columns text not null,
     updated_at_column varchar(255),
@@ -102,13 +103,6 @@ create table if not exists sys_table_registry (
     unique (config_id, source_table_name),
     unique (config_id, mirror_table_name)
 );
-
-create index if not exists idx_gitlab_mirror_records_table on gitlab_mirror_records(config_id, table_name);
-create index if not exists idx_sys_table_registry_config on sys_table_registry(config_id, source_table_name);
-create index if not exists idx_gitlab_sync_logs_config on gitlab_sync_logs(config_id, started_at desc);
-create index if not exists idx_gitlab_sync_tasks_config on gitlab_sync_tasks(config_id, created_at desc);
-create index if not exists idx_gitlab_sync_tasks_scope_status on gitlab_sync_tasks(scope_key, status, created_at desc);
-create index if not exists idx_gitlab_sync_tasks_dedupe on gitlab_sync_tasks(dedupe_key, created_at desc);
 
 alter table gitlab_sync_configs add column if not exists source_mode varchar(32) not null default 'DOCKER';
 alter table gitlab_sync_configs add column if not exists docker_container_name varchar(255);
@@ -132,3 +126,12 @@ alter table gitlab_sync_tasks add column if not exists version integer not null 
 alter table gitlab_sync_tasks add column if not exists payload_json text;
 alter table gitlab_sync_tasks add column if not exists created_at timestamp not null default current_timestamp;
 alter table gitlab_sync_tasks add column if not exists updated_at timestamp not null default current_timestamp;
+alter table sys_table_registry add column if not exists preview_enabled boolean not null default true;
+
+create index if not exists idx_gitlab_mirror_records_table on gitlab_mirror_records(config_id, table_name);
+create index if not exists idx_sys_table_registry_config on sys_table_registry(config_id, source_table_name);
+create index if not exists idx_sys_table_registry_preview on sys_table_registry(config_id, preview_enabled, source_table_name);
+create index if not exists idx_gitlab_sync_logs_config on gitlab_sync_logs(config_id, started_at desc);
+create index if not exists idx_gitlab_sync_tasks_config on gitlab_sync_tasks(config_id, created_at desc);
+create index if not exists idx_gitlab_sync_tasks_scope_status on gitlab_sync_tasks(scope_key, status, created_at desc);
+create index if not exists idx_gitlab_sync_tasks_dedupe on gitlab_sync_tasks(dedupe_key, created_at desc);

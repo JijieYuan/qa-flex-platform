@@ -39,6 +39,9 @@ public class GitlabMirrorTableRegistry {
   @TableField("sync_status")
   private String syncStatus;
 
+  @TableField("preview_enabled")
+  private Boolean previewEnabled;
+
   @TableField("column_snapshot")
   private String columnSnapshot;
 

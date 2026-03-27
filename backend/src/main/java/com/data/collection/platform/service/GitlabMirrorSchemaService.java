@@ -2,7 +2,6 @@ package com.data.collection.platform.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.data.collection.platform.common.JsonUtils;
-import com.data.collection.platform.common.exception.BizException;
 import com.data.collection.platform.common.logging.GitlabSyncLogContext;
 import com.data.collection.platform.config.GitlabMirrorProperties;
 import com.data.collection.platform.entity.GitlabMirrorTableRegistry;
@@ -52,22 +51,31 @@ public class GitlabMirrorSchemaService {
     this.properties = properties;
   }
 
+  /**
+   * Control-plane schema refresh. This path may do low-frequency schema evolution work.
+   */
   public PreparedMirrorTable prepareMirrorTable(GitlabSyncConfig config, TableWhitelistOption option) {
     GitlabMirrorTableRegistry registry = findRegistry(config.getId(), option.tableName());
-    if (registry != null && Boolean.TRUE.equals(registry.getInitialized()) && !isSchemaCheckDue(registry)) {
+    if (registry != null
+        && Boolean.TRUE.equals(registry.getInitialized())
+        && !isSchemaCheckDue(registry)
+        && tableExists(registry.getMirrorTableName())) {
       SourceTableSchema cachedSchema = buildSchemaFromRegistry(registry);
       return new PreparedMirrorTable(cachedSchema, registry.getMirrorTableName(), true, registry);
     }
 
     SourceTableSchema sourceSchema = externalDbService.discoverTableSchema(config, option);
     String schemaFingerprint = buildSchemaFingerprint(sourceSchema);
-    String mirrorTableName = registry != null && registry.getMirrorTableName() != null && !registry.getMirrorTableName().isBlank()
-        ? registry.getMirrorTableName()
-        : buildMirrorTableName(sourceSchema.tableName());
+    String mirrorTableName =
+        registry != null && registry.getMirrorTableName() != null && !registry.getMirrorTableName().isBlank()
+            ? registry.getMirrorTableName()
+            : buildMirrorTableName(sourceSchema.tableName());
 
-    boolean schemaChanged = registry == null
-        || !Boolean.TRUE.equals(registry.getInitialized())
-        || !schemaFingerprint.equals(registry.getSchemaFingerprint());
+    boolean schemaChanged =
+        registry == null
+            || !Boolean.TRUE.equals(registry.getInitialized())
+            || !tableExists(mirrorTableName)
+            || !schemaFingerprint.equals(registry.getSchemaFingerprint());
 
     if (schemaChanged) {
       ensureMirrorTableExists(mirrorTableName, sourceSchema);
@@ -81,14 +89,15 @@ public class GitlabMirrorSchemaService {
     } else {
       try (GitlabSyncLogContext.Scope action = GitlabSyncLogContext.action("Schema_Check")) {
         log.info(
-            "Mirror schema reused from registry fast path, sourceTableName={}, mirrorTableName={}, schemaFingerprint={}",
+            "Mirror schema reused from registry, sourceTableName={}, mirrorTableName={}, schemaFingerprint={}",
             option.tableName(),
             mirrorTableName,
             schemaFingerprint);
       }
     }
 
-    GitlabMirrorTableRegistry updatedRegistry = upsertRegistry(config, option, sourceSchema, mirrorTableName, schemaFingerprint, true);
+    GitlabMirrorTableRegistry updatedRegistry =
+        upsertRegistry(config, option, sourceSchema, mirrorTableName, schemaFingerprint, true);
     return new PreparedMirrorTable(
         new SourceTableSchema(mirrorTableName, sourceSchema.primaryKeys(), sourceSchema.updatedAtColumn(), sourceSchema.columns()),
         mirrorTableName,
@@ -96,27 +105,40 @@ public class GitlabMirrorSchemaService {
         updatedRegistry);
   }
 
+  /**
+   * Data-plane fast path. Never performs ALTER/type validation/auxiliary index work.
+   */
   public PreparedMirrorTable getPreparedMirrorTableForSync(GitlabSyncConfig config, TableWhitelistOption option) {
     GitlabMirrorTableRegistry registry = findRegistry(config.getId(), option.tableName());
-    if (registry == null || !Boolean.TRUE.equals(registry.getInitialized())) {
-      throw new BizException("镜像结构尚未初始化，请先执行“初始化镜像结构”");
+    if (registry != null
+        && Boolean.TRUE.equals(registry.getInitialized())
+        && Boolean.TRUE.equals(registry.getPreviewEnabled())
+        && tableExists(registry.getMirrorTableName())) {
+      SourceTableSchema cachedSchema = buildSchemaFromRegistry(registry);
+      return new PreparedMirrorTable(cachedSchema, registry.getMirrorTableName(), true, registry);
     }
-    SourceTableSchema cachedSchema = buildSchemaFromRegistry(registry);
-    return new PreparedMirrorTable(cachedSchema, registry.getMirrorTableName(), true, registry);
-  }
 
-  public void ensureReadyForSync(GitlabSyncConfig config, List<TableWhitelistOption> options) {
-    List<String> missingTables = options.stream()
-        .filter(option -> {
-          GitlabMirrorTableRegistry registry = findRegistry(config.getId(), option.tableName());
-          return registry == null || !Boolean.TRUE.equals(registry.getInitialized());
-        })
-        .map(TableWhitelistOption::tableName)
-        .limit(5)
-        .toList();
-    if (!missingTables.isEmpty()) {
-      throw new BizException("镜像结构尚未初始化，请先执行“初始化镜像结构”。未初始化表示例：" + String.join(", ", missingTables));
+    SourceTableSchema sourceSchema = externalDbService.discoverTableSchema(config, option);
+    String mirrorTableName =
+        registry != null && registry.getMirrorTableName() != null && !registry.getMirrorTableName().isBlank()
+            ? registry.getMirrorTableName()
+            : buildMirrorTableName(sourceSchema.tableName());
+    ensureMirrorTableForSync(mirrorTableName, sourceSchema);
+    String schemaFingerprint = buildSchemaFingerprint(sourceSchema);
+    GitlabMirrorTableRegistry updatedRegistry =
+        upsertRegistry(config, option, sourceSchema, mirrorTableName, schemaFingerprint, true);
+    try (GitlabSyncLogContext.Scope action = GitlabSyncLogContext.action("Schema_Bootstrap")) {
+      log.info(
+          "Mirror table bootstrapped for sync, sourceTableName={}, mirrorTableName={}, schemaFingerprint={}",
+          option.tableName(),
+          mirrorTableName,
+          schemaFingerprint);
     }
+    return new PreparedMirrorTable(
+        new SourceTableSchema(mirrorTableName, sourceSchema.primaryKeys(), sourceSchema.updatedAtColumn(), sourceSchema.columns()),
+        mirrorTableName,
+        false,
+        updatedRegistry);
   }
 
   public void markTableSyncing(Long configId, String sourceTableName) {
@@ -135,6 +157,7 @@ public class GitlabMirrorSchemaService {
     return registryMapper.selectList(new LambdaQueryWrapper<GitlabMirrorTableRegistry>()
         .eq(GitlabMirrorTableRegistry::getConfigId, configId)
         .eq(GitlabMirrorTableRegistry::getInitialized, true)
+        .eq(GitlabMirrorTableRegistry::getPreviewEnabled, true)
         .orderByAsc(GitlabMirrorTableRegistry::getSourceTableName));
   }
 
@@ -153,6 +176,19 @@ public class GitlabMirrorSchemaService {
     return elapsed.toMinutes() >= properties.getSchemaCheckIntervalMinutes();
   }
 
+  private boolean tableExists(String tableName) {
+    Integer count = jdbcTemplate.queryForObject(
+        """
+            select count(*)
+            from pg_tables
+            where schemaname = current_schema()
+              and tablename = ?
+            """,
+        Integer.class,
+        tableName);
+    return count != null && count > 0;
+  }
+
   private SourceTableSchema buildSchemaFromRegistry(GitlabMirrorTableRegistry registry) {
     List<String> primaryKeys = registry.getPrimaryKeyColumns() == null
         ? List.of()
@@ -162,7 +198,7 @@ public class GitlabMirrorSchemaService {
             .toList();
     List<SourceTableColumn> columns = jsonUtils.fromJson(registry.getColumnSnapshot(), COLUMN_LIST_TYPE);
     if (columns == null || columns.isEmpty()) {
-      throw new BizException("注册表缺少镜像表字段快照，无法进入快路径");
+      throw new IllegalStateException("Registry column snapshot is empty for " + registry.getSourceTableName());
     }
     return new SourceTableSchema(
         registry.getMirrorTableName(),
@@ -186,6 +222,7 @@ public class GitlabMirrorSchemaService {
     registry.setMirrorTableName(mirrorTableName);
     registry.setSchemaFingerprint(schemaFingerprint);
     registry.setInitialized(initialized);
+    registry.setPreviewEnabled(current == null || current.getPreviewEnabled() == null ? Boolean.TRUE : current.getPreviewEnabled());
     registry.setColumnSnapshot(jsonUtils.toJson(sourceSchema.columns()));
     registry.setPrimaryKeyColumns(String.join(",", sourceSchema.primaryKeys()));
     registry.setUpdatedAtColumn(sourceSchema.updatedAtColumn());
@@ -205,12 +242,13 @@ public class GitlabMirrorSchemaService {
                 last_sync_time,
                 last_schema_check_time,
                 sync_status,
+                preview_enabled,
                 column_snapshot,
                 primary_key_columns,
                 updated_at_column,
                 created_at,
                 updated_at
-              ) values (?, ?, ?, ?, ?, ?, ?, ?, cast(? as jsonb), ?, ?, ?, ?)
+              ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, cast(? as jsonb), ?, ?, ?, ?)
               """,
           registry.getConfigId(),
           registry.getSourceTableName(),
@@ -220,6 +258,7 @@ public class GitlabMirrorSchemaService {
           registry.getLastSyncTime(),
           registry.getLastSchemaCheckTime(),
           registry.getSyncStatus(),
+          registry.getPreviewEnabled(),
           registry.getColumnSnapshot(),
           registry.getPrimaryKeyColumns(),
           registry.getUpdatedAtColumn(),
@@ -236,6 +275,7 @@ public class GitlabMirrorSchemaService {
                 is_initialized = ?,
                 last_schema_check_time = ?,
                 sync_status = ?,
+                preview_enabled = ?,
                 column_snapshot = cast(? as jsonb),
                 primary_key_columns = ?,
                 updated_at_column = ?,
@@ -247,6 +287,7 @@ public class GitlabMirrorSchemaService {
         registry.getInitialized(),
         registry.getLastSchemaCheckTime(),
         registry.getSyncStatus(),
+        registry.getPreviewEnabled(),
         registry.getColumnSnapshot(),
         registry.getPrimaryKeyColumns(),
         registry.getUpdatedAtColumn(),
@@ -279,6 +320,9 @@ public class GitlabMirrorSchemaService {
         registry.getId());
   }
 
+  /**
+   * Control-plane sync path: can evolve structure when explicitly requested.
+   */
   private void ensureMirrorTableExists(String mirrorTableName, SourceTableSchema schema) {
     jdbcTemplate.execute(buildCreateTableSql(mirrorTableName, schema));
     for (SourceTableColumn column : schema.columns()) {
@@ -291,6 +335,14 @@ public class GitlabMirrorSchemaService {
     }
     ensureBaseMetadataColumns(mirrorTableName);
     validateColumnTypes(mirrorTableName, schema);
+    ensurePrimaryKeyIndex(mirrorTableName, schema.primaryKeys());
+  }
+
+  /**
+   * Data-plane fast path: minimal create + core index only.
+   */
+  private void ensureMirrorTableForSync(String mirrorTableName, SourceTableSchema schema) {
+    jdbcTemplate.execute(buildCreateTableSql(mirrorTableName, schema));
     ensurePrimaryKeyIndex(mirrorTableName, schema.primaryKeys());
   }
 
@@ -349,8 +401,9 @@ public class GitlabMirrorSchemaService {
     for (SourceTableColumn column : schema.columns()) {
       String localType = localTypes.get(column.columnName());
       if (localType != null && !normalizeType(localType).equals(normalizeType(column.formattedType()))) {
-        throw new BizException("镜像表字段类型冲突: %s.%s 本地=%s, 源端=%s".formatted(
-            mirrorTableName, column.columnName(), localType, column.formattedType()));
+        throw new IllegalStateException(
+            "Mirror table column type mismatch: %s.%s local=%s, source=%s"
+                .formatted(mirrorTableName, column.columnName(), localType, column.formattedType()));
       }
     }
   }

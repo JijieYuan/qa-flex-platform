@@ -129,7 +129,6 @@ public class GitlabMirrorSyncService {
 
   private SyncTaskSubmissionResult submitTask(SyncType type, SyncTriggerType triggerType, String message) {
     GitlabSyncConfig config = configService.getConfig();
-    mirrorSchemaService.ensureReadyForSync(config, whitelistService.resolveOptions(config));
     SyncTaskSubmissionResult result = taskService.submitTaskResult(config, type, triggerType, message, Map.of());
     GitlabSyncTask task = result.task();
     try (GitlabSyncLogContext.Scope context = GitlabSyncLogContext.openTask(task, config);
