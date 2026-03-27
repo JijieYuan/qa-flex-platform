@@ -106,6 +106,17 @@ public class GitlabExternalDbService {
     if (since == null || option.updatedAtColumn() == null || option.updatedAtColumn().isBlank()) {
       return fullTableScan(config, option);
     }
+    return timeWindowScan(config, option, since);
+  }
+
+  public List<Map<String, Object>> compensationScan(GitlabSyncConfig config, TableWhitelistOption option, LocalDateTime since) {
+    if (since == null || option.updatedAtColumn() == null || option.updatedAtColumn().isBlank()) {
+      return List.of();
+    }
+    return timeWindowScan(config, option, since);
+  }
+
+  private List<Map<String, Object>> timeWindowScan(GitlabSyncConfig config, TableWhitelistOption option, LocalDateTime since) {
     LocalDateTime gitlabSince = toGitlabSourceTime(since);
     String sql = "select * from public.%s where %s >= timestamp '%s'".formatted(
         option.tableName(),

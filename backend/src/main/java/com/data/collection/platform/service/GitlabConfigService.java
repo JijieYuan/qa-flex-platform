@@ -2,6 +2,7 @@ package com.data.collection.platform.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.data.collection.platform.common.exception.BizException;
 import com.data.collection.platform.entity.GitlabSyncConfig;
 import com.data.collection.platform.entity.SourceMode;
 import com.data.collection.platform.entity.WhitelistMode;
@@ -12,6 +13,9 @@ import org.springframework.stereotype.Service;
 
 @Service
 public class GitlabConfigService {
+  static final int MIN_COMPENSATION_INTERVAL_MINUTES = 1;
+  static final int MAX_COMPENSATION_INTERVAL_MINUTES = 720;
+
   private final GitlabSyncConfigMapper configMapper;
 
   public GitlabConfigService(GitlabSyncConfigMapper configMapper) {
@@ -100,7 +104,20 @@ public class GitlabConfigService {
     normalized.setDockerContainerName(config.getDockerContainerName());
     normalized.setWebhookSecret(config.getWebhookSecret());
     normalized.setWebhookProjectId(config.getWebhookProjectId());
-    normalized.setCompensationIntervalMinutes(config.getCompensationIntervalMinutes());
+    normalized.setCompensationIntervalMinutes(normalizeCompensationInterval(config.getCompensationIntervalMinutes()));
     return normalized;
+  }
+
+  private Integer normalizeCompensationInterval(Integer intervalMinutes) {
+    int effectiveValue = intervalMinutes == null ? 10 : intervalMinutes;
+    if (effectiveValue < MIN_COMPENSATION_INTERVAL_MINUTES || effectiveValue > MAX_COMPENSATION_INTERVAL_MINUTES) {
+      throw new BizException(
+          "补偿间隔仅支持 "
+              + MIN_COMPENSATION_INTERVAL_MINUTES
+              + " 到 "
+              + MAX_COMPENSATION_INTERVAL_MINUTES
+              + " 分钟");
+    }
+    return effectiveValue;
   }
 }

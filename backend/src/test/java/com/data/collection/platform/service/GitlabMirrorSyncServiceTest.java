@@ -3,7 +3,10 @@ package com.data.collection.platform.service;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.contains;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -14,8 +17,10 @@ import com.data.collection.platform.entity.SourceMode;
 import com.data.collection.platform.entity.SyncStatus;
 import com.data.collection.platform.entity.SyncTriggerType;
 import com.data.collection.platform.entity.SyncType;
+import com.data.collection.platform.entity.TableWhitelistOption;
 import com.data.collection.platform.entity.WhitelistMode;
 import com.data.collection.platform.mapper.GitlabMirrorRecordMapper;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
@@ -93,6 +98,48 @@ class GitlabMirrorSyncServiceTest {
     verify(taskService).recoverTimedOutTasks();
   }
 
+  @Test
+  void compensationSyncShouldUseWindowedScanForTablesWithTimeColumn() {
+    GitlabSyncTask task = runningTask(SyncType.COMPENSATION);
+    GitlabSyncConfig config = baseConfig();
+    config.setCompensationIntervalMinutes(30);
+    TableWhitelistOption option = new TableWhitelistOption("issues", "issues", "id", "updated_at", true);
+
+    when(taskService.claimPendingTask(eq(200L), anyString())).thenReturn(task);
+    when(configService.getConfigById(1L)).thenReturn(config);
+    when(whitelistService.resolveOptions(config)).thenReturn(List.of(option));
+    when(taskService.extractMessage(task)).thenReturn("Scheduled compensation sync");
+    when(logService.start(anyLong(), any(), any(), anyString())).thenReturn(1L);
+    when(externalDbService.compensationScan(any(), any(), any())).thenReturn(List.of());
+    when(taskService.promoteNextQueued(anyString())).thenReturn(null);
+
+    syncService.executeTaskAsync(200L);
+
+    verify(externalDbService).compensationScan(any(), any(), any());
+    verify(externalDbService, never()).fullTableScan(any(), any());
+    verify(externalDbService, never()).incrementalScan(any(), any(), any());
+  }
+
+  @Test
+  void compensationSyncShouldSkipTablesWithoutTimeColumn() {
+    GitlabSyncTask task = runningTask(SyncType.COMPENSATION);
+    GitlabSyncConfig config = baseConfig();
+    config.setCompensationIntervalMinutes(30);
+    TableWhitelistOption option = new TableWhitelistOption("events", "events", "id", null, false);
+
+    when(taskService.claimPendingTask(eq(201L), anyString())).thenReturn(task);
+    when(configService.getConfigById(1L)).thenReturn(config);
+    when(whitelistService.resolveOptions(config)).thenReturn(List.of(option));
+    when(taskService.extractMessage(task)).thenReturn("Scheduled compensation sync");
+    when(logService.start(anyLong(), any(), any(), anyString())).thenReturn(1L);
+    when(taskService.promoteNextQueued(anyString())).thenReturn(null);
+
+    syncService.executeTaskAsync(201L);
+
+    verify(externalDbService, never()).compensationScan(any(), any(), any());
+    verify(logService).finish(eq(1L), eq(SyncStatus.SUCCESS), contains("skipped 1 tables"), eq(1), eq(0));
+  }
+
   private GitlabSyncConfig baseConfig() {
     GitlabSyncConfig config = new GitlabSyncConfig();
     config.setId(1L);
@@ -100,5 +147,16 @@ class GitlabMirrorSyncServiceTest {
     config.setWhitelistMode(WhitelistMode.RECOMMENDED);
     config.setWhitelistTables(List.of());
     return config;
+  }
+
+  private GitlabSyncTask runningTask(SyncType type) {
+    GitlabSyncTask task = new GitlabSyncTask();
+    task.setId(1L);
+    task.setConfigId(1L);
+    task.setScopeKey("gitlab:docker:" + type.name());
+    task.setTaskType(type);
+    task.setStatus(SyncStatus.RUNNING);
+    task.setStartedAt(LocalDateTime.now());
+    return task;
   }
 }

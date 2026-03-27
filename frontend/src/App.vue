@@ -651,7 +651,7 @@ onBeforeUnmount(() => {
                   <el-switch v-model="form.autoSyncEnabled" />
                 </el-form-item>
                 <el-form-item label="补偿间隔(分钟)">
-                  <el-input-number v-model="form.compensationIntervalMinutes" :min="1" :max="1440" />
+                  <el-input-number v-model="form.compensationIntervalMinutes" :min="1" :max="720" />
                 </el-form-item>
                 <el-form-item label="白名单模式">
                   <el-radio-group v-model="form.whitelistMode">
