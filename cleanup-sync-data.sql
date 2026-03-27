@@ -1,4 +1,4 @@
-﻿DO 
+﻿DO $$
 DECLARE
     r record;
 BEGIN
@@ -10,7 +10,7 @@ BEGIN
     LOOP
         EXECUTE format('DROP TABLE IF EXISTS %I CASCADE', r.tablename);
     END LOOP;
-END ;
+END $$;
 
 TRUNCATE TABLE gitlab_sync_logs RESTART IDENTITY CASCADE;
 TRUNCATE TABLE gitlab_sync_tasks RESTART IDENTITY CASCADE;
