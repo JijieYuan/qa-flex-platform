@@ -15,14 +15,15 @@ import {
 } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
 import StatisticBoardView from './components/StatisticBoardView.vue';
+import DatabaseBrowserView from './components/DatabaseBrowserView.vue';
 import {
   api,
   type GitlabSyncConfig,
   type GitlabSyncLog,
-  type SyncSubmissionResponse,
   type GitlabSyncTask,
   type MirrorStatusResponse,
   type SyncProgress,
+  type SyncSubmissionResponse,
 } from './api';
 
 type ModuleKey =
@@ -42,6 +43,7 @@ type PageKey =
   | 'question-metrics-home'
   | 'customer-issues-home'
   | 'mirror-settings'
+  | 'database-browser'
   | 'module-management';
 
 interface ShellPage {
@@ -70,7 +72,7 @@ const modules: ShellModule[] = [
       {
         key: 'quality-board-home',
         label: '镜像表基础统计',
-        description: '基于当前 GitLab 镜像数据，展示标准字段的汇总统计与明细下钻。',
+        description: '基于当前 GitLab 镜像数据展示汇总统计与明细下钻。',
       },
     ],
   },
@@ -84,7 +86,7 @@ const modules: ShellModule[] = [
       {
         key: 'review-data-home',
         label: '评审数据',
-        description: '当前模块为空，可在后续接入新的统计表。',
+        description: '当前模块暂未接入统计表。',
       },
     ],
   },
@@ -98,7 +100,7 @@ const modules: ShellModule[] = [
       {
         key: 'code-review-home',
         label: '代码走查',
-        description: '当前模块为空，可在后续接入新的统计表。',
+        description: '当前模块暂未接入统计表。',
       },
     ],
   },
@@ -112,7 +114,7 @@ const modules: ShellModule[] = [
       {
         key: 'integration-test-home',
         label: '集成测试',
-        description: '当前模块为空，可在后续接入新的统计表。',
+        description: '当前模块暂未接入统计表。',
       },
     ],
   },
@@ -126,7 +128,7 @@ const modules: ShellModule[] = [
       {
         key: 'question-metrics-home',
         label: '议题统计',
-        description: '当前模块为空，可在后续接入新的统计表。',
+        description: '当前模块暂未接入统计表。',
       },
     ],
   },
@@ -140,7 +142,7 @@ const modules: ShellModule[] = [
       {
         key: 'customer-issues-home',
         label: '客户问题',
-        description: '当前模块为空，可在后续接入新的统计表。',
+        description: '当前模块暂未接入统计表。',
       },
     ],
   },
@@ -149,7 +151,7 @@ const modules: ShellModule[] = [
     label: '系统设置',
     icon: Setting,
     title: '系统设置',
-    description: '维护 GitLab 数据镜像、配置与模块管理。',
+    description: '维护 GitLab 数据镜像、数据库查看与系统模块配置。',
     pages: [
       {
         key: 'mirror-settings',
@@ -157,9 +159,14 @@ const modules: ShellModule[] = [
         description: '管理 GitLab 数据镜像的连接、同步和日志。',
       },
       {
+        key: 'database-browser',
+        label: '数据库查看',
+        description: '快速浏览本地平台数据库中的核心业务表数据。',
+      },
+      {
         key: 'module-management',
         label: '模块管理',
-        description: '预留模块和菜单管理功能。',
+        description: '预留模块和菜单管理能力。',
       },
     ],
   },
@@ -196,6 +203,7 @@ const activeModule = computed(() => modules.find((item) => item.key === activeMo
 const activePage = computed(() => activeModule.value.pages.find((item) => item.key === activePageKey.value) ?? activeModule.value.pages[0]);
 const showingMirrorSettings = computed(() => activePageKey.value === 'mirror-settings');
 const showingStatisticBoard = computed(() => activePageKey.value === 'quality-board-home');
+const showingDatabaseBrowser = computed(() => activePageKey.value === 'database-browser');
 const whitelistOptions = computed(() => status.value?.whitelistOptions ?? []);
 const recommendedCount = computed(() => whitelistOptions.value.filter((item) => item.recommended).length);
 const isDockerMode = computed(() => form.value.sourceMode === 'DOCKER');
@@ -224,10 +232,10 @@ const displayStatus = computed(() => {
     return { text: '同步中', type: 'warning' as const };
   }
   if (raw === 'PENDING' || raw === 'QUEUED') {
-    return { text: '等待执行', type: 'warning' as const };
+    return { text: '排队中', type: 'warning' as const };
   }
   if (raw === 'CANCELLING') {
-    return { text: '停止中', type: 'warning' as const };
+    return { text: '中止中', type: 'warning' as const };
   }
   if (raw === 'CANCELLED') {
     return { text: '已中止', type: 'info' as const };
@@ -263,7 +271,7 @@ const progressHint = computed(() => {
   const current = progress.value;
   if (!current) {
     if (currentTask.value?.status === 'QUEUED') {
-      return '已有同步任务正在执行，当前任务已进入队列等待。';
+      return '当前已有同步任务执行中，本次请求已进入队列等待。';
     }
     if (currentTask.value?.status === 'CANCELLING') {
       return '已收到中止请求，正在等待当前批次安全退出。';
@@ -474,6 +482,10 @@ function logStatusText(statusValue: string) {
       return '失败';
     case 'RUNNING':
       return '进行中';
+    case 'CANCELLED':
+      return '已中止';
+    case 'TIMEOUT':
+      return '超时';
     default:
       return statusValue;
   }
@@ -589,7 +601,7 @@ onBeforeUnmount(() => {
                 <div class="panel-header">
                   <div>
                     <div class="panel-title">GitLab 数据镜像设置</div>
-                    <div class="panel-caption">全量靠 DB，增量靠 Webhook，一致性靠补偿。</div>
+                    <div class="panel-caption">全量靠 DB，增量靠 Webhook，一致性靠补偿同步。</div>
                   </div>
                   <el-tag type="primary" effect="dark">数据源设置</el-tag>
                 </div>
@@ -794,6 +806,10 @@ onBeforeUnmount(() => {
           </div>
         </template>
 
+        <template v-else-if="showingDatabaseBrowser">
+          <DatabaseBrowserView />
+        </template>
+
         <template v-else>
           <section class="blank-stage">
             <el-empty description="当前模块暂未接入统计表。" />
@@ -803,9 +819,3 @@ onBeforeUnmount(() => {
     </div>
   </div>
 </template>
-
-
-
-
-
-

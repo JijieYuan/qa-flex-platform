@@ -223,6 +223,30 @@ export interface StatisticDetailResponse {
   sortOrder?: string | null;
 }
 
+export interface DatabaseTableOption {
+  tableName: string;
+  label: string;
+}
+
+export interface DatabaseTableColumn {
+  key: string;
+  label: string;
+  sortable: boolean;
+}
+
+export interface DatabaseTableRowsResponse {
+  tableName: string;
+  label: string;
+  columns: DatabaseTableColumn[];
+  rows: Record<string, unknown>[];
+  total: number;
+  page: number;
+  size: number;
+  sortField?: string | null;
+  sortOrder?: string | null;
+  keyword?: string | null;
+}
+
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, {
     headers: { 'Content-Type': 'application/json' },
@@ -329,5 +353,26 @@ export const api = {
       throw new Error(text || `Export failed: ${response.status}`);
     }
     return response.text();
+  },
+  getDatabaseTables() {
+    return request<DatabaseTableOption[]>('/api/database-browser/tables');
+  },
+  getDatabaseTableRows(params: {
+    tableName: string;
+    page?: number;
+    size?: number;
+    keyword?: string;
+    sortField?: string;
+    sortOrder?: 'asc' | 'desc';
+  }) {
+    const query = new URLSearchParams({
+      tableName: params.tableName,
+      page: String(params.page ?? 1),
+      size: String(params.size ?? 20),
+      ...(params.keyword ? { keyword: params.keyword } : {}),
+      ...(params.sortField ? { sortField: params.sortField } : {}),
+      ...(params.sortOrder ? { sortOrder: params.sortOrder } : {}),
+    });
+    return request<DatabaseTableRowsResponse>(`/api/database-browser/rows?${query.toString()}`);
   },
 };
