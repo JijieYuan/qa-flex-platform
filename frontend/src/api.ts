@@ -73,6 +73,21 @@ export interface GitlabSyncTask {
   payloadJson?: string | null;
 }
 
+export type SyncSubmissionAction =
+  | 'CREATED'
+  | 'QUEUED'
+  | 'REUSED_ACTIVE'
+  | 'REUSED_QUEUED'
+  | 'DEDUPED';
+
+export interface SyncSubmissionResponse {
+  accepted: boolean;
+  taskId: number;
+  status: string;
+  action: SyncSubmissionAction;
+  message: string;
+}
+
 export interface MirrorStatusResponse {
   config: GitlabSyncConfig;
   currentTask?: GitlabSyncTask | null;
@@ -251,12 +266,12 @@ export const api = {
     });
   },
   startFullSync() {
-    return request<{ accepted: boolean; message: string }>('/api/gitlab-sync/full-sync', {
+    return request<SyncSubmissionResponse>('/api/gitlab-sync/full-sync', {
       method: 'POST',
     });
   },
   startIncrementalSync() {
-    return request<{ accepted: boolean; message: string }>('/api/gitlab-sync/incremental-sync', {
+    return request<SyncSubmissionResponse>('/api/gitlab-sync/incremental-sync', {
       method: 'POST',
     });
   },

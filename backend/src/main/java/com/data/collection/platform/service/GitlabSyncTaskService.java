@@ -8,7 +8,9 @@ import com.data.collection.platform.config.GitlabMirrorProperties;
 import com.data.collection.platform.entity.GitlabSyncConfig;
 import com.data.collection.platform.entity.GitlabSyncTask;
 import com.data.collection.platform.entity.SourceMode;
+import com.data.collection.platform.entity.SyncSubmissionAction;
 import com.data.collection.platform.entity.SyncStatus;
+import com.data.collection.platform.entity.SyncTaskSubmissionResult;
 import com.data.collection.platform.entity.SyncTriggerType;
 import com.data.collection.platform.entity.SyncType;
 import com.data.collection.platform.mapper.GitlabSyncTaskMapper;
@@ -44,6 +46,15 @@ public class GitlabSyncTaskService {
       SyncTriggerType triggerType,
       String message,
       Map<String, Object> payload) {
+    return submitTaskResult(config, taskType, triggerType, message, payload).task();
+  }
+
+  public SyncTaskSubmissionResult submitTaskResult(
+      GitlabSyncConfig config,
+      SyncType taskType,
+      SyncTriggerType triggerType,
+      String message,
+      Map<String, Object> payload) {
     recoverTimedOutTasks();
 
     String scopeKey = buildScopeKey(config);
@@ -57,7 +68,7 @@ public class GitlabSyncTaskService {
             recentDuplicate.getId(),
             triggerType,
             recentDuplicate.getStatus());
-        return recentDuplicate;
+        return new SyncTaskSubmissionResult(recentDuplicate, SyncSubmissionAction.DEDUPED);
       }
 
       GitlabSyncTask activeTask = findActiveByScope(scopeKey);
@@ -68,7 +79,7 @@ public class GitlabSyncTaskService {
               activeTask.getId(),
               taskType,
               activeTask.getStatus());
-          return activeTask;
+          return new SyncTaskSubmissionResult(activeTask, SyncSubmissionAction.REUSED_ACTIVE);
         }
         GitlabSyncTask queuedTask = findLatestQueued(scopeKey);
         if (queuedTask != null) {
@@ -77,7 +88,7 @@ public class GitlabSyncTaskService {
               queuedTask.getId(),
               queuedTask.getTaskType(),
               queuedTask.getStatus());
-          return queuedTask;
+          return new SyncTaskSubmissionResult(queuedTask, SyncSubmissionAction.REUSED_QUEUED);
         }
         GitlabSyncTask queued = buildTask(
             config,
@@ -96,7 +107,7 @@ public class GitlabSyncTaskService {
             activeTask.getId(),
             taskType,
             triggerType);
-        return queued;
+        return new SyncTaskSubmissionResult(queued, SyncSubmissionAction.QUEUED);
       }
 
       GitlabSyncTask pending = buildTask(
@@ -114,7 +125,7 @@ public class GitlabSyncTaskService {
           taskType,
           triggerType,
           scopeKey);
-      return pending;
+      return new SyncTaskSubmissionResult(pending, SyncSubmissionAction.CREATED);
     }
   }
 

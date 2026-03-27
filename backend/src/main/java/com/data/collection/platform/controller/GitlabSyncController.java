@@ -8,8 +8,10 @@ import com.data.collection.platform.entity.GitlabSyncLog;
 import com.data.collection.platform.entity.GitlabSyncTask;
 import com.data.collection.platform.entity.MirrorStatusResponse;
 import com.data.collection.platform.entity.SourceMode;
+import com.data.collection.platform.entity.SyncSubmissionAction;
 import com.data.collection.platform.entity.SyncProgress;
 import com.data.collection.platform.entity.SyncStatus;
+import com.data.collection.platform.entity.SyncTaskSubmissionResult;
 import com.data.collection.platform.entity.SyncTriggerType;
 import com.data.collection.platform.entity.SyncType;
 import com.data.collection.platform.entity.WhitelistMode;
@@ -130,8 +132,8 @@ public class GitlabSyncController {
          GitlabSyncLogContext.Scope action = GitlabSyncLogContext.action("Task_Submit")) {
       log.info("Manual full sync requested");
     }
-    GitlabSyncTask task = syncService.startFullSync();
-    return ApiResponse.success("Full sync accepted", Map.of("accepted", true, "taskId", task.getId(), "status", task.getStatus()));
+    SyncTaskSubmissionResult result = syncService.startFullSync();
+    return ApiResponse.success(submissionMessage(result, SyncType.FULL), buildSubmissionResponse(result));
   }
 
   @PostMapping("/incremental-sync")
@@ -141,8 +143,8 @@ public class GitlabSyncController {
          GitlabSyncLogContext.Scope action = GitlabSyncLogContext.action("Task_Submit")) {
       log.info("Manual incremental sync requested");
     }
-    GitlabSyncTask task = syncService.startIncrementalSync(SyncTriggerType.MANUAL, "Triggered manually");
-    return ApiResponse.success("Incremental sync accepted", Map.of("accepted", true, "taskId", task.getId(), "status", task.getStatus()));
+    SyncTaskSubmissionResult result = syncService.startIncrementalSync(SyncTriggerType.MANUAL, "Triggered manually");
+    return ApiResponse.success(submissionMessage(result, SyncType.INCREMENTAL), buildSubmissionResponse(result));
   }
 
   @PostMapping("/cancel")
@@ -184,5 +186,30 @@ public class GitlabSyncController {
       String webhookSecret,
       Long webhookProjectId,
       @NotNull Integer compensationIntervalMinutes) {
+  }
+
+  private Map<String, Object> buildSubmissionResponse(SyncTaskSubmissionResult result) {
+    GitlabSyncTask task = result.task();
+    return Map.of(
+        "accepted", true,
+        "taskId", task.getId(),
+        "status", task.getStatus(),
+        "action", result.action(),
+        "message", submissionMessage(result, task.getTaskType()));
+  }
+
+  private String submissionMessage(SyncTaskSubmissionResult result, SyncType requestedType) {
+    SyncSubmissionAction action = result.action();
+    return switch (action) {
+      case CREATED -> switch (requestedType) {
+        case FULL -> "全量同步已开始";
+        case COMPENSATION -> "补偿同步已开始";
+        case INCREMENTAL, WEBHOOK -> "增量同步已开始";
+      };
+      case QUEUED -> "当前已有导入任务执行中，已为你登记下一轮同步";
+      case REUSED_ACTIVE -> "当前已有同范围同步任务执行中，本次请求已接收，无需重复操作";
+      case REUSED_QUEUED -> "当前已有后续同步任务排队中，本次请求已合并到后续同步";
+      case DEDUPED -> "导入任务已提交，请勿重复操作";
+    };
   }
 }

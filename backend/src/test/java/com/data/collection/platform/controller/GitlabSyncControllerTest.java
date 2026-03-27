@@ -13,8 +13,10 @@ import com.data.collection.platform.config.GitlabMirrorProperties;
 import com.data.collection.platform.entity.GitlabSyncConfig;
 import com.data.collection.platform.entity.GitlabSyncTask;
 import com.data.collection.platform.entity.SourceMode;
+import com.data.collection.platform.entity.SyncSubmissionAction;
 import com.data.collection.platform.entity.SyncProgress;
 import com.data.collection.platform.entity.SyncStatus;
+import com.data.collection.platform.entity.SyncTaskSubmissionResult;
 import com.data.collection.platform.entity.SyncTriggerType;
 import com.data.collection.platform.entity.SyncType;
 import com.data.collection.platform.entity.WhitelistMode;
@@ -121,13 +123,34 @@ class GitlabSyncControllerTest {
     GitlabSyncTask task = new GitlabSyncTask();
     task.setId(15L);
     task.setStatus(SyncStatus.PENDING);
-    when(syncService.startIncrementalSync(SyncTriggerType.MANUAL, "Triggered manually")).thenReturn(task);
+    task.setTaskType(SyncType.INCREMENTAL);
+    when(syncService.startIncrementalSync(SyncTriggerType.MANUAL, "Triggered manually"))
+        .thenReturn(new SyncTaskSubmissionResult(task, SyncSubmissionAction.CREATED));
 
     mockMvc.perform(post("/api/gitlab-sync/incremental-sync"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.accepted").value(true))
         .andExpect(jsonPath("$.data.taskId").value(15))
-        .andExpect(jsonPath("$.data.status").value("PENDING"));
+        .andExpect(jsonPath("$.data.status").value("PENDING"))
+        .andExpect(jsonPath("$.data.action").value("CREATED"))
+        .andExpect(jsonPath("$.data.message").value("增量同步已开始"));
+  }
+
+  @Test
+  void fullSyncShouldReturnQueuedPayloadWhenExecutionIsDeferred() throws Exception {
+    GitlabSyncTask task = new GitlabSyncTask();
+    task.setId(18L);
+    task.setStatus(SyncStatus.QUEUED);
+    task.setTaskType(SyncType.FULL);
+    when(syncService.startFullSync()).thenReturn(new SyncTaskSubmissionResult(task, SyncSubmissionAction.QUEUED));
+
+    mockMvc.perform(post("/api/gitlab-sync/full-sync"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.accepted").value(true))
+        .andExpect(jsonPath("$.data.taskId").value(18))
+        .andExpect(jsonPath("$.data.status").value("QUEUED"))
+        .andExpect(jsonPath("$.data.action").value("QUEUED"))
+        .andExpect(jsonPath("$.data.message").value("当前已有导入任务执行中，已为你登记下一轮同步"));
   }
 
   private GitlabSyncConfig baseConfig() {

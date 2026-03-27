@@ -7,6 +7,7 @@ import com.data.collection.platform.entity.GitlabMirrorRecord;
 import com.data.collection.platform.entity.GitlabSyncTask;
 import com.data.collection.platform.entity.SyncProgress;
 import com.data.collection.platform.entity.SyncStatus;
+import com.data.collection.platform.entity.SyncTaskSubmissionResult;
 import com.data.collection.platform.entity.SyncTriggerType;
 import com.data.collection.platform.entity.SyncType;
 import com.data.collection.platform.entity.TableWhitelistOption;
@@ -74,15 +75,15 @@ public class GitlabMirrorSyncService {
     externalDbService.testConnection(configService.getConfig());
   }
 
-  public GitlabSyncTask startFullSync() {
+  public SyncTaskSubmissionResult startFullSync() {
     return submitTask(SyncType.FULL, SyncTriggerType.MANUAL, "Manual full sync");
   }
 
-  public GitlabSyncTask startIncrementalSync(SyncTriggerType triggerType, String message) {
+  public SyncTaskSubmissionResult startIncrementalSync(SyncTriggerType triggerType, String message) {
     return submitTask(SyncType.INCREMENTAL, triggerType, message);
   }
 
-  public GitlabSyncTask startCompensationSync() {
+  public SyncTaskSubmissionResult startCompensationSync() {
     return submitTask(SyncType.COMPENSATION, SyncTriggerType.SCHEDULE, "Scheduled compensation sync");
   }
 
@@ -90,21 +91,23 @@ public class GitlabMirrorSyncService {
     return taskService.requestCancelLatest(configId);
   }
 
-  private GitlabSyncTask submitTask(SyncType type, SyncTriggerType triggerType, String message) {
+  private SyncTaskSubmissionResult submitTask(SyncType type, SyncTriggerType triggerType, String message) {
     GitlabSyncConfig config = configService.getConfig();
-    GitlabSyncTask task = taskService.submitTask(config, type, triggerType, message, Map.of());
+    SyncTaskSubmissionResult result = taskService.submitTaskResult(config, type, triggerType, message, Map.of());
+    GitlabSyncTask task = result.task();
     try (GitlabSyncLogContext.Scope context = GitlabSyncLogContext.openTask(task, config);
          GitlabSyncLogContext.Scope action = GitlabSyncLogContext.action("Task_Submit")) {
       log.info(
-          "Sync task submission processed, triggerType={}, currentStatus={}, message={}",
+          "Sync task submission processed, triggerType={}, action={}, currentStatus={}, message={}",
           triggerType,
+          result.action(),
           task.getStatus(),
           message);
     }
     if (task.getStatus() == SyncStatus.PENDING) {
       self.executeTaskAsync(task.getId());
     }
-    return task;
+    return result;
   }
 
   @Async

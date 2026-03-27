@@ -19,6 +19,7 @@ import {
   api,
   type GitlabSyncConfig,
   type GitlabSyncLog,
+  type SyncSubmissionResponse,
   type GitlabSyncTask,
   type MirrorStatusResponse,
   type SyncProgress,
@@ -370,8 +371,8 @@ async function startFullSync() {
   syncing.value = true;
   try {
     await saveConfig(false);
-    await api.startFullSync();
-    ElMessage.success('首次全量同步已开始');
+    const result = await api.startFullSync();
+    showSubmissionFeedback(result);
     await loadStatus(false);
   } catch (error) {
     ElMessage.error((error as Error).message);
@@ -384,14 +385,26 @@ async function startIncrementalSync() {
   syncing.value = true;
   try {
     await saveConfig(false);
-    await api.startIncrementalSync();
-    ElMessage.success('增量同步已开始');
+    const result = await api.startIncrementalSync();
+    showSubmissionFeedback(result);
     await loadStatus(false);
   } catch (error) {
     ElMessage.error((error as Error).message);
   } finally {
     syncing.value = false;
   }
+}
+
+function showSubmissionFeedback(result: SyncSubmissionResponse) {
+  if (result.action === 'CREATED') {
+    ElMessage.success(result.message);
+    return;
+  }
+  if (result.action === 'QUEUED') {
+    ElMessage.warning(result.message);
+    return;
+  }
+  ElMessage.info(result.message);
 }
 
 async function cancelSyncTask() {
@@ -687,8 +700,8 @@ onBeforeUnmount(() => {
                 <el-space wrap>
                   <el-button type="primary" :loading="saving" @click="saveConfig()">保存配置</el-button>
                   <el-button :icon="Tools" @click="testConnection">测试连接</el-button>
-                  <el-button type="success" :loading="syncing" :disabled="canCancel || !syncEnabled" @click="startFullSync">首次全量同步</el-button>
-                  <el-button :loading="syncing" :disabled="canCancel || !syncEnabled" @click="startIncrementalSync">立即增量同步</el-button>
+                  <el-button type="success" :loading="syncing" :disabled="!syncEnabled" @click="startFullSync">首次全量同步</el-button>
+                  <el-button :loading="syncing" :disabled="!syncEnabled" @click="startIncrementalSync">立即增量同步</el-button>
                   <el-button type="danger" plain :loading="cancelling" :disabled="!canCancel" @click="cancelSyncTask">
                     中止导入
                   </el-button>
@@ -790,3 +803,9 @@ onBeforeUnmount(() => {
     </div>
   </div>
 </template>
+
+
+
+
+
+
