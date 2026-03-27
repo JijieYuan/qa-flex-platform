@@ -5,6 +5,7 @@ import com.data.collection.platform.common.logging.GitlabSyncLogContext;
 import com.data.collection.platform.entity.GitlabSyncConfig;
 import com.data.collection.platform.entity.GitlabMirrorRecord;
 import com.data.collection.platform.entity.GitlabSyncTask;
+import com.data.collection.platform.entity.SourceTableSchema;
 import com.data.collection.platform.entity.SyncProgress;
 import com.data.collection.platform.entity.SyncStatus;
 import com.data.collection.platform.entity.SyncTaskSubmissionResult;
@@ -32,6 +33,8 @@ public class GitlabMirrorSyncService {
   private final GitlabConfigService configService;
   private final GitlabWhitelistService whitelistService;
   private final GitlabExternalDbService externalDbService;
+  private final GitlabMirrorSchemaService mirrorSchemaService;
+  private final GitlabMirrorTableStorageService mirrorTableStorageService;
   private final GitlabMirrorRecordMapper mirrorRecordMapper;
   private final GitlabSyncLogService logService;
   private final GitlabSyncTaskService taskService;
@@ -44,6 +47,8 @@ public class GitlabMirrorSyncService {
       GitlabConfigService configService,
       GitlabWhitelistService whitelistService,
       GitlabExternalDbService externalDbService,
+      GitlabMirrorSchemaService mirrorSchemaService,
+      GitlabMirrorTableStorageService mirrorTableStorageService,
       GitlabMirrorRecordMapper mirrorRecordMapper,
       GitlabSyncLogService logService,
       GitlabSyncTaskService taskService,
@@ -52,6 +57,8 @@ public class GitlabMirrorSyncService {
     this.configService = configService;
     this.whitelistService = whitelistService;
     this.externalDbService = externalDbService;
+    this.mirrorSchemaService = mirrorSchemaService;
+    this.mirrorTableStorageService = mirrorTableStorageService;
     this.mirrorRecordMapper = mirrorRecordMapper;
     this.logService = logService;
     this.taskService = taskService;
@@ -157,6 +164,7 @@ public class GitlabMirrorSyncService {
 
         for (TableWhitelistOption table : tables) {
           checkCancelled(taskId);
+          SourceTableSchema mirrorSchema = mirrorSchemaService.ensureMirrorTable(config, table);
           currentProgress.setCurrentTable(table.tableName());
           currentProgress.setCompletedTables(tableCount);
           currentProgress.setSyncedRecords(recordCount);
@@ -211,6 +219,7 @@ public class GitlabMirrorSyncService {
                   index,
                   end);
             }
+            mirrorTableStorageService.upsertBatch(mirrorSchema, rows.subList(index, end), taskId);
             mirrorRecordMapper.upsertBatch(mirrorRows.subList(index, end));
             recordCount += batchSize;
             currentProgress.setSyncedRecords(recordCount);

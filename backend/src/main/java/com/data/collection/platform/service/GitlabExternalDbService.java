@@ -5,6 +5,8 @@ import com.data.collection.platform.common.logging.GitlabSyncLogContext;
 import com.data.collection.platform.config.GitlabMirrorProperties;
 import com.data.collection.platform.entity.GitlabSyncConfig;
 import com.data.collection.platform.entity.SourceMode;
+import com.data.collection.platform.entity.SourceTableColumn;
+import com.data.collection.platform.entity.SourceTableSchema;
 import com.data.collection.platform.entity.TableWhitelistOption;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -101,6 +103,42 @@ public class GitlabExternalDbService {
       result.add(new TableWhitelistOption(tableName, label, primaryKey, updatedAtColumn, recommended));
     }
     return result;
+  }
+
+  public SourceTableSchema discoverTableSchema(GitlabSyncConfig config, TableWhitelistOption option) {
+    String sql = """
+        select
+          a.attname as column_name,
+          pg_catalog.format_type(a.atttypid, a.atttypmod) as formatted_type,
+          not a.attnotnull as nullable,
+          a.attnum as ordinal_position
+        from pg_attribute a
+        join pg_class c on a.attrelid = c.oid
+        join pg_namespace n on c.relnamespace = n.oid
+        where n.nspname = 'public'
+          and c.relname = '%s'
+          and a.attnum > 0
+          and not a.attisdropped
+        order by a.attnum
+        """.formatted(option.tableName().replace("'", "''"));
+    List<Map<String, Object>> rows = isDockerMode(config) ? executeDockerQuery(config, sql) : executeJdbcQuery(config, sql);
+    List<SourceTableColumn> columns = new ArrayList<>(rows.size());
+    for (Map<String, Object> row : rows) {
+      columns.add(new SourceTableColumn(
+          String.valueOf(row.get("column_name")),
+          String.valueOf(row.get("formatted_type")),
+          Boolean.parseBoolean(String.valueOf(row.get("nullable"))),
+          ((Number) row.get("ordinal_position")).intValue()));
+    }
+    if (columns.isEmpty()) {
+      throw new BizException("未发现源表结构: " + option.tableName());
+    }
+    List<String> primaryKeys = List.of(option.primaryKey().split(","))
+        .stream()
+        .map(String::trim)
+        .filter(value -> !value.isBlank())
+        .toList();
+    return new SourceTableSchema(option.tableName(), primaryKeys, option.updatedAtColumn(), columns);
   }
 
   public List<Map<String, Object>> fullTableScan(GitlabSyncConfig config, TableWhitelistOption option) {

@@ -14,7 +14,11 @@ import com.data.collection.platform.common.JsonUtils;
 import com.data.collection.platform.entity.GitlabSyncConfig;
 import com.data.collection.platform.entity.GitlabSyncTask;
 import com.data.collection.platform.entity.SourceMode;
+import com.data.collection.platform.entity.SourceTableColumn;
+import com.data.collection.platform.entity.SourceTableSchema;
 import com.data.collection.platform.entity.SyncStatus;
+import com.data.collection.platform.entity.SyncSubmissionAction;
+import com.data.collection.platform.entity.SyncTaskSubmissionResult;
 import com.data.collection.platform.entity.SyncTriggerType;
 import com.data.collection.platform.entity.SyncType;
 import com.data.collection.platform.entity.TableWhitelistOption;
@@ -30,6 +34,8 @@ class GitlabMirrorSyncServiceTest {
   private GitlabConfigService configService;
   private GitlabWhitelistService whitelistService;
   private GitlabExternalDbService externalDbService;
+  private GitlabMirrorSchemaService mirrorSchemaService;
+  private GitlabMirrorTableStorageService mirrorTableStorageService;
   private GitlabMirrorRecordMapper mirrorRecordMapper;
   private GitlabSyncLogService logService;
   private GitlabSyncTaskService taskService;
@@ -42,6 +48,8 @@ class GitlabMirrorSyncServiceTest {
     configService = mock(GitlabConfigService.class);
     whitelistService = mock(GitlabWhitelistService.class);
     externalDbService = mock(GitlabExternalDbService.class);
+    mirrorSchemaService = mock(GitlabMirrorSchemaService.class);
+    mirrorTableStorageService = mock(GitlabMirrorTableStorageService.class);
     mirrorRecordMapper = mock(GitlabMirrorRecordMapper.class);
     logService = mock(GitlabSyncLogService.class);
     taskService = mock(GitlabSyncTaskService.class);
@@ -52,6 +60,8 @@ class GitlabMirrorSyncServiceTest {
             configService,
             whitelistService,
             externalDbService,
+            mirrorSchemaService,
+            mirrorTableStorageService,
             mirrorRecordMapper,
             logService,
             taskService,
@@ -67,8 +77,8 @@ class GitlabMirrorSyncServiceTest {
     task.setStatus(SyncStatus.PENDING);
 
     when(configService.getConfig()).thenReturn(config);
-    when(taskService.submitTask(config, SyncType.FULL, SyncTriggerType.MANUAL, "Manual full sync", Map.of()))
-        .thenReturn(task);
+    when(taskService.submitTaskResult(config, SyncType.FULL, SyncTriggerType.MANUAL, "Manual full sync", Map.of()))
+        .thenReturn(new SyncTaskSubmissionResult(task, SyncSubmissionAction.CREATED));
 
     syncService.startFullSync();
 
@@ -83,8 +93,8 @@ class GitlabMirrorSyncServiceTest {
     task.setStatus(SyncStatus.QUEUED);
 
     when(configService.getConfig()).thenReturn(config);
-    when(taskService.submitTask(config, SyncType.INCREMENTAL, SyncTriggerType.WEBHOOK, "Triggered by webhook", Map.of()))
-        .thenReturn(task);
+    when(taskService.submitTaskResult(config, SyncType.INCREMENTAL, SyncTriggerType.WEBHOOK, "Triggered by webhook", Map.of()))
+        .thenReturn(new SyncTaskSubmissionResult(task, SyncSubmissionAction.QUEUED));
 
     syncService.startIncrementalSync(SyncTriggerType.WEBHOOK, "Triggered by webhook");
 
@@ -108,6 +118,7 @@ class GitlabMirrorSyncServiceTest {
     when(taskService.claimPendingTask(eq(200L), anyString())).thenReturn(task);
     when(configService.getConfigById(1L)).thenReturn(config);
     when(whitelistService.resolveOptions(config)).thenReturn(List.of(option));
+    when(mirrorSchemaService.ensureMirrorTable(config, option)).thenReturn(sourceSchema(option));
     when(taskService.extractMessage(task)).thenReturn("Scheduled compensation sync");
     when(logService.start(anyLong(), any(), any(), anyString())).thenReturn(1L);
     when(externalDbService.compensationScan(any(), any(), any())).thenReturn(List.of());
@@ -130,6 +141,7 @@ class GitlabMirrorSyncServiceTest {
     when(taskService.claimPendingTask(eq(201L), anyString())).thenReturn(task);
     when(configService.getConfigById(1L)).thenReturn(config);
     when(whitelistService.resolveOptions(config)).thenReturn(List.of(option));
+    when(mirrorSchemaService.ensureMirrorTable(config, option)).thenReturn(sourceSchema(option));
     when(taskService.extractMessage(task)).thenReturn("Scheduled compensation sync");
     when(logService.start(anyLong(), any(), any(), anyString())).thenReturn(1L);
     when(taskService.promoteNextQueued(anyString())).thenReturn(null);
@@ -158,5 +170,13 @@ class GitlabMirrorSyncServiceTest {
     task.setStatus(SyncStatus.RUNNING);
     task.setStartedAt(LocalDateTime.now());
     return task;
+  }
+
+  private SourceTableSchema sourceSchema(TableWhitelistOption option) {
+    return new SourceTableSchema(
+        "ods_gitlab_" + option.tableName(),
+        List.of("id"),
+        option.updatedAtColumn(),
+        List.of(new SourceTableColumn("id", "bigint", false, 1)));
   }
 }

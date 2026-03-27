@@ -60,8 +60,11 @@ public class DatabaseBrowserService {
   }
 
   public List<DatabaseTableOption> listTables() {
-    return TABLE_DEFINITIONS.entrySet().stream()
-        .map(entry -> new DatabaseTableOption(entry.getKey(), entry.getValue().label()))
+    Map<String, String> allTables = new LinkedHashMap<>();
+    TABLE_DEFINITIONS.forEach((key, value) -> allTables.put(key, value.label()));
+    listDynamicMirrorTables().forEach(tableName -> allTables.put(tableName, buildMirrorLabel(tableName)));
+    return allTables.entrySet().stream()
+        .map(entry -> new DatabaseTableOption(entry.getKey(), entry.getValue()))
         .sorted((left, right) -> left.getTableName().compareToIgnoreCase(right.getTableName()))
         .toList();
   }
@@ -99,10 +102,41 @@ public class DatabaseBrowserService {
 
   private TableDefinition getRequiredTableDefinition(String tableName) {
     TableDefinition definition = TABLE_DEFINITIONS.get(tableName);
+    if (definition == null && tableName != null && tableName.startsWith("ods_gitlab_")) {
+      definition = buildMirrorTableDefinition(tableName);
+    }
     if (definition == null) {
       throw new BizException("当前表不在数据库查看白名单中");
     }
     return definition;
+  }
+
+  private TableDefinition buildMirrorTableDefinition(String tableName) {
+    List<String> columns = jdbcTemplate.query(
+        """
+            select column_name
+            from information_schema.columns
+            where table_schema = current_schema()
+              and table_name = ?
+            order by ordinal_position
+            """,
+        ps -> ps.setString(1, tableName),
+        (rs, rowNum) -> rs.getString("column_name"));
+    if (columns.isEmpty()) {
+      throw new BizException("当前镜像表不存在或尚未完成建表");
+    }
+    List<String> searchableFields = columns.stream()
+        .filter(column -> !List.of("mirror_created_at", "mirror_updated_at", "mirror_synced_at").contains(column))
+        .limit(6)
+        .toList();
+    String defaultSortField = columns.contains("mirror_synced_at")
+        ? "mirror_synced_at"
+        : columns.contains("mirror_updated_at")
+        ? "mirror_updated_at"
+        : columns.contains("updated_at")
+        ? "updated_at"
+        : columns.get(0);
+    return new TableDefinition(buildMirrorLabel(tableName), searchableFields, columns, defaultSortField);
   }
 
   private String normalizeSortField(TableDefinition definition, String sortField) {
@@ -165,6 +199,23 @@ public class DatabaseBrowserService {
           }
           return columns;
         });
+  }
+
+  private List<String> listDynamicMirrorTables() {
+    return jdbcTemplate.query(
+        """
+            select table_name
+            from information_schema.tables
+            where table_schema = current_schema()
+              and table_type = 'BASE TABLE'
+              and table_name like 'ods_gitlab_%'
+            order by table_name
+            """,
+        (rs, rowNum) -> rs.getString("table_name"));
+  }
+
+  private String buildMirrorLabel(String tableName) {
+    return "镜像表 / " + tableName.replaceFirst("^ods_gitlab_", "");
   }
 
   private RowMapper<Map<String, Object>> tableRowMapper() {
