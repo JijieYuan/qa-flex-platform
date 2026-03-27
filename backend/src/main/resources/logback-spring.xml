@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration scan="true">
+  <springProperty scope="context" name="APP_NAME" source="spring.application.name" defaultValue="data-collection-platform-backend"/>
+  <springProperty scope="context" name="LOG_PATH" source="logging.file.path" defaultValue="logs"/>
+
+  <property name="LOG_FILE" value="${LOG_PATH}/${APP_NAME}.json.log"/>
+
+  <appender name="JSON_CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+    <immediateFlush>true</immediateFlush>
+    <encoder class="net.logstash.logback.encoder.LoggingEventCompositeJsonEncoder">
+      <providers>
+        <timestamp>
+          <fieldName>timestamp</fieldName>
+          <timeZone>Asia/Shanghai</timeZone>
+        </timestamp>
+        <logLevel>
+          <fieldName>level</fieldName>
+        </logLevel>
+        <threadName>
+          <fieldName>thread</fieldName>
+        </threadName>
+        <loggerName>
+          <fieldName>logger</fieldName>
+        </loggerName>
+        <message>
+          <fieldName>message</fieldName>
+        </message>
+        <pattern>
+          <pattern>
+            {
+              "app":"${APP_NAME}",
+              "traceId":"%X{traceId:-}",
+              "taskId":"%X{taskId:-}",
+              "scope":"%X{scope:-}",
+              "gitlabUrl":"%X{gitlabUrl:-}",
+              "taskType":"%X{taskType:-}",
+              "action":"%X{action:-}"
+            }
+          </pattern>
+        </pattern>
+        <stackTrace>
+          <fieldName>stackTrace</fieldName>
+        </stackTrace>
+      </providers>
+    </encoder>
+  </appender>
+
+  <appender name="JSON_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+    <file>${LOG_FILE}</file>
+    <append>true</append>
+    <immediateFlush>true</immediateFlush>
+    <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+      <fileNamePattern>${LOG_PATH}/archive/${APP_NAME}.%d{yyyy-MM-dd}.%i.json.log</fileNamePattern>
+      <maxFileSize>50MB</maxFileSize>
+      <maxHistory>30</maxHistory>
+      <totalSizeCap>5GB</totalSizeCap>
+    </rollingPolicy>
+    <encoder class="net.logstash.logback.encoder.LoggingEventCompositeJsonEncoder">
+      <providers>
+        <timestamp>
+          <fieldName>timestamp</fieldName>
+          <timeZone>Asia/Shanghai</timeZone>
+        </timestamp>
+        <logLevel>
+          <fieldName>level</fieldName>
+        </logLevel>
+        <threadName>
+          <fieldName>thread</fieldName>
+        </threadName>
+        <loggerName>
+          <fieldName>logger</fieldName>
+        </loggerName>
+        <message>
+          <fieldName>message</fieldName>
+        </message>
+        <pattern>
+          <pattern>
+            {
+              "app":"${APP_NAME}",
+              "traceId":"%X{traceId:-}",
+              "taskId":"%X{taskId:-}",
+              "scope":"%X{scope:-}",
+              "gitlabUrl":"%X{gitlabUrl:-}",
+              "taskType":"%X{taskType:-}",
+              "action":"%X{action:-}"
+            }
+          </pattern>
+        </pattern>
+        <stackTrace>
+          <fieldName>stackTrace</fieldName>
+        </stackTrace>
+      </providers>
+    </encoder>
+  </appender>
+
+  <root level="INFO">
+    <appender-ref ref="JSON_CONSOLE" />
+    <appender-ref ref="JSON_FILE" />
+  </root>
+</configuration>

@@ -1,6 +1,7 @@
 package com.data.collection.platform.service;
 
 import com.data.collection.platform.common.JsonUtils;
+import com.data.collection.platform.common.logging.GitlabSyncLogContext;
 import com.data.collection.platform.common.exception.BizException;
 import com.data.collection.platform.entity.GitlabSyncConfig;
 import com.data.collection.platform.entity.GitlabWebhookEvent;
@@ -8,9 +9,11 @@ import com.data.collection.platform.entity.SyncTriggerType;
 import com.data.collection.platform.mapper.GitlabWebhookEventMapper;
 import java.time.LocalDateTime;
 import java.util.Map;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 @Service
+@Slf4j
 public class GitlabWebhookService {
   private final GitlabWebhookEventMapper webhookEventMapper;
   private final GitlabConfigService configService;
@@ -30,8 +33,20 @@ public class GitlabWebhookService {
 
   public void accept(String eventType, Map<String, Object> payload, String secret) {
     GitlabSyncConfig config = configService.getConfig();
+    try (GitlabSyncLogContext.Scope context = GitlabSyncLogContext.openConfig(config, SyncTriggerType.WEBHOOK.name());
+         GitlabSyncLogContext.Scope action = GitlabSyncLogContext.action("Webhook_Received")) {
+      log.info(
+          "Webhook received, eventType={}, projectId={}, objectKind={}",
+          eventType,
+          extractProjectId(payload),
+          payload.get("object_kind"));
+    }
     if (config.getWebhookSecret() != null && !config.getWebhookSecret().isBlank()) {
       if (secret == null || !config.getWebhookSecret().equals(secret)) {
+        try (GitlabSyncLogContext.Scope context = GitlabSyncLogContext.openConfig(config, SyncTriggerType.WEBHOOK.name());
+             GitlabSyncLogContext.Scope action = GitlabSyncLogContext.action("Webhook_Received")) {
+          log.warn("Webhook rejected because secret validation failed, eventType={}", eventType);
+        }
         throw new BizException("Invalid webhook secret");
       }
     }

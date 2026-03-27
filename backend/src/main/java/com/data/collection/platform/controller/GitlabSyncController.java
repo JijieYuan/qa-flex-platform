@@ -1,5 +1,6 @@
 package com.data.collection.platform.controller;
 
+import com.data.collection.platform.common.logging.GitlabSyncLogContext;
 import com.data.collection.platform.common.response.ApiResponse;
 import com.data.collection.platform.config.GitlabMirrorProperties;
 import com.data.collection.platform.entity.GitlabSyncConfig;
@@ -10,6 +11,7 @@ import com.data.collection.platform.entity.SourceMode;
 import com.data.collection.platform.entity.SyncProgress;
 import com.data.collection.platform.entity.SyncStatus;
 import com.data.collection.platform.entity.SyncTriggerType;
+import com.data.collection.platform.entity.SyncType;
 import com.data.collection.platform.entity.WhitelistMode;
 import com.data.collection.platform.service.GitlabConfigService;
 import com.data.collection.platform.service.GitlabMirrorSyncService;
@@ -21,6 +23,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import java.util.List;
 import java.util.Map;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -31,6 +34,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/gitlab-sync")
+@Slf4j
 public class GitlabSyncController {
   private final GitlabConfigService configService;
   private final GitlabMirrorSyncService syncService;
@@ -97,23 +101,45 @@ public class GitlabSyncController {
     config.setWebhookSecret(request.webhookSecret());
     config.setWebhookProjectId(request.webhookProjectId());
     config.setCompensationIntervalMinutes(request.compensationIntervalMinutes());
+    try (GitlabSyncLogContext.Scope context = GitlabSyncLogContext.openConfig(config, "CONFIG");
+         GitlabSyncLogContext.Scope action = GitlabSyncLogContext.action("Config_Save")) {
+      log.info(
+          "Saving GitLab sync config, enabled={}, autoSyncEnabled={}, sourceMode={}, whitelistMode={}",
+          request.enabled(),
+          request.autoSyncEnabled(),
+          request.sourceMode(),
+          request.whitelistMode());
+    }
     return ApiResponse.success("配置已保存", configService.saveConfig(config));
   }
 
   @PostMapping("/test-connection")
   public ApiResponse<Map<String, Object>> testConnection() {
+    try (GitlabSyncLogContext.Scope context = GitlabSyncLogContext.openConfig(configService.getConfig(), "TEST_CONNECTION");
+         GitlabSyncLogContext.Scope action = GitlabSyncLogContext.action("Connection_Test")) {
+      log.info("Manual test connection requested");
+    }
     syncService.testConnection();
     return ApiResponse.success("GitLab PostgreSQL connection succeeded", Map.of("checked", true));
   }
 
   @PostMapping("/full-sync")
   public ApiResponse<Map<String, Object>> fullSync() {
+    try (GitlabSyncLogContext.Scope context = GitlabSyncLogContext.openConfig(configService.getConfig(), SyncType.FULL.name());
+         GitlabSyncLogContext.Scope action = GitlabSyncLogContext.action("Task_Submit")) {
+      log.info("Manual full sync requested");
+    }
     GitlabSyncTask task = syncService.startFullSync();
     return ApiResponse.success("Full sync accepted", Map.of("accepted", true, "taskId", task.getId(), "status", task.getStatus()));
   }
 
   @PostMapping("/incremental-sync")
   public ApiResponse<Map<String, Object>> incrementalSync() {
+    try (GitlabSyncLogContext.Scope context =
+             GitlabSyncLogContext.openConfig(configService.getConfig(), SyncType.INCREMENTAL.name());
+         GitlabSyncLogContext.Scope action = GitlabSyncLogContext.action("Task_Submit")) {
+      log.info("Manual incremental sync requested");
+    }
     GitlabSyncTask task = syncService.startIncrementalSync(SyncTriggerType.MANUAL, "Triggered manually");
     return ApiResponse.success("Incremental sync accepted", Map.of("accepted", true, "taskId", task.getId(), "status", task.getStatus()));
   }
@@ -121,6 +147,10 @@ public class GitlabSyncController {
   @PostMapping("/cancel")
   public ApiResponse<Map<String, Object>> cancel() {
     GitlabSyncConfig config = configService.getConfig();
+    try (GitlabSyncLogContext.Scope context = GitlabSyncLogContext.openConfig(config, "CANCEL");
+         GitlabSyncLogContext.Scope action = GitlabSyncLogContext.action("Task_Cancel_Request")) {
+      log.info("Manual task cancel requested");
+    }
     GitlabSyncTask task = syncService.requestCancel(config.getId());
     if (task == null) {
       return ApiResponse.success("No active task to cancel", Map.of("accepted", false));

@@ -17,6 +17,10 @@ mybatis-plus:
   configuration:
     map-underscore-to-camel-case: true
 
+logging:
+  file:
+    path: logs
+
 platform:
   gitlab-mirror:
     scheduler-enabled: true

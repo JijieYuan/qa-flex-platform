@@ -1,6 +1,7 @@
 package com.data.collection.platform.service;
 
 import com.data.collection.platform.common.exception.BizException;
+import com.data.collection.platform.common.logging.GitlabSyncLogContext;
 import com.data.collection.platform.config.GitlabMirrorProperties;
 import com.data.collection.platform.entity.GitlabSyncConfig;
 import com.data.collection.platform.entity.SourceMode;
@@ -25,9 +26,11 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 @Service
+@Slf4j
 public class GitlabExternalDbService {
   private static final TypeReference<LinkedHashMap<String, Object>> MAP_TYPE = new TypeReference<>() {};
 
@@ -49,6 +52,9 @@ public class GitlabExternalDbService {
         statement.execute("select 1");
       }
     } catch (Exception e) {
+      try (GitlabSyncLogContext.Scope action = GitlabSyncLogContext.action("Connection_Test")) {
+        log.error("GitLab PostgreSQL connection test failed", e);
+      }
       throw new BizException("GitLab PostgreSQL connection failed: " + e.getMessage());
     }
   }
@@ -175,6 +181,9 @@ public class GitlabExternalDbService {
       }
       return rows;
     } catch (Exception e) {
+      try (GitlabSyncLogContext.Scope action = GitlabSyncLogContext.action("Data_Fetching")) {
+        log.error("Failed to query GitLab database via JDBC", e);
+      }
       throw new BizException("Failed to query GitLab database: " + e.getMessage());
     }
   }
@@ -194,8 +203,14 @@ public class GitlabExternalDbService {
       }
       return rows;
     } catch (BizException e) {
+      try (GitlabSyncLogContext.Scope action = GitlabSyncLogContext.action("Data_Fetching")) {
+        log.error("Failed to query GitLab database via Docker", e);
+      }
       throw e;
     } catch (Exception e) {
+      try (GitlabSyncLogContext.Scope action = GitlabSyncLogContext.action("Data_Fetching")) {
+        log.error("Failed to query GitLab database via Docker", e);
+      }
       throw new BizException("Failed to query GitLab database via Docker: " + e.getMessage());
     }
   }
@@ -238,8 +253,14 @@ public class GitlabExternalDbService {
       }
       return lines;
     } catch (BizException e) {
+      try (GitlabSyncLogContext.Scope action = GitlabSyncLogContext.action("Data_Fetching")) {
+        log.error("Docker GitLab PostgreSQL command failed", e);
+      }
       throw e;
     } catch (Exception e) {
+      try (GitlabSyncLogContext.Scope action = GitlabSyncLogContext.action("Data_Fetching")) {
+        log.error("Docker GitLab PostgreSQL command failed", e);
+      }
       throw new BizException("Docker GitLab PostgreSQL command failed: " + e.getMessage());
     }
   }

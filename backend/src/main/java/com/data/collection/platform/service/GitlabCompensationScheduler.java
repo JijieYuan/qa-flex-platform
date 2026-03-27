@@ -4,10 +4,12 @@ import com.data.collection.platform.config.GitlabMirrorProperties;
 import com.data.collection.platform.entity.GitlabSyncConfig;
 import java.time.Duration;
 import java.time.LocalDateTime;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 @Component
+@Slf4j
 public class GitlabCompensationScheduler {
   private final GitlabMirrorProperties properties;
   private final GitlabConfigService configService;
@@ -36,6 +38,7 @@ public class GitlabCompensationScheduler {
       return;
     }
     if (syncService.hasActiveTask(config.getId()) || taskService.isInCooldown(config.getId())) {
+      log.debug("Compensation skipped because task is active or cooldown is in effect, configId={}", config.getId());
       return;
     }
     LocalDateTime latestActivityAt = taskService.resolveLatestActivityAt(config.getId());
@@ -44,6 +47,11 @@ public class GitlabCompensationScheduler {
     }
     long minutes = Duration.between(latestActivityAt, LocalDateTime.now()).toMinutes();
     if (minutes >= config.getCompensationIntervalMinutes()) {
+      log.info(
+          "Compensation trigger accepted, configId={}, intervalMinutes={}, idleMinutes={}",
+          config.getId(),
+          config.getCompensationIntervalMinutes(),
+          minutes);
       syncService.startCompensationSync();
     }
   }

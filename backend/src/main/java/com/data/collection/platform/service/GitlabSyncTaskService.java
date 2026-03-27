@@ -3,6 +3,7 @@ package com.data.collection.platform.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.data.collection.platform.common.JsonUtils;
+import com.data.collection.platform.common.logging.GitlabSyncLogContext;
 import com.data.collection.platform.config.GitlabMirrorProperties;
 import com.data.collection.platform.entity.GitlabSyncConfig;
 import com.data.collection.platform.entity.GitlabSyncTask;
@@ -19,10 +20,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class GitlabSyncTaskService {
   private static final List<SyncStatus> ACTIVE_STATUSES = List.of(
       SyncStatus.PENDING,
@@ -33,6 +36,7 @@ public class GitlabSyncTaskService {
   private final GitlabSyncTaskMapper taskMapper;
   private final GitlabMirrorProperties properties;
   private final JsonUtils jsonUtils;
+  private final GitlabConfigService configService;
 
   public GitlabSyncTask submitTask(
       GitlabSyncConfig config,
@@ -43,45 +47,75 @@ public class GitlabSyncTaskService {
     recoverTimedOutTasks();
 
     String scopeKey = buildScopeKey(config);
-    String dedupeKey = buildDedupeKey(config, taskType, triggerType, payload);
-    GitlabSyncTask recentDuplicate = findRecentByDedupe(dedupeKey);
-    if (recentDuplicate != null) {
-      return recentDuplicate;
-    }
+    try (GitlabSyncLogContext.Scope context = GitlabSyncLogContext.openConfig(config, taskType.name(), scopeKey);
+         GitlabSyncLogContext.Scope action = GitlabSyncLogContext.action("Task_Submit")) {
+      String dedupeKey = buildDedupeKey(config, taskType, triggerType, payload);
+      GitlabSyncTask recentDuplicate = findRecentByDedupe(dedupeKey);
+      if (recentDuplicate != null) {
+        log.info(
+            "Task submit deduplicated, existingTaskId={}, triggerType={}, status={}",
+            recentDuplicate.getId(),
+            triggerType,
+            recentDuplicate.getStatus());
+        return recentDuplicate;
+      }
 
-    GitlabSyncTask activeTask = findActiveByScope(scopeKey);
-    if (activeTask != null) {
-      if (activeTask.getTaskType() == taskType) {
-        return activeTask;
+      GitlabSyncTask activeTask = findActiveByScope(scopeKey);
+      if (activeTask != null) {
+        if (activeTask.getTaskType() == taskType) {
+          log.info(
+              "Task submit reused active task, existingTaskId={}, taskType={}, status={}",
+              activeTask.getId(),
+              taskType,
+              activeTask.getStatus());
+          return activeTask;
+        }
+        GitlabSyncTask queuedTask = findLatestQueued(scopeKey);
+        if (queuedTask != null) {
+          log.info(
+              "Task submit reused queued task, existingTaskId={}, taskType={}, status={}",
+              queuedTask.getId(),
+              queuedTask.getTaskType(),
+              queuedTask.getStatus());
+          return queuedTask;
+        }
+        GitlabSyncTask queued = buildTask(
+            config,
+            taskType,
+            triggerType,
+            scopeKey,
+            dedupeKey,
+            SyncStatus.QUEUED,
+            payloadWithMessage(message, payload));
+        queued.setQueuedAt(LocalDateTime.now());
+        queued.setRunAfter(LocalDateTime.now());
+        taskMapper.insert(queued);
+        log.info(
+            "Task queued because active task exists, taskId={}, activeTaskId={}, taskType={}, triggerType={}",
+            queued.getId(),
+            activeTask.getId(),
+            taskType,
+            triggerType);
+        return queued;
       }
-      GitlabSyncTask queuedTask = findLatestQueued(scopeKey);
-      if (queuedTask != null) {
-        return queuedTask;
-      }
-      GitlabSyncTask queued = buildTask(
+
+      GitlabSyncTask pending = buildTask(
           config,
           taskType,
           triggerType,
           scopeKey,
           dedupeKey,
-          SyncStatus.QUEUED,
+          SyncStatus.PENDING,
           payloadWithMessage(message, payload));
-      queued.setQueuedAt(LocalDateTime.now());
-      queued.setRunAfter(LocalDateTime.now());
-      taskMapper.insert(queued);
-      return queued;
+      taskMapper.insert(pending);
+      log.info(
+          "Task created and pending, taskId={}, taskType={}, triggerType={}, scope={}",
+          pending.getId(),
+          taskType,
+          triggerType,
+          scopeKey);
+      return pending;
     }
-
-    GitlabSyncTask pending = buildTask(
-        config,
-        taskType,
-        triggerType,
-        scopeKey,
-        dedupeKey,
-        SyncStatus.PENDING,
-        payloadWithMessage(message, payload));
-    taskMapper.insert(pending);
-    return pending;
   }
 
   public GitlabSyncTask findDisplayTask(Long configId) {
@@ -114,7 +148,14 @@ public class GitlabSyncTaskService {
             .set(GitlabSyncTask::getStartedAt, now)
             .set(GitlabSyncTask::getHeartbeatAt, now)
             .set(GitlabSyncTask::getUpdatedAt, now));
-    return updated > 0 ? taskMapper.selectById(taskId) : null;
+    GitlabSyncTask claimedTask = updated > 0 ? taskMapper.selectById(taskId) : null;
+    if (claimedTask != null) {
+      try (GitlabSyncLogContext.Scope context = GitlabSyncLogContext.openTask(claimedTask, configService.getConfigById(claimedTask.getConfigId()));
+           GitlabSyncLogContext.Scope action = GitlabSyncLogContext.action("Task_Start")) {
+        log.info("Task claimed for execution, lockOwner={}", lockOwner);
+      }
+    }
+    return claimedTask;
   }
 
   public void heartbeat(Long taskId) {
@@ -155,7 +196,12 @@ public class GitlabSyncTaskService {
             .set(GitlabSyncTask::getFinishedAt, nextStatus == SyncStatus.CANCELLED ? now : null)
             .set(GitlabSyncTask::getFinishedReason, "Cancellation requested by user")
             .set(GitlabSyncTask::getUpdatedAt, now));
-    return taskMapper.selectById(task.getId());
+    GitlabSyncTask updatedTask = taskMapper.selectById(task.getId());
+    try (GitlabSyncLogContext.Scope context = GitlabSyncLogContext.openTask(updatedTask, configService.getConfigById(updatedTask.getConfigId()));
+         GitlabSyncLogContext.Scope action = GitlabSyncLogContext.action("Task_Cancel_Request")) {
+      log.warn("Task cancellation requested, nextStatus={}", nextStatus);
+    }
+    return updatedTask;
   }
 
   public void finish(Long taskId, SyncStatus status, String reason, LocalDateTime cooldownUntil) {
@@ -170,6 +216,11 @@ public class GitlabSyncTaskService {
             .set(GitlabSyncTask::getHeartbeatAt, now)
             .set(GitlabSyncTask::getCooldownUntil, cooldownUntil)
             .set(GitlabSyncTask::getUpdatedAt, now));
+    GitlabSyncTask finishedTask = taskMapper.selectById(taskId);
+    try (GitlabSyncLogContext.Scope context = GitlabSyncLogContext.openTask(finishedTask, configService.getConfigById(finishedTask.getConfigId()));
+         GitlabSyncLogContext.Scope action = GitlabSyncLogContext.action("Task_End")) {
+      log.info("Task finished, status={}, reason={}, cooldownUntil={}", status, reason, cooldownUntil);
+    }
   }
 
   public GitlabSyncTask promoteNextQueued(String scopeKey) {
@@ -185,7 +236,14 @@ public class GitlabSyncTaskService {
             .eq(GitlabSyncTask::getStatus, SyncStatus.QUEUED)
             .set(GitlabSyncTask::getStatus, SyncStatus.PENDING)
             .set(GitlabSyncTask::getUpdatedAt, now));
-    return updated > 0 ? taskMapper.selectById(nextQueued.getId()) : null;
+    GitlabSyncTask promotedTask = updated > 0 ? taskMapper.selectById(nextQueued.getId()) : null;
+    if (promotedTask != null) {
+      try (GitlabSyncLogContext.Scope context = GitlabSyncLogContext.openTask(promotedTask, configService.getConfigById(promotedTask.getConfigId()));
+           GitlabSyncLogContext.Scope action = GitlabSyncLogContext.action("Task_Submit")) {
+        log.info("Queued task promoted to pending");
+      }
+    }
+    return promotedTask;
   }
 
   public boolean hasActiveTask(Long configId) {
@@ -200,6 +258,10 @@ public class GitlabSyncTaskService {
         .in(GitlabSyncTask::getStatus, SyncStatus.RUNNING, SyncStatus.CANCELLING)
         .lt(GitlabSyncTask::getHeartbeatAt, threshold));
     for (GitlabSyncTask task : staleTasks) {
+      try (GitlabSyncLogContext.Scope context = GitlabSyncLogContext.openTask(task, configService.getConfigById(task.getConfigId()));
+           GitlabSyncLogContext.Scope action = GitlabSyncLogContext.action("Task_Timeout_Recovered")) {
+        log.error("Task heartbeat timed out, recovering task");
+      }
       finish(task.getId(), SyncStatus.TIMEOUT, "Task heartbeat timed out", LocalDateTime.now().plusMinutes(properties.getFailureBackoffMinutes()));
     }
   }
