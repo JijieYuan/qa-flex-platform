@@ -35,8 +35,8 @@ class DatabaseBrowserControllerTest {
   @Test
   void shouldReturnWhitelistedTables() throws Exception {
     when(databaseBrowserService.listTables()).thenReturn(List.of(
-        new DatabaseTableOption("gitlab_sync_tasks", "同步任务"),
-        new DatabaseTableOption("gitlab_mirror_records", "镜像记录")));
+        new DatabaseTableOption("gitlab_sync_tasks", "同步任务", "IDLE", null),
+        new DatabaseTableOption("gitlab_mirror_records", "旧镜像记录", "IDLE", null)));
 
     mockMvc.perform(get("/api/database-browser/tables"))
         .andExpect(status().isOk())
@@ -60,7 +60,10 @@ class DatabaseBrowserControllerTest {
             20,
             "id",
             "desc",
-            "FAILED"));
+            "FAILED",
+            "IDLE",
+            null,
+            null));
 
     mockMvc.perform(get("/api/database-browser/rows")
             .param("tableName", "gitlab_sync_logs")

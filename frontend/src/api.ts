@@ -226,6 +226,8 @@ export interface StatisticDetailResponse {
 export interface DatabaseTableOption {
   tableName: string;
   label: string;
+  syncStatus: string;
+  lastSyncTime?: string | null;
 }
 
 export interface DatabaseTableColumn {
@@ -245,6 +247,9 @@ export interface DatabaseTableRowsResponse {
   sortField?: string | null;
   sortOrder?: string | null;
   keyword?: string | null;
+  syncStatus: string;
+  lastSyncTime?: string | null;
+  statusMessage?: string | null;
 }
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {

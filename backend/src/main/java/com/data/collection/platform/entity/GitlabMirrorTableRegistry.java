@@ -10,7 +10,7 @@ import lombok.NoArgsConstructor;
 
 @Data
 @NoArgsConstructor
-@TableName("gitlab_mirror_table_registry")
+@TableName("sys_table_registry")
 public class GitlabMirrorTableRegistry {
   @TableId(type = IdType.AUTO)
   private Long id;
@@ -24,17 +24,29 @@ public class GitlabMirrorTableRegistry {
   @TableField("mirror_table_name")
   private String mirrorTableName;
 
+  @TableField("schema_fingerprint")
+  private String schemaFingerprint;
+
+  @TableField("is_initialized")
+  private Boolean initialized;
+
+  @TableField("last_sync_time")
+  private LocalDateTime lastSyncTime;
+
+  @TableField("last_schema_check_time")
+  private LocalDateTime lastSchemaCheckTime;
+
+  @TableField("sync_status")
+  private String syncStatus;
+
+  @TableField("column_snapshot")
+  private String columnSnapshot;
+
   @TableField("primary_key_columns")
   private String primaryKeyColumns;
 
   @TableField("updated_at_column")
   private String updatedAtColumn;
-
-  @TableField("column_snapshot")
-  private String columnSnapshot;
-
-  @TableField("last_schema_synced_at")
-  private LocalDateTime lastSchemaSyncedAt;
 
   @TableField("created_at")
   private LocalDateTime createdAt;

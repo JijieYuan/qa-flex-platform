@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 import { ElMessage } from 'element-plus';
-import { Refresh, Search } from '@element-plus/icons-vue';
+import { Refresh, Search, WarningFilled } from '@element-plus/icons-vue';
 import { api, type DatabaseTableOption, type DatabaseTableRowsResponse } from '../api';
 
 const loading = ref(false);
@@ -19,6 +19,18 @@ const rowsResponse = ref<DatabaseTableRowsResponse | null>(null);
 const columns = computed(() => rowsResponse.value?.columns ?? []);
 const rows = computed(() => rowsResponse.value?.rows ?? []);
 const total = computed(() => rowsResponse.value?.total ?? 0);
+const selectedOption = computed(() => tableOptions.value.find((option) => option.tableName === selectedTable.value) ?? null);
+const syncStatusTagType = computed(() => {
+  const status = rowsResponse.value?.syncStatus ?? selectedOption.value?.syncStatus;
+  switch (status) {
+    case 'SYNCING':
+      return 'warning';
+    case 'ERROR':
+      return 'danger';
+    default:
+      return 'info';
+  }
+});
 
 async function loadTables() {
   tablesLoading.value = true;
@@ -82,6 +94,7 @@ async function handleReset() {
 }
 
 async function handleRefresh() {
+  await loadTables();
   await loadRows();
 }
 
@@ -111,6 +124,10 @@ function formatCellValue(value: unknown) {
     return JSON.stringify(value);
   }
   return String(value);
+}
+
+function formatTime(value?: string | null) {
+  return value || '-';
 }
 
 onMounted(async () => {
@@ -165,15 +182,33 @@ onMounted(async () => {
         <div class="db-table-header">
           <div>
             <div class="db-table-title">{{ rowsResponse?.label || '数据库查看' }}</div>
-            <div class="db-table-caption">{{ rowsResponse?.tableName || '请选择一个本地表开始查看' }}</div>
+            <div class="db-table-caption">
+              {{ rowsResponse?.tableName || '请选择一张本地表开始查看' }}
+            </div>
           </div>
-          <el-tag type="info" round>共 {{ total }} 条</el-tag>
+
+          <div class="db-table-meta">
+            <el-tag :type="syncStatusTagType" round>
+              {{ rowsResponse?.syncStatus || selectedOption?.syncStatus || 'IDLE' }}
+            </el-tag>
+            <el-tag type="info" round>最近同步：{{ formatTime(rowsResponse?.lastSyncTime || selectedOption?.lastSyncTime) }}</el-tag>
+            <el-tag type="info" round>共 {{ total }} 条</el-tag>
+          </div>
         </div>
       </template>
 
       <el-empty v-if="!selectedTable" description="当前没有可查看的本地表" />
 
       <template v-else>
+        <el-alert
+          v-if="rowsResponse?.statusMessage"
+          class="db-status-alert"
+          :icon="WarningFilled"
+          type="warning"
+          :closable="false"
+          :title="rowsResponse.statusMessage"
+        />
+
         <el-table
           v-loading="loading"
           :data="rows"
@@ -272,6 +307,18 @@ onMounted(async () => {
   margin-top: 4px;
   font-size: 13px;
   color: #6b7d91;
+}
+
+.db-table-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.db-status-alert {
+  margin-bottom: 16px;
 }
 
 .db-table {

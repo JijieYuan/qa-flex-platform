@@ -84,15 +84,19 @@ create table if not exists gitlab_mirror_records (
     unique (config_id, table_name, record_key)
 );
 
-create table if not exists gitlab_mirror_table_registry (
+create table if not exists sys_table_registry (
     id bigserial primary key,
     config_id bigint not null references gitlab_sync_configs(id) on delete cascade,
     source_table_name varchar(255) not null,
     mirror_table_name varchar(255) not null,
+    schema_fingerprint varchar(128) not null,
+    is_initialized boolean not null default false,
+    last_sync_time timestamp,
+    last_schema_check_time timestamp,
+    sync_status varchar(32) not null default 'IDLE',
+    column_snapshot jsonb not null,
     primary_key_columns text not null,
     updated_at_column varchar(255),
-    column_snapshot jsonb not null,
-    last_schema_synced_at timestamp not null default current_timestamp,
     created_at timestamp not null default current_timestamp,
     updated_at timestamp not null default current_timestamp,
     unique (config_id, source_table_name),
@@ -100,7 +104,7 @@ create table if not exists gitlab_mirror_table_registry (
 );
 
 create index if not exists idx_gitlab_mirror_records_table on gitlab_mirror_records(config_id, table_name);
-create index if not exists idx_gitlab_mirror_registry_config on gitlab_mirror_table_registry(config_id, source_table_name);
+create index if not exists idx_sys_table_registry_config on sys_table_registry(config_id, source_table_name);
 create index if not exists idx_gitlab_sync_logs_config on gitlab_sync_logs(config_id, started_at desc);
 create index if not exists idx_gitlab_sync_tasks_config on gitlab_sync_tasks(config_id, created_at desc);
 create index if not exists idx_gitlab_sync_tasks_scope_status on gitlab_sync_tasks(scope_key, status, created_at desc);

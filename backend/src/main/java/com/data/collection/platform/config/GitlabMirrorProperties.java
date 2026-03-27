@@ -11,6 +11,7 @@ public class GitlabMirrorProperties {
   private int heartbeatTimeoutSeconds = 180;
   private int dedupeWindowSeconds = 15;
   private int failureBackoffMinutes = 10;
+  private int schemaCheckIntervalMinutes = 720;
 
   public boolean isSchedulerEnabled() {
     return schedulerEnabled;
@@ -66,5 +67,13 @@ public class GitlabMirrorProperties {
 
   public void setFailureBackoffMinutes(int failureBackoffMinutes) {
     this.failureBackoffMinutes = failureBackoffMinutes;
+  }
+
+  public int getSchemaCheckIntervalMinutes() {
+    return schemaCheckIntervalMinutes;
+  }
+
+  public void setSchemaCheckIntervalMinutes(int schemaCheckIntervalMinutes) {
+    this.schemaCheckIntervalMinutes = schemaCheckIntervalMinutes;
   }
 }

@@ -118,7 +118,8 @@ class GitlabMirrorSyncServiceTest {
     when(taskService.claimPendingTask(eq(200L), anyString())).thenReturn(task);
     when(configService.getConfigById(1L)).thenReturn(config);
     when(whitelistService.resolveOptions(config)).thenReturn(List.of(option));
-    when(mirrorSchemaService.ensureMirrorTable(config, option)).thenReturn(sourceSchema(option));
+    when(mirrorSchemaService.prepareMirrorTable(config, option))
+        .thenReturn(new GitlabMirrorSchemaService.PreparedMirrorTable(sourceSchema(option), "ods_gitlab_issues", true, null));
     when(taskService.extractMessage(task)).thenReturn("Scheduled compensation sync");
     when(logService.start(anyLong(), any(), any(), anyString())).thenReturn(1L);
     when(externalDbService.compensationScan(any(), any(), any())).thenReturn(List.of());
@@ -141,7 +142,8 @@ class GitlabMirrorSyncServiceTest {
     when(taskService.claimPendingTask(eq(201L), anyString())).thenReturn(task);
     when(configService.getConfigById(1L)).thenReturn(config);
     when(whitelistService.resolveOptions(config)).thenReturn(List.of(option));
-    when(mirrorSchemaService.ensureMirrorTable(config, option)).thenReturn(sourceSchema(option));
+    when(mirrorSchemaService.prepareMirrorTable(config, option))
+        .thenReturn(new GitlabMirrorSchemaService.PreparedMirrorTable(sourceSchema(option), "ods_gitlab_events", true, null));
     when(taskService.extractMessage(task)).thenReturn("Scheduled compensation sync");
     when(logService.start(anyLong(), any(), any(), anyString())).thenReturn(1L);
     when(taskService.promoteNextQueued(anyString())).thenReturn(null);

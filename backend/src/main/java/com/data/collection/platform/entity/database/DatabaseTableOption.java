@@ -1,5 +1,6 @@
 package com.data.collection.platform.entity.database;
 
+import java.time.LocalDateTime;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 
@@ -8,4 +9,6 @@ import lombok.Data;
 public class DatabaseTableOption {
   private String tableName;
   private String label;
+  private String syncStatus;
+  private LocalDateTime lastSyncTime;
 }

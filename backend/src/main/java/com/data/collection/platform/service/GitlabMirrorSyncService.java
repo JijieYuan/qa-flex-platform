@@ -163,78 +163,91 @@ public class GitlabMirrorSyncService {
         LocalDateTime since = resolveSince(config, task.getTaskType());
 
         for (TableWhitelistOption table : tables) {
-          checkCancelled(taskId);
-          SourceTableSchema mirrorSchema = mirrorSchemaService.ensureMirrorTable(config, table);
-          currentProgress.setCurrentTable(table.tableName());
-          currentProgress.setCompletedTables(tableCount);
-          currentProgress.setSyncedRecords(recordCount);
-          taskService.heartbeat(taskId);
-
-          if (task.getTaskType() == SyncType.COMPENSATION
-              && (table.updatedAtColumn() == null || table.updatedAtColumn().isBlank())) {
-            skippedTableCount++;
-            tableCount++;
-            currentProgress.setCompletedTables(tableCount);
-            try (GitlabSyncLogContext.Scope action = GitlabSyncLogContext.action("Data_Fetching")) {
-              log.info("Skipped table during compensation because no time column exists, tableName={}", table.tableName());
-            }
-            continue;
-          }
-
-          try (GitlabSyncLogContext.Scope action = GitlabSyncLogContext.action("Data_Fetching")) {
-            log.info(
-                "Fetching source data, tableName={}, scanMode={}, since={}, updatedAtColumn={}",
-                table.tableName(),
-                resolveScanMode(task.getTaskType()),
-                since,
-                table.updatedAtColumn());
-          }
-
-          List<Map<String, Object>> rows = switch (task.getTaskType()) {
-            case FULL -> externalDbService.fullTableScan(config, table);
-            case COMPENSATION -> externalDbService.compensationScan(config, table, since);
-            case INCREMENTAL, WEBHOOK -> externalDbService.incrementalScan(config, table, since);
-          };
-
-          List<GitlabMirrorRecord> mirrorRows = new ArrayList<>(rows.size());
-          for (Map<String, Object> row : rows) {
-            GitlabMirrorRecord record = new GitlabMirrorRecord();
-            record.setConfigId(config.getId());
-            record.setTableName(table.tableName());
-            record.setRecordKey(externalDbService.buildRecordKey(table, row));
-            record.setUpdatedAtSource(externalDbService.extractUpdatedAt(table, row));
-            record.setRowData(jsonUtils.toJson(row));
-            mirrorRows.add(record);
-          }
-
-          for (int index = 0; index < mirrorRows.size(); index += UPSERT_BATCH_SIZE) {
+          try {
             checkCancelled(taskId);
-            int end = Math.min(index + UPSERT_BATCH_SIZE, mirrorRows.size());
-            int batchSize = end - index;
-            try (GitlabSyncLogContext.Scope action = GitlabSyncLogContext.action("Mirror_Writing")) {
-              log.info(
-                  "Writing mirror batch, tableName={}, batchSize={}, batchStart={}, batchEnd={}",
-                  table.tableName(),
-                  batchSize,
-                  index,
-                  end);
-            }
-            mirrorTableStorageService.upsertBatch(mirrorSchema, rows.subList(index, end), taskId);
-            mirrorRecordMapper.upsertBatch(mirrorRows.subList(index, end));
-            recordCount += batchSize;
+            GitlabMirrorSchemaService.PreparedMirrorTable preparedMirrorTable =
+                mirrorSchemaService.prepareMirrorTable(config, table);
+            SourceTableSchema mirrorSchema = preparedMirrorTable.mirrorSchema();
+            mirrorSchemaService.markTableSyncing(config.getId(), table.tableName());
+            currentProgress.setCurrentTable(table.tableName());
+            currentProgress.setCompletedTables(tableCount);
             currentProgress.setSyncedRecords(recordCount);
             taskService.heartbeat(taskId);
-            try (GitlabSyncLogContext.Scope action = GitlabSyncLogContext.action("Commit_Success")) {
-              log.info(
-                  "Mirror batch committed, tableName={}, batchSize={}, cumulativeRecords={}",
-                  table.tableName(),
-                  batchSize,
-                  recordCount);
+
+            if (task.getTaskType() == SyncType.COMPENSATION
+                && (table.updatedAtColumn() == null || table.updatedAtColumn().isBlank())) {
+              skippedTableCount++;
+              tableCount++;
+              currentProgress.setCompletedTables(tableCount);
+              mirrorSchemaService.markTableIdle(config.getId(), table.tableName(), LocalDateTime.now());
+              try (GitlabSyncLogContext.Scope action = GitlabSyncLogContext.action("Data_Fetching")) {
+                log.info("Skipped table during compensation because no time column exists, tableName={}", table.tableName());
+              }
+              continue;
             }
+
+            try (GitlabSyncLogContext.Scope action = GitlabSyncLogContext.action("Data_Fetching")) {
+              log.info(
+                  "Fetching source data, tableName={}, scanMode={}, since={}, updatedAtColumn={}",
+                  table.tableName(),
+                  resolveScanMode(task.getTaskType()),
+                  since,
+                  table.updatedAtColumn());
+            }
+
+            List<Map<String, Object>> rows = switch (task.getTaskType()) {
+              case FULL -> externalDbService.fullTableScan(config, table);
+              case COMPENSATION -> externalDbService.compensationScan(config, table, since);
+              case INCREMENTAL, WEBHOOK -> externalDbService.incrementalScan(config, table, since);
+            };
+
+            List<GitlabMirrorRecord> mirrorRows = new ArrayList<>(rows.size());
+            for (Map<String, Object> row : rows) {
+              GitlabMirrorRecord record = new GitlabMirrorRecord();
+              record.setConfigId(config.getId());
+              record.setTableName(table.tableName());
+              record.setRecordKey(externalDbService.buildRecordKey(table, row));
+              record.setUpdatedAtSource(externalDbService.extractUpdatedAt(table, row));
+              record.setRowData(jsonUtils.toJson(row));
+              mirrorRows.add(record);
+            }
+
+            for (int index = 0; index < mirrorRows.size(); index += UPSERT_BATCH_SIZE) {
+              checkCancelled(taskId);
+              int end = Math.min(index + UPSERT_BATCH_SIZE, mirrorRows.size());
+              int batchSize = end - index;
+              try (GitlabSyncLogContext.Scope action = GitlabSyncLogContext.action("Mirror_Writing")) {
+                log.info(
+                    "Writing mirror batch, tableName={}, batchSize={}, batchStart={}, batchEnd={}",
+                    table.tableName(),
+                    batchSize,
+                    index,
+                    end);
+              }
+              mirrorTableStorageService.upsertBatch(mirrorSchema, rows.subList(index, end), taskId);
+              mirrorRecordMapper.upsertBatch(mirrorRows.subList(index, end));
+              recordCount += batchSize;
+              currentProgress.setSyncedRecords(recordCount);
+              taskService.heartbeat(taskId);
+              try (GitlabSyncLogContext.Scope action = GitlabSyncLogContext.action("Commit_Success")) {
+                log.info(
+                    "Mirror batch committed, tableName={}, batchSize={}, cumulativeRecords={}",
+                    table.tableName(),
+                    batchSize,
+                    recordCount);
+              }
+            }
+            tableCount++;
+            currentProgress.setCompletedTables(tableCount);
+            currentProgress.setSyncedRecords(recordCount);
+            mirrorSchemaService.markTableIdle(config.getId(), table.tableName(), LocalDateTime.now());
+          } catch (SyncCancelledException e) {
+            mirrorSchemaService.markTableIdle(config.getId(), table.tableName(), null);
+            throw e;
+          } catch (Exception e) {
+            mirrorSchemaService.markTableError(config.getId(), table.tableName());
+            throw e;
           }
-          tableCount++;
-          currentProgress.setCompletedTables(tableCount);
-          currentProgress.setSyncedRecords(recordCount);
         }
 
         configService.updateSyncTime(config.getId(), task.getTaskType() == SyncType.FULL);

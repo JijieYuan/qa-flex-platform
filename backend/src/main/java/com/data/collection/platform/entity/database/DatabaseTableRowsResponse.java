@@ -1,5 +1,6 @@
 package com.data.collection.platform.entity.database;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import lombok.AllArgsConstructor;
@@ -18,4 +19,7 @@ public class DatabaseTableRowsResponse {
   private String sortField;
   private String sortOrder;
   private String keyword;
+  private String syncStatus;
+  private LocalDateTime lastSyncTime;
+  private String statusMessage;
 }
