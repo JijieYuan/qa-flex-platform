@@ -8,6 +8,9 @@ public class GitlabMirrorProperties {
   private int schedulerDelayMs = 60000;
   private String webhookBaseUrl = "http://localhost:18080/api/gitlab-sync/webhook";
   private String dockerCommand = "docker";
+  private int heartbeatTimeoutSeconds = 180;
+  private int dedupeWindowSeconds = 15;
+  private int failureBackoffMinutes = 10;
 
   public boolean isSchedulerEnabled() {
     return schedulerEnabled;
@@ -39,5 +42,29 @@ public class GitlabMirrorProperties {
 
   public void setDockerCommand(String dockerCommand) {
     this.dockerCommand = dockerCommand;
+  }
+
+  public int getHeartbeatTimeoutSeconds() {
+    return heartbeatTimeoutSeconds;
+  }
+
+  public void setHeartbeatTimeoutSeconds(int heartbeatTimeoutSeconds) {
+    this.heartbeatTimeoutSeconds = heartbeatTimeoutSeconds;
+  }
+
+  public int getDedupeWindowSeconds() {
+    return dedupeWindowSeconds;
+  }
+
+  public void setDedupeWindowSeconds(int dedupeWindowSeconds) {
+    this.dedupeWindowSeconds = dedupeWindowSeconds;
+  }
+
+  public int getFailureBackoffMinutes() {
+    return failureBackoffMinutes;
+  }
+
+  public void setFailureBackoffMinutes(int failureBackoffMinutes) {
+    this.failureBackoffMinutes = failureBackoffMinutes;
   }
 }

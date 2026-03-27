@@ -26,6 +26,14 @@ public class GitlabConfigService {
     return config == null ? defaultConfig() : config;
   }
 
+  public GitlabSyncConfig getConfigById(Long id) {
+    if (id == null) {
+      return defaultConfig();
+    }
+    GitlabSyncConfig config = configMapper.selectById(id);
+    return config == null ? defaultConfig() : config;
+  }
+
   public GitlabSyncConfig saveConfig(GitlabSyncConfig input) {
     GitlabSyncConfig current = getConfig();
     GitlabSyncConfig normalized = normalize(input);

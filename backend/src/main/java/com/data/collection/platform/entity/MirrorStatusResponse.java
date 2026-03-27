@@ -5,6 +5,7 @@ import java.util.List;
 
 public record MirrorStatusResponse(
     GitlabSyncConfig config,
+    GitlabSyncTask currentTask,
     SyncStatus currentStatus,
     String currentMessage,
     LocalDateTime currentStartedAt,

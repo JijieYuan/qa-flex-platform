@@ -3,6 +3,8 @@ package com.data.collection.platform.service;
 import com.data.collection.platform.common.JsonUtils;
 import com.data.collection.platform.entity.GitlabSyncConfig;
 import com.data.collection.platform.entity.GitlabMirrorRecord;
+import com.data.collection.platform.entity.GitlabSyncTask;
+import com.data.collection.platform.entity.SyncTriggerType;
 import com.data.collection.platform.entity.SyncProgress;
 import com.data.collection.platform.entity.SyncStatus;
 import com.data.collection.platform.entity.SyncType;
@@ -12,8 +14,9 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
@@ -26,9 +29,11 @@ public class GitlabMirrorSyncService {
   private final GitlabExternalDbService externalDbService;
   private final GitlabMirrorRecordMapper mirrorRecordMapper;
   private final GitlabSyncLogService logService;
+  private final GitlabSyncTaskService taskService;
   private final JsonUtils jsonUtils;
-  private final AtomicBoolean running = new AtomicBoolean(false);
-  private final AtomicReference<SyncProgress> progress = new AtomicReference<>();
+  private final GitlabMirrorSyncService self;
+  private final ConcurrentMap<Long, SyncProgress> progressMap = new ConcurrentHashMap<>();
+  private final String lockOwner = java.util.UUID.randomUUID().toString();
 
   public GitlabMirrorSyncService(
       GitlabConfigService configService,
@@ -36,76 +41,97 @@ public class GitlabMirrorSyncService {
       GitlabExternalDbService externalDbService,
       GitlabMirrorRecordMapper mirrorRecordMapper,
       GitlabSyncLogService logService,
-      JsonUtils jsonUtils) {
+      GitlabSyncTaskService taskService,
+      JsonUtils jsonUtils,
+      @Lazy GitlabMirrorSyncService self) {
     this.configService = configService;
     this.whitelistService = whitelistService;
     this.externalDbService = externalDbService;
     this.mirrorRecordMapper = mirrorRecordMapper;
     this.logService = logService;
+    this.taskService = taskService;
     this.jsonUtils = jsonUtils;
+    this.self = self;
   }
 
-  public boolean isRunning() {
-    return running.get();
+  public boolean hasActiveTask(Long configId) {
+    return taskService.hasActiveTask(configId);
   }
 
-  public SyncProgress getProgress() {
-    return progress.get();
+  public SyncProgress getProgress(Long taskId) {
+    return taskId == null ? null : progressMap.get(taskId);
   }
 
-  public void reconcileRunningState(Long configId) {
-    if (running.get() || configId == null) {
-      return;
-    }
-    logService.markRunningAsFailed(configId, "Recovered stale running task after process interruption");
+  public void recoverTimedOutTasks() {
+    taskService.recoverTimedOutTasks();
   }
 
   public void testConnection() {
     externalDbService.testConnection(configService.getConfig());
   }
 
-  @Async
-  public void startFullSync() {
-    runSync(SyncType.FULL, "Manual full sync");
+  public GitlabSyncTask startFullSync() {
+    return submitTask(SyncType.FULL, SyncTriggerType.MANUAL, "Manual full sync");
   }
 
-  @Async
-  public void startIncrementalSync(String message) {
-    runSync(SyncType.INCREMENTAL, message);
+  public GitlabSyncTask startIncrementalSync(SyncTriggerType triggerType, String message) {
+    return submitTask(SyncType.INCREMENTAL, triggerType, message);
   }
 
-  @Async
-  public void startCompensationSync() {
-    runSync(SyncType.COMPENSATION, "Scheduled compensation sync");
+  public GitlabSyncTask startCompensationSync() {
+    return submitTask(SyncType.COMPENSATION, SyncTriggerType.SCHEDULE, "Scheduled compensation sync");
   }
 
-  private void runSync(SyncType type, String message) {
+  public GitlabSyncTask requestCancel(Long configId) {
+    return taskService.requestCancelLatest(configId);
+  }
+
+  private GitlabSyncTask submitTask(SyncType type, SyncTriggerType triggerType, String message) {
     GitlabSyncConfig config = configService.getConfig();
-    if (config.getId() != null) {
-      logService.markRunningAsFailed(config.getId(), "Recovered stale running task before starting a new sync");
+    GitlabSyncTask task = taskService.submitTask(config, type, triggerType, message, Map.of());
+    if (task.getStatus() == SyncStatus.PENDING) {
+      self.executeTaskAsync(task.getId());
     }
-    if (!running.compareAndSet(false, true)) {
+    return task;
+  }
+
+  @Async
+  public void executeTaskAsync(Long taskId) {
+    executeTask(taskId);
+  }
+
+  private void executeTask(Long taskId) {
+    GitlabSyncTask task = taskService.claimPendingTask(taskId, lockOwner);
+    if (task == null) {
       return;
     }
+    GitlabSyncConfig config = configService.getConfigById(task.getConfigId());
     List<TableWhitelistOption> tables = whitelistService.resolveOptions(config);
-    long logId = logService.start(config.getId(), type, tables.stream().map(TableWhitelistOption::tableName).toList(), message);
+    long logId = logService.start(
+        config.getId(),
+        task.getTaskType(),
+        tables.stream().map(TableWhitelistOption::tableName).toList(),
+        taskService.extractMessage(task));
     int tableCount = 0;
     int recordCount = 0;
     try {
       SyncProgress currentProgress = new SyncProgress();
-      currentProgress.setPhase(resolvePhase(type));
+      currentProgress.setPhase(resolvePhase(task.getTaskType()));
       currentProgress.setTotalTables(tables.size());
       currentProgress.setCompletedTables(0);
       currentProgress.setSyncedRecords(0);
       currentProgress.setStartedAt(LocalDateTime.now());
-      progress.set(currentProgress);
+      progressMap.put(taskId, currentProgress);
+      checkCancelled(taskId);
       externalDbService.testConnection(config);
-      LocalDateTime since = type == SyncType.FULL ? null : config.getLastIncrementalSyncAt();
+      LocalDateTime since = task.getTaskType() == SyncType.FULL ? null : config.getLastIncrementalSyncAt();
       for (TableWhitelistOption table : tables) {
+        checkCancelled(taskId);
         currentProgress.setCurrentTable(table.tableName());
         currentProgress.setCompletedTables(tableCount);
         currentProgress.setSyncedRecords(recordCount);
-        List<Map<String, Object>> rows = shouldUseFullScan(type)
+        taskService.heartbeat(taskId);
+        List<Map<String, Object>> rows = shouldUseFullScan(task.getTaskType())
             ? externalDbService.fullTableScan(config, table)
             : externalDbService.incrementalScan(config, table, since);
         List<GitlabMirrorRecord> mirrorRows = new ArrayList<>(rows.size());
@@ -119,22 +145,36 @@ public class GitlabMirrorSyncService {
           mirrorRows.add(record);
         }
         for (int index = 0; index < mirrorRows.size(); index += UPSERT_BATCH_SIZE) {
+          checkCancelled(taskId);
           int end = Math.min(index + UPSERT_BATCH_SIZE, mirrorRows.size());
           mirrorRecordMapper.upsertBatch(mirrorRows.subList(index, end));
           recordCount += (end - index);
           currentProgress.setSyncedRecords(recordCount);
+          taskService.heartbeat(taskId);
         }
         tableCount++;
         currentProgress.setCompletedTables(tableCount);
         currentProgress.setSyncedRecords(recordCount);
       }
-      configService.updateSyncTime(config.getId(), type == SyncType.FULL);
+      configService.updateSyncTime(config.getId(), task.getTaskType() == SyncType.FULL);
       logService.finish(logId, SyncStatus.SUCCESS, "Sync completed successfully", tableCount, recordCount);
+      taskService.finish(taskId, SyncStatus.SUCCESS, "Sync completed successfully", null);
+    } catch (SyncCancelledException e) {
+      logService.finish(logId, SyncStatus.CANCELLED, e.getMessage(), tableCount, recordCount);
+      taskService.finish(taskId, SyncStatus.CANCELLED, e.getMessage(), null);
     } catch (Exception e) {
       logService.finish(logId, SyncStatus.FAILED, e.getMessage(), tableCount, recordCount);
+      taskService.finish(
+          taskId,
+          SyncStatus.FAILED,
+          e.getMessage(),
+          LocalDateTime.now().plusMinutes(taskService.getFailureBackoffMinutes()));
     } finally {
-      running.set(false);
-      progress.set(null);
+      progressMap.remove(taskId);
+      GitlabSyncTask nextTask = taskService.promoteNextQueued(task.getScopeKey());
+      if (nextTask != null) {
+        self.executeTaskAsync(nextTask.getId());
+      }
     }
   }
 
@@ -148,5 +188,17 @@ public class GitlabMirrorSyncService {
       case COMPENSATION -> "COMPENSATION_SYNC";
       case INCREMENTAL, WEBHOOK -> "INCREMENTAL_SYNC";
     };
+  }
+
+  private void checkCancelled(Long taskId) {
+    if (taskService.isCancelRequested(taskId)) {
+      throw new SyncCancelledException("Sync cancelled by user");
+    }
+  }
+
+  private static final class SyncCancelledException extends RuntimeException {
+    private SyncCancelledException(String message) {
+      super(message);
+    }
   }
 }

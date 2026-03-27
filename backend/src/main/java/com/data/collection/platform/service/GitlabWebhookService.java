@@ -4,6 +4,7 @@ import com.data.collection.platform.common.JsonUtils;
 import com.data.collection.platform.common.exception.BizException;
 import com.data.collection.platform.entity.GitlabSyncConfig;
 import com.data.collection.platform.entity.GitlabWebhookEvent;
+import com.data.collection.platform.entity.SyncTriggerType;
 import com.data.collection.platform.mapper.GitlabWebhookEventMapper;
 import java.time.LocalDateTime;
 import java.util.Map;
@@ -46,7 +47,7 @@ public class GitlabWebhookService {
     webhookEventMapper.insert(event);
 
     if (config.isAutoSyncEnabled()) {
-      syncService.startIncrementalSync("Triggered by webhook: " + eventType);
+      syncService.startIncrementalSync(SyncTriggerType.WEBHOOK, "Triggered by webhook: " + eventType);
     }
   }
 

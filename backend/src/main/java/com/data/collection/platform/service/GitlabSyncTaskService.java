@@ -1,0 +1,356 @@
+package com.data.collection.platform.service;
+
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.data.collection.platform.common.JsonUtils;
+import com.data.collection.platform.config.GitlabMirrorProperties;
+import com.data.collection.platform.entity.GitlabSyncConfig;
+import com.data.collection.platform.entity.GitlabSyncTask;
+import com.data.collection.platform.entity.SourceMode;
+import com.data.collection.platform.entity.SyncStatus;
+import com.data.collection.platform.entity.SyncTriggerType;
+import com.data.collection.platform.entity.SyncType;
+import com.data.collection.platform.mapper.GitlabSyncTaskMapper;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.time.LocalDateTime;
+import java.util.HexFormat;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
+
+@Service
+@RequiredArgsConstructor
+public class GitlabSyncTaskService {
+  private static final List<SyncStatus> ACTIVE_STATUSES = List.of(
+      SyncStatus.PENDING,
+      SyncStatus.QUEUED,
+      SyncStatus.RUNNING,
+      SyncStatus.CANCELLING);
+
+  private final GitlabSyncTaskMapper taskMapper;
+  private final GitlabMirrorProperties properties;
+  private final JsonUtils jsonUtils;
+
+  public GitlabSyncTask submitTask(
+      GitlabSyncConfig config,
+      SyncType taskType,
+      SyncTriggerType triggerType,
+      String message,
+      Map<String, Object> payload) {
+    recoverTimedOutTasks();
+
+    String scopeKey = buildScopeKey(config);
+    String dedupeKey = buildDedupeKey(config, taskType, triggerType, payload);
+    GitlabSyncTask recentDuplicate = findRecentByDedupe(dedupeKey);
+    if (recentDuplicate != null) {
+      return recentDuplicate;
+    }
+
+    GitlabSyncTask activeTask = findActiveByScope(scopeKey);
+    if (activeTask != null) {
+      if (activeTask.getTaskType() == taskType) {
+        return activeTask;
+      }
+      GitlabSyncTask queuedTask = findLatestQueued(scopeKey);
+      if (queuedTask != null) {
+        return queuedTask;
+      }
+      GitlabSyncTask queued = buildTask(
+          config,
+          taskType,
+          triggerType,
+          scopeKey,
+          dedupeKey,
+          SyncStatus.QUEUED,
+          payloadWithMessage(message, payload));
+      queued.setQueuedAt(LocalDateTime.now());
+      queued.setRunAfter(LocalDateTime.now());
+      taskMapper.insert(queued);
+      return queued;
+    }
+
+    GitlabSyncTask pending = buildTask(
+        config,
+        taskType,
+        triggerType,
+        scopeKey,
+        dedupeKey,
+        SyncStatus.PENDING,
+        payloadWithMessage(message, payload));
+    taskMapper.insert(pending);
+    return pending;
+  }
+
+  public GitlabSyncTask findDisplayTask(Long configId) {
+    if (configId == null) {
+      return null;
+    }
+    GitlabSyncTask active = taskMapper.selectOne(new LambdaQueryWrapper<GitlabSyncTask>()
+        .eq(GitlabSyncTask::getConfigId, configId)
+        .in(GitlabSyncTask::getStatus, ACTIVE_STATUSES)
+        .orderByDesc(GitlabSyncTask::getCreatedAt)
+        .last("limit 1"));
+    if (active != null) {
+      return active;
+    }
+    return taskMapper.selectOne(new LambdaQueryWrapper<GitlabSyncTask>()
+        .eq(GitlabSyncTask::getConfigId, configId)
+        .orderByDesc(GitlabSyncTask::getCreatedAt)
+        .last("limit 1"));
+  }
+
+  public GitlabSyncTask claimPendingTask(Long taskId, String lockOwner) {
+    LocalDateTime now = LocalDateTime.now();
+    int updated = taskMapper.update(
+        null,
+        new LambdaUpdateWrapper<GitlabSyncTask>()
+            .eq(GitlabSyncTask::getId, taskId)
+            .eq(GitlabSyncTask::getStatus, SyncStatus.PENDING)
+            .set(GitlabSyncTask::getStatus, SyncStatus.RUNNING)
+            .set(GitlabSyncTask::getLockOwner, lockOwner)
+            .set(GitlabSyncTask::getStartedAt, now)
+            .set(GitlabSyncTask::getHeartbeatAt, now)
+            .set(GitlabSyncTask::getUpdatedAt, now));
+    return updated > 0 ? taskMapper.selectById(taskId) : null;
+  }
+
+  public void heartbeat(Long taskId) {
+    LocalDateTime now = LocalDateTime.now();
+    taskMapper.update(
+        null,
+        new LambdaUpdateWrapper<GitlabSyncTask>()
+            .eq(GitlabSyncTask::getId, taskId)
+            .in(GitlabSyncTask::getStatus, SyncStatus.RUNNING, SyncStatus.CANCELLING)
+            .set(GitlabSyncTask::getHeartbeatAt, now)
+            .set(GitlabSyncTask::getUpdatedAt, now));
+  }
+
+  public boolean isCancelRequested(Long taskId) {
+    GitlabSyncTask task = taskMapper.selectById(taskId);
+    return task != null && task.isCancelRequested();
+  }
+
+  public GitlabSyncTask requestCancelLatest(Long configId) {
+    GitlabSyncTask task = taskMapper.selectOne(new LambdaQueryWrapper<GitlabSyncTask>()
+        .eq(GitlabSyncTask::getConfigId, configId)
+        .in(GitlabSyncTask::getStatus, SyncStatus.PENDING, SyncStatus.QUEUED, SyncStatus.RUNNING, SyncStatus.CANCELLING)
+        .orderByDesc(GitlabSyncTask::getCreatedAt)
+        .last("limit 1"));
+    if (task == null) {
+      return null;
+    }
+    SyncStatus nextStatus = (task.getStatus() == SyncStatus.PENDING || task.getStatus() == SyncStatus.QUEUED)
+        ? SyncStatus.CANCELLED
+        : SyncStatus.CANCELLING;
+    LocalDateTime now = LocalDateTime.now();
+    taskMapper.update(
+        null,
+        new LambdaUpdateWrapper<GitlabSyncTask>()
+            .eq(GitlabSyncTask::getId, task.getId())
+            .set(GitlabSyncTask::isCancelRequested, true)
+            .set(GitlabSyncTask::getStatus, nextStatus)
+            .set(GitlabSyncTask::getFinishedAt, nextStatus == SyncStatus.CANCELLED ? now : null)
+            .set(GitlabSyncTask::getFinishedReason, "Cancellation requested by user")
+            .set(GitlabSyncTask::getUpdatedAt, now));
+    return taskMapper.selectById(task.getId());
+  }
+
+  public void finish(Long taskId, SyncStatus status, String reason, LocalDateTime cooldownUntil) {
+    LocalDateTime now = LocalDateTime.now();
+    taskMapper.update(
+        null,
+        new LambdaUpdateWrapper<GitlabSyncTask>()
+            .eq(GitlabSyncTask::getId, taskId)
+            .set(GitlabSyncTask::getStatus, status)
+            .set(GitlabSyncTask::getFinishedReason, reason)
+            .set(GitlabSyncTask::getFinishedAt, now)
+            .set(GitlabSyncTask::getHeartbeatAt, now)
+            .set(GitlabSyncTask::getCooldownUntil, cooldownUntil)
+            .set(GitlabSyncTask::getUpdatedAt, now));
+  }
+
+  public GitlabSyncTask promoteNextQueued(String scopeKey) {
+    GitlabSyncTask nextQueued = findLatestQueued(scopeKey);
+    if (nextQueued == null) {
+      return null;
+    }
+    LocalDateTime now = LocalDateTime.now();
+    int updated = taskMapper.update(
+        null,
+        new LambdaUpdateWrapper<GitlabSyncTask>()
+            .eq(GitlabSyncTask::getId, nextQueued.getId())
+            .eq(GitlabSyncTask::getStatus, SyncStatus.QUEUED)
+            .set(GitlabSyncTask::getStatus, SyncStatus.PENDING)
+            .set(GitlabSyncTask::getUpdatedAt, now));
+    return updated > 0 ? taskMapper.selectById(nextQueued.getId()) : null;
+  }
+
+  public boolean hasActiveTask(Long configId) {
+    return taskMapper.selectCount(new LambdaQueryWrapper<GitlabSyncTask>()
+        .eq(GitlabSyncTask::getConfigId, configId)
+        .in(GitlabSyncTask::getStatus, ACTIVE_STATUSES)) > 0;
+  }
+
+  public void recoverTimedOutTasks() {
+    LocalDateTime threshold = LocalDateTime.now().minusSeconds(properties.getHeartbeatTimeoutSeconds());
+    List<GitlabSyncTask> staleTasks = taskMapper.selectList(new LambdaQueryWrapper<GitlabSyncTask>()
+        .in(GitlabSyncTask::getStatus, SyncStatus.RUNNING, SyncStatus.CANCELLING)
+        .lt(GitlabSyncTask::getHeartbeatAt, threshold));
+    for (GitlabSyncTask task : staleTasks) {
+      finish(task.getId(), SyncStatus.TIMEOUT, "Task heartbeat timed out", LocalDateTime.now().plusMinutes(properties.getFailureBackoffMinutes()));
+    }
+  }
+
+  public LocalDateTime resolveLatestActivityAt(Long configId) {
+    GitlabSyncTask latestTask = taskMapper.selectOne(new LambdaQueryWrapper<GitlabSyncTask>()
+        .eq(GitlabSyncTask::getConfigId, configId)
+        .orderByDesc(GitlabSyncTask::getUpdatedAt)
+        .last("limit 1"));
+    if (latestTask == null) {
+      return null;
+    }
+    if (latestTask.getFinishedAt() != null) {
+      return latestTask.getFinishedAt();
+    }
+    if (latestTask.getStartedAt() != null) {
+      return latestTask.getStartedAt();
+    }
+    return latestTask.getCreatedAt();
+  }
+
+  public boolean isInCooldown(Long configId) {
+    GitlabSyncTask latestTask = taskMapper.selectOne(new LambdaQueryWrapper<GitlabSyncTask>()
+        .eq(GitlabSyncTask::getConfigId, configId)
+        .orderByDesc(GitlabSyncTask::getUpdatedAt)
+        .last("limit 1"));
+    return latestTask != null
+        && latestTask.getCooldownUntil() != null
+        && latestTask.getCooldownUntil().isAfter(LocalDateTime.now());
+  }
+
+  public String extractMessage(GitlabSyncTask task) {
+    if (task == null) {
+      return "";
+    }
+    if (task.getFinishedReason() != null && !task.getFinishedReason().isBlank()) {
+      return task.getFinishedReason();
+    }
+    if (task.getPayloadJson() == null || task.getPayloadJson().isBlank()) {
+      return defaultMessage(task);
+    }
+    Object value = jsonUtils.toMap(task.getPayloadJson()).get("message");
+    return value == null ? defaultMessage(task) : String.valueOf(value);
+  }
+
+  public GitlabSyncTask findById(Long taskId) {
+    return taskId == null ? null : taskMapper.selectById(taskId);
+  }
+
+  public int getFailureBackoffMinutes() {
+    return properties.getFailureBackoffMinutes();
+  }
+
+  public String buildScopeKey(GitlabSyncConfig config) {
+    String whitelistValue = switch (config.getWhitelistMode()) {
+      case ALL -> "ALL";
+      case RECOMMENDED -> "RECOMMENDED";
+      case CUSTOM -> hashValue(String.join(",", config.getWhitelistTables() == null ? List.of() : config.getWhitelistTables()));
+    };
+    return "cfg-%s:mirror:%s:%s:%s:local".formatted(
+        config.getId() == null ? "new" : config.getId(),
+        config.getSourceMode() == null ? SourceMode.DOCKER : config.getSourceMode(),
+        config.getWhitelistMode(),
+        whitelistValue);
+  }
+
+  private GitlabSyncTask buildTask(
+      GitlabSyncConfig config,
+      SyncType taskType,
+      SyncTriggerType triggerType,
+      String scopeKey,
+      String dedupeKey,
+      SyncStatus status,
+      Map<String, Object> payload) {
+    LocalDateTime now = LocalDateTime.now();
+    GitlabSyncTask task = new GitlabSyncTask();
+    task.setRunId(UUID.randomUUID().toString().replace("-", ""));
+    task.setConfigId(config.getId());
+    task.setTaskType(taskType);
+    task.setTriggerType(triggerType);
+    task.setSourceMode(config.getSourceMode());
+    task.setScopeKey(scopeKey);
+    task.setDedupeKey(dedupeKey);
+    task.setStatus(status);
+    task.setPayloadJson(jsonUtils.toJson(payload));
+    task.setRetryCount(0);
+    task.setVersion(0);
+    task.setCreatedAt(now);
+    task.setUpdatedAt(now);
+    task.setHeartbeatAt(now);
+    return task;
+  }
+
+  private GitlabSyncTask findRecentByDedupe(String dedupeKey) {
+    LocalDateTime cutoff = LocalDateTime.now().minusSeconds(properties.getDedupeWindowSeconds());
+    return taskMapper.selectOne(new LambdaQueryWrapper<GitlabSyncTask>()
+        .eq(GitlabSyncTask::getDedupeKey, dedupeKey)
+        .ge(GitlabSyncTask::getCreatedAt, cutoff)
+        .notIn(GitlabSyncTask::getStatus, SyncStatus.FAILED, SyncStatus.CANCELLED, SyncStatus.TIMEOUT)
+        .orderByDesc(GitlabSyncTask::getCreatedAt)
+        .last("limit 1"));
+  }
+
+  private GitlabSyncTask findActiveByScope(String scopeKey) {
+    return taskMapper.selectOne(new LambdaQueryWrapper<GitlabSyncTask>()
+        .eq(GitlabSyncTask::getScopeKey, scopeKey)
+        .in(GitlabSyncTask::getStatus, ACTIVE_STATUSES)
+        .orderByDesc(GitlabSyncTask::getCreatedAt)
+        .last("limit 1"));
+  }
+
+  private GitlabSyncTask findLatestQueued(String scopeKey) {
+    return taskMapper.selectOne(new LambdaQueryWrapper<GitlabSyncTask>()
+        .eq(GitlabSyncTask::getScopeKey, scopeKey)
+        .eq(GitlabSyncTask::getStatus, SyncStatus.QUEUED)
+        .orderByAsc(GitlabSyncTask::getCreatedAt)
+        .last("limit 1"));
+  }
+
+  private String buildDedupeKey(
+      GitlabSyncConfig config,
+      SyncType taskType,
+      SyncTriggerType triggerType,
+      Map<String, Object> payload) {
+    return hashValue("%s|%s|%s|%s|%s".formatted(
+        config.getId(),
+        taskType,
+        triggerType,
+        buildScopeKey(config),
+        jsonUtils.toJson(payload == null ? Map.of() : payload)));
+  }
+
+  private Map<String, Object> payloadWithMessage(String message, Map<String, Object> payload) {
+    Map<String, Object> merged = new java.util.LinkedHashMap<>();
+    merged.put("message", message);
+    if (payload != null) {
+      merged.putAll(payload);
+    }
+    return merged;
+  }
+
+  private String defaultMessage(GitlabSyncTask task) {
+    return task.getTaskType() + " / " + task.getStatus();
+  }
+
+  private String hashValue(String raw) {
+    try {
+      MessageDigest digest = MessageDigest.getInstance("SHA-256");
+      return HexFormat.of().formatHex(digest.digest(raw.getBytes(StandardCharsets.UTF_8)));
+    } catch (Exception e) {
+      throw new IllegalStateException("Failed to build hash", e);
+    }
+  }
+}

@@ -15,7 +15,14 @@ import {
 } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
 import StatisticBoardView from './components/StatisticBoardView.vue';
-import { api, type GitlabSyncConfig, type GitlabSyncLog, type MirrorStatusResponse, type SyncProgress } from './api';
+import {
+  api,
+  type GitlabSyncConfig,
+  type GitlabSyncLog,
+  type GitlabSyncTask,
+  type MirrorStatusResponse,
+  type SyncProgress,
+} from './api';
 
 type ModuleKey =
   | 'quality-board'
@@ -162,6 +169,7 @@ const activePageKey = ref<PageKey>('quality-board-home');
 const loading = ref(false);
 const saving = ref(false);
 const syncing = ref(false);
+const cancelling = ref(false);
 const status = ref<MirrorStatusResponse | null>(null);
 const refreshTimer = ref<number | null>(null);
 
@@ -191,8 +199,11 @@ const whitelistOptions = computed(() => status.value?.whitelistOptions ?? []);
 const recommendedCount = computed(() => whitelistOptions.value.filter((item) => item.recommended).length);
 const isDockerMode = computed(() => form.value.sourceMode === 'DOCKER');
 const progress = computed<SyncProgress | null>(() => status.value?.progress ?? null);
+const currentTask = computed<GitlabSyncTask | null>(() => status.value?.currentTask ?? null);
 const recentLogs = computed(() => status.value?.logs ?? []);
 const latestLog = computed(() => recentLogs.value[0] ?? null);
+const activePollingStatuses = ['PENDING', 'QUEUED', 'RUNNING', 'CANCELLING'];
+const canCancel = computed(() => currentTask.value != null && activePollingStatuses.includes(currentTask.value.status));
 
 const progressPercent = computed(() => {
   const current = progress.value;
@@ -200,7 +211,7 @@ const progressPercent = computed(() => {
     return 0;
   }
   if (current.totalTables <= 0) {
-    return status.value?.currentStatus === 'RUNNING' ? 5 : 0;
+    return currentTask.value && activePollingStatuses.includes(currentTask.value.status) ? 5 : 0;
   }
   return Math.min(100, Math.round((current.completedTables / current.totalTables) * 100));
 });
@@ -209,6 +220,18 @@ const displayStatus = computed(() => {
   const raw = status.value?.currentStatus ?? 'IDLE';
   if (raw === 'RUNNING') {
     return { text: '同步中', type: 'warning' as const };
+  }
+  if (raw === 'PENDING' || raw === 'QUEUED') {
+    return { text: '等待执行', type: 'warning' as const };
+  }
+  if (raw === 'CANCELLING') {
+    return { text: '停止中', type: 'warning' as const };
+  }
+  if (raw === 'CANCELLED') {
+    return { text: '已中止', type: 'info' as const };
+  }
+  if (raw === 'TIMEOUT') {
+    return { text: '已超时', type: 'danger' as const };
   }
   const log = latestLog.value;
   if (log?.status === 'FAILED') {
@@ -230,13 +253,19 @@ const phaseText = computed(() => {
     case 'COMPENSATION_SYNC':
       return '补偿同步';
     default:
-      return '空闲';
+      return currentTask.value?.status === 'QUEUED' ? '排队中' : '空闲';
   }
 });
 
 const progressHint = computed(() => {
   const current = progress.value;
   if (!current) {
+    if (currentTask.value?.status === 'QUEUED') {
+      return '已有同步任务正在执行，当前任务已进入队列等待。';
+    }
+    if (currentTask.value?.status === 'CANCELLING') {
+      return '已收到中止请求，正在等待当前批次安全退出。';
+    }
     return '当前没有正在执行的同步任务。';
   }
   if (current.currentTable) {
@@ -287,9 +316,9 @@ function stopRunningRefresh() {
 }
 
 watch(
-  () => status.value?.currentStatus,
+  () => currentTask.value?.status,
   (nextStatus) => {
-    if (nextStatus === 'RUNNING') {
+    if (nextStatus && activePollingStatuses.includes(nextStatus)) {
       startRunningRefresh();
     } else {
       stopRunningRefresh();
@@ -358,6 +387,23 @@ async function startIncrementalSync() {
     ElMessage.error((error as Error).message);
   } finally {
     syncing.value = false;
+  }
+}
+
+async function cancelSyncTask() {
+  cancelling.value = true;
+  try {
+    const result = await api.cancelSync();
+    if (result.accepted) {
+      ElMessage.success('已提交中止请求');
+    } else {
+      ElMessage.info('当前没有可中止的任务');
+    }
+    await loadStatus(false);
+  } catch (error) {
+    ElMessage.error((error as Error).message);
+  } finally {
+    cancelling.value = false;
   }
 }
 
@@ -640,8 +686,11 @@ onBeforeUnmount(() => {
                 <el-space wrap>
                   <el-button type="primary" :loading="saving" @click="saveConfig()">保存配置</el-button>
                   <el-button :icon="Tools" @click="testConnection">测试连接</el-button>
-                  <el-button type="success" :loading="syncing" @click="startFullSync">首次全量同步</el-button>
-                  <el-button :loading="syncing" @click="startIncrementalSync">立即增量同步</el-button>
+                  <el-button type="success" :loading="syncing" :disabled="canCancel" @click="startFullSync">首次全量同步</el-button>
+                  <el-button :loading="syncing" :disabled="canCancel" @click="startIncrementalSync">立即增量同步</el-button>
+                  <el-button type="danger" plain :loading="cancelling" :disabled="!canCancel" @click="cancelSyncTask">
+                    中止导入
+                  </el-button>
                 </el-space>
               </el-form>
             </el-card>
@@ -652,7 +701,7 @@ onBeforeUnmount(() => {
                   <div class="panel-header">
                     <div>
                       <div class="panel-title">同步状态</div>
-                      <div class="panel-caption">仅在同步中自动轮询刷新。</div>
+                      <div class="panel-caption">仅在排队、执行或中止过程中自动轮询刷新。</div>
                     </div>
                     <el-tag :type="displayStatus.type">{{ displayStatus.text }}</el-tag>
                   </div>
@@ -671,7 +720,7 @@ onBeforeUnmount(() => {
                   <el-progress
                     :percentage="progressPercent"
                     :stroke-width="18"
-                    :status="status?.currentStatus === 'RUNNING' ? undefined : 'success'"
+                    :status="currentTask?.status === 'RUNNING' || currentTask?.status === 'CANCELLING' ? undefined : 'success'"
                   />
                   <div class="progress-tip">{{ progressHint }}</div>
                   <div class="progress-meta-grid">

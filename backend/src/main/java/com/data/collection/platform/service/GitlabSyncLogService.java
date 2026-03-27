@@ -53,29 +53,10 @@ public class GitlabSyncLogService {
         .last("limit " + limit));
   }
 
-  public GitlabSyncLog findRunning(Long configId) {
-    return logMapper.selectOne(new LambdaQueryWrapper<GitlabSyncLog>()
-        .eq(GitlabSyncLog::getConfigId, configId)
-        .eq(GitlabSyncLog::getStatus, SyncStatus.RUNNING)
-        .orderByDesc(GitlabSyncLog::getStartedAt)
-        .last("limit 1"));
-  }
-
   public GitlabSyncLog findLatest(Long configId) {
     return logMapper.selectOne(new LambdaQueryWrapper<GitlabSyncLog>()
         .eq(GitlabSyncLog::getConfigId, configId)
         .orderByDesc(GitlabSyncLog::getStartedAt)
         .last("limit 1"));
-  }
-
-  public int markRunningAsFailed(Long configId, String message) {
-    return logMapper.update(
-        null,
-        new LambdaUpdateWrapper<GitlabSyncLog>()
-            .eq(GitlabSyncLog::getConfigId, configId)
-            .eq(GitlabSyncLog::getStatus, SyncStatus.RUNNING)
-            .set(GitlabSyncLog::getStatus, SyncStatus.FAILED)
-            .set(GitlabSyncLog::getMessage, message)
-            .set(GitlabSyncLog::getFinishedAt, LocalDateTime.now()));
   }
 }

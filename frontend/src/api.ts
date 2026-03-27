@@ -50,8 +50,32 @@ export interface SyncProgress {
   startedAt?: string | null;
 }
 
+export interface GitlabSyncTask {
+  id: number;
+  runId: string;
+  taskType: string;
+  triggerType: string;
+  sourceMode: SourceMode;
+  scopeKey: string;
+  dedupeKey: string;
+  status: string;
+  cancelRequested: boolean;
+  pendingResync: boolean;
+  retryCount: number;
+  cooldownUntil?: string | null;
+  heartbeatAt?: string | null;
+  queuedAt?: string | null;
+  runAfter?: string | null;
+  startedAt?: string | null;
+  finishedAt?: string | null;
+  finishedReason?: string | null;
+  lockOwner?: string | null;
+  payloadJson?: string | null;
+}
+
 export interface MirrorStatusResponse {
   config: GitlabSyncConfig;
+  currentTask?: GitlabSyncTask | null;
   currentStatus: string;
   currentMessage: string;
   currentStartedAt?: string | null;
@@ -233,6 +257,11 @@ export const api = {
   },
   startIncrementalSync() {
     return request<{ accepted: boolean; message: string }>('/api/gitlab-sync/incremental-sync', {
+      method: 'POST',
+    });
+  },
+  cancelSync() {
+    return request<{ accepted: boolean; taskId?: number; status?: string }>('/api/gitlab-sync/cancel', {
       method: 'POST',
     });
   },

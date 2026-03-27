@@ -4,14 +4,17 @@ import com.data.collection.platform.common.response.ApiResponse;
 import com.data.collection.platform.config.GitlabMirrorProperties;
 import com.data.collection.platform.entity.GitlabSyncConfig;
 import com.data.collection.platform.entity.GitlabSyncLog;
+import com.data.collection.platform.entity.GitlabSyncTask;
 import com.data.collection.platform.entity.MirrorStatusResponse;
 import com.data.collection.platform.entity.SourceMode;
 import com.data.collection.platform.entity.SyncProgress;
 import com.data.collection.platform.entity.SyncStatus;
+import com.data.collection.platform.entity.SyncTriggerType;
 import com.data.collection.platform.entity.WhitelistMode;
 import com.data.collection.platform.service.GitlabConfigService;
 import com.data.collection.platform.service.GitlabMirrorSyncService;
 import com.data.collection.platform.service.GitlabSyncLogService;
+import com.data.collection.platform.service.GitlabSyncTaskService;
 import com.data.collection.platform.service.GitlabWebhookService;
 import com.data.collection.platform.service.GitlabWhitelistService;
 import jakarta.validation.constraints.NotBlank;
@@ -35,6 +38,7 @@ public class GitlabSyncController {
   private final GitlabWhitelistService whitelistService;
   private final GitlabMirrorProperties properties;
   private final GitlabWebhookService webhookService;
+  private final GitlabSyncTaskService taskService;
 
   public GitlabSyncController(
       GitlabConfigService configService,
@@ -42,28 +46,33 @@ public class GitlabSyncController {
       GitlabSyncLogService logService,
       GitlabWhitelistService whitelistService,
       GitlabMirrorProperties properties,
-      GitlabWebhookService webhookService) {
+      GitlabWebhookService webhookService,
+      GitlabSyncTaskService taskService) {
     this.configService = configService;
     this.syncService = syncService;
     this.logService = logService;
     this.whitelistService = whitelistService;
     this.properties = properties;
     this.webhookService = webhookService;
+    this.taskService = taskService;
   }
 
   @GetMapping("/status")
   public ApiResponse<MirrorStatusResponse> status() {
     GitlabSyncConfig config = configService.getConfig();
-    syncService.reconcileRunningState(config.getId());
+    syncService.recoverTimedOutTasks();
     List<GitlabSyncLog> logs = config.getId() == null ? List.of() : logService.listRecent(config.getId(), 20);
-    SyncProgress progress = syncService.getProgress();
-    boolean runningNow = syncService.isRunning();
-    GitlabSyncLog running = runningNow && config.getId() != null ? logService.findRunning(config.getId()) : null;
+    GitlabSyncTask currentTask = taskService.findDisplayTask(config.getId());
+    SyncProgress progress = currentTask == null ? null : syncService.getProgress(currentTask.getId());
+    SyncStatus currentStatus = currentTask == null ? SyncStatus.IDLE : currentTask.getStatus();
+    String currentMessage = currentTask == null ? "" : taskService.extractMessage(currentTask);
+    java.time.LocalDateTime currentStartedAt = currentTask == null ? null : currentTask.getStartedAt();
     return ApiResponse.success(new MirrorStatusResponse(
         config,
-        runningNow ? SyncStatus.RUNNING : SyncStatus.IDLE,
-        running == null ? "" : running.getMessage(),
-        running == null ? null : running.getStartedAt(),
+        currentTask,
+        currentStatus,
+        currentMessage,
+        currentStartedAt,
         progress,
         logs,
         whitelistService.listOptions(config),
@@ -99,14 +108,24 @@ public class GitlabSyncController {
 
   @PostMapping("/full-sync")
   public ApiResponse<Map<String, Object>> fullSync() {
-    syncService.startFullSync();
-    return ApiResponse.success("Full sync started", Map.of("accepted", true));
+    GitlabSyncTask task = syncService.startFullSync();
+    return ApiResponse.success("Full sync accepted", Map.of("accepted", true, "taskId", task.getId(), "status", task.getStatus()));
   }
 
   @PostMapping("/incremental-sync")
   public ApiResponse<Map<String, Object>> incrementalSync() {
-    syncService.startIncrementalSync("Triggered manually");
-    return ApiResponse.success("Incremental sync started", Map.of("accepted", true));
+    GitlabSyncTask task = syncService.startIncrementalSync(SyncTriggerType.MANUAL, "Triggered manually");
+    return ApiResponse.success("Incremental sync accepted", Map.of("accepted", true, "taskId", task.getId(), "status", task.getStatus()));
+  }
+
+  @PostMapping("/cancel")
+  public ApiResponse<Map<String, Object>> cancel() {
+    GitlabSyncConfig config = configService.getConfig();
+    GitlabSyncTask task = syncService.requestCancel(config.getId());
+    if (task == null) {
+      return ApiResponse.success("No active task to cancel", Map.of("accepted", false));
+    }
+    return ApiResponse.success("Cancellation requested", Map.of("accepted", true, "taskId", task.getId(), "status", task.getStatus()));
   }
 
   @PostMapping("/webhook")

@@ -23,3 +23,6 @@ platform:
     scheduler-delay-ms: 60000
     webhook-base-url: http://localhost:18080/api/gitlab-sync/webhook
     docker-command: docker
+    heartbeat-timeout-seconds: 180
+    dedupe-window-seconds: 15
+    failure-backoff-minutes: 10

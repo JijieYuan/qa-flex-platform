@@ -7,9 +7,6 @@ import static org.mockito.Mockito.when;
 
 import com.data.collection.platform.config.GitlabMirrorProperties;
 import com.data.collection.platform.entity.GitlabSyncConfig;
-import com.data.collection.platform.entity.GitlabSyncLog;
-import com.data.collection.platform.entity.SyncStatus;
-import com.data.collection.platform.entity.SyncType;
 import java.time.LocalDateTime;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -17,7 +14,7 @@ import org.junit.jupiter.api.Test;
 class GitlabCompensationSchedulerTest {
   private GitlabConfigService configService;
   private GitlabMirrorSyncService syncService;
-  private GitlabSyncLogService logService;
+  private GitlabSyncTaskService taskService;
   private GitlabCompensationScheduler scheduler;
 
   @BeforeEach
@@ -28,41 +25,33 @@ class GitlabCompensationSchedulerTest {
 
     configService = mock(GitlabConfigService.class);
     syncService = mock(GitlabMirrorSyncService.class);
-    logService = mock(GitlabSyncLogService.class);
-    scheduler = new GitlabCompensationScheduler(properties, configService, syncService, logService);
+    taskService = mock(GitlabSyncTaskService.class);
+    scheduler = new GitlabCompensationScheduler(properties, configService, syncService, taskService);
   }
 
   @Test
   void shouldTriggerCompensationWhenLatestActivityExceededInterval() {
     GitlabSyncConfig config = baseConfig();
-    config.setLastIncrementalSyncAt(LocalDateTime.now().minusMinutes(20));
-    when(syncService.isRunning()).thenReturn(false);
     when(configService.getConfig()).thenReturn(config);
-    when(logService.findLatest(1L)).thenReturn(null);
+    when(syncService.hasActiveTask(1L)).thenReturn(false);
+    when(taskService.isInCooldown(1L)).thenReturn(false);
+    when(taskService.resolveLatestActivityAt(1L)).thenReturn(LocalDateTime.now().minusMinutes(20));
 
     scheduler.run();
 
-    verify(syncService).reconcileRunningState(1L);
+    verify(syncService).recoverTimedOutTasks();
     verify(syncService).startCompensationSync();
   }
 
   @Test
-  void shouldSkipCompensationWhenRecentFailedAttemptExists() {
+  void shouldSkipCompensationWhenActiveTaskExists() {
     GitlabSyncConfig config = baseConfig();
-    config.setLastIncrementalSyncAt(LocalDateTime.now().minusMinutes(40));
-    GitlabSyncLog latest = new GitlabSyncLog();
-    latest.setSyncType(SyncType.COMPENSATION);
-    latest.setStatus(SyncStatus.FAILED);
-    latest.setStartedAt(LocalDateTime.now().minusMinutes(2));
-    latest.setFinishedAt(LocalDateTime.now().minusMinutes(1));
-
-    when(syncService.isRunning()).thenReturn(false);
     when(configService.getConfig()).thenReturn(config);
-    when(logService.findLatest(1L)).thenReturn(latest);
+    when(syncService.hasActiveTask(1L)).thenReturn(true);
 
     scheduler.run();
 
-    verify(syncService).reconcileRunningState(1L);
+    verify(syncService).recoverTimedOutTasks();
     verify(syncService, never()).startCompensationSync();
   }
 
