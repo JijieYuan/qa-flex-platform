@@ -497,13 +497,58 @@ function syncTypeText(syncType: string) {
     case 'FULL':
       return '全量同步';
     case 'INCREMENTAL':
-      return '增量同步';
+      return '手工恢复增量';
     case 'COMPENSATION':
       return '补偿同步';
     case 'WEBHOOK':
-      return 'Webhook';
+      return '精确更新';
     default:
       return syncType;
+  }
+}
+
+function syncTypeTagType(syncType: string) {
+  switch (syncType) {
+    case 'FULL':
+      return 'warning';
+    case 'INCREMENTAL':
+      return 'info';
+    case 'COMPENSATION':
+      return 'success';
+    case 'WEBHOOK':
+      return '';
+    default:
+      return 'info';
+  }
+}
+
+function syncLogMessage(log: GitlabSyncLog) {
+  const message = (log.message || '').trim();
+  switch (log.syncType) {
+    case 'WEBHOOK':
+      if (!message) {
+        return 'Webhook 触发的业务对象精确更新。';
+      }
+      return message.replace(/^Triggered by webhook:\s*/i, 'Webhook 精确更新：');
+    case 'INCREMENTAL':
+      if (!message) {
+        return '人工触发的恢复型时间窗口增量同步。';
+      }
+      return message
+        .replace(/^Manual recovery incremental sync$/i, '人工触发的恢复型增量同步')
+        .replace(/^Manual recovery incremental sync requested$/i, '人工触发的恢复型增量同步');
+    case 'COMPENSATION':
+      if (!message) {
+        return '定时补偿窗口兜底同步。';
+      }
+      return message.replace(/^Scheduled compensation sync$/i, '定时补偿窗口兜底同步');
+    case 'FULL':
+      if (!message) {
+        return '全量重建或初始化同步。';
+      }
+      return message.replace(/^Manual full sync$/i, '手工触发的全量同步');
+    default:
+      return message || '-';
   }
 }
 
@@ -777,16 +822,18 @@ onBeforeUnmount(() => {
                   <div class="panel-header">
                     <div>
                       <div class="panel-title">最近同步日志</div>
-                      <div class="panel-caption">快速确认最近一次全量、增量或补偿执行结果。</div>
+                      <div class="panel-caption">快速确认最近一次全量、手工恢复增量、补偿或精确更新执行结果。</div>
                     </div>
                     <el-button link :icon="Refresh" @click="loadStatus()">刷新</el-button>
                   </div>
                 </template>
 
                 <el-table :data="recentLogs" size="small" border class="sync-log-table">
-                  <el-table-column label="类型" width="110">
+                  <el-table-column label="类型" width="126">
                     <template #default="{ row }">
-                      <el-tag size="small" effect="plain">{{ syncTypeText(row.syncType) }}</el-tag>
+                      <el-tag size="small" effect="plain" :type="syncTypeTagType(row.syncType)">
+                        {{ syncTypeText(row.syncType) }}
+                      </el-tag>
                     </template>
                   </el-table-column>
                   <el-table-column label="状态" width="96">
@@ -800,7 +847,7 @@ onBeforeUnmount(() => {
                     <template #default="{ row }">{{ formatDuration(row) }}</template>
                   </el-table-column>
                   <el-table-column label="说明" min-width="220" show-overflow-tooltip>
-                    <template #default="{ row }">{{ row.message || '-' }}</template>
+                    <template #default="{ row }">{{ syncLogMessage(row) }}</template>
                   </el-table-column>
                 </el-table>
               </el-card>
