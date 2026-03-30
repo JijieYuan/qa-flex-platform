@@ -316,6 +316,9 @@ export const api = {
   getStatus() {
     return request<MirrorStatusResponse>('/api/gitlab-sync/status');
   },
+  getWebhookRegistrationStatus() {
+    return request<GitlabWebhookRegistrationStatus>('/api/gitlab-sync/webhook-registration-status');
+  },
   getWhitelistOptions() {
     return request<TableWhitelistOption[]>('/api/gitlab-sync/whitelist-options');
   },

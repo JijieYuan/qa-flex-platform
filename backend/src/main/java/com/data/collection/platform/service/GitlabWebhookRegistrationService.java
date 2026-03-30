@@ -12,9 +12,14 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
@@ -23,6 +28,7 @@ import org.springframework.stereotype.Service;
 public class GitlabWebhookRegistrationService {
   private static final TypeReference<List<Map<String, Object>>> LIST_TYPE = new TypeReference<>() {};
 
+  private final ConcurrentMap<String, CacheEntry> statusCache = new ConcurrentHashMap<>();
   private final GitlabMirrorProperties properties;
   private final ObjectMapper objectMapper;
 
@@ -32,8 +38,16 @@ public class GitlabWebhookRegistrationService {
   }
 
   public GitlabWebhookRegistrationStatus getStatus(GitlabSyncConfig config, String webhookUrl) {
+    String cacheKey = buildCacheKey(config, webhookUrl);
+    CacheEntry cacheEntry = statusCache.get(cacheKey);
+    long cacheSeconds = Math.max(5, properties.getWebhookStatusCacheSeconds());
+    if (cacheEntry != null && Duration.between(cacheEntry.loadedAt(), Instant.now()).getSeconds() < cacheSeconds) {
+      return cacheEntry.status();
+    }
+
+    GitlabWebhookRegistrationStatus status;
     if (config.getSourceMode() != SourceMode.DOCKER) {
-      return new GitlabWebhookRegistrationStatus(
+      status = new GitlabWebhookRegistrationStatus(
           false,
           config.getWebhookProjectId() != null,
           false,
@@ -41,9 +55,8 @@ public class GitlabWebhookRegistrationService {
           webhookUrl,
           "当前仅支持 Docker 模式下自动管理 GitLab Webhook",
           List.of());
-    }
-    if (config.getWebhookProjectId() == null) {
-      return new GitlabWebhookRegistrationStatus(
+    } else if (config.getWebhookProjectId() == null) {
+      status = new GitlabWebhookRegistrationStatus(
           true,
           false,
           false,
@@ -51,16 +64,20 @@ public class GitlabWebhookRegistrationService {
           webhookUrl,
           "请先填写 GitLab Project ID",
           List.of());
+    } else {
+      List<RegisteredGitlabWebhook> hooks = listHooks(config, webhookUrl);
+      status = new GitlabWebhookRegistrationStatus(
+          true,
+          true,
+          !hooks.isEmpty(),
+          config.getWebhookProjectId(),
+          webhookUrl,
+          hooks.isEmpty() ? "当前项目尚未注册平台 Webhook" : "GitLab Webhook 已注册",
+          hooks);
     }
-    List<RegisteredGitlabWebhook> hooks = listHooks(config, webhookUrl);
-    return new GitlabWebhookRegistrationStatus(
-        true,
-        true,
-        !hooks.isEmpty(),
-        config.getWebhookProjectId(),
-        webhookUrl,
-        hooks.isEmpty() ? "当前项目尚未注册平台 Webhook" : "GitLab Webhook 已注册",
-        hooks);
+
+    statusCache.put(cacheKey, new CacheEntry(Instant.now(), status));
+    return status;
   }
 
   public GitlabWebhookRegistrationStatus ensureRegistered(GitlabSyncConfig config, String webhookUrl) {
@@ -70,6 +87,7 @@ public class GitlabWebhookRegistrationService {
     if (config.getWebhookProjectId() == null) {
       throw new BizException("请先配置 GitLab Project ID");
     }
+
     List<String> command = buildDockerExecCommand(
         config,
         webhookUrl,
@@ -81,7 +99,12 @@ public class GitlabWebhookRegistrationService {
     } catch (Exception e) {
       throw new BizException("GitLab Webhook 注册返回无法解析: " + output);
     }
+    invalidateCache(config, webhookUrl);
     return getStatus(config, webhookUrl);
+  }
+
+  public void invalidateCache(GitlabSyncConfig config, String webhookUrl) {
+    statusCache.remove(buildCacheKey(config, webhookUrl));
   }
 
   private List<RegisteredGitlabWebhook> listHooks(GitlabSyncConfig config, String webhookUrl) {
@@ -228,5 +251,17 @@ public class GitlabWebhookRegistrationService {
       return bool;
     }
     return value != null && Boolean.parseBoolean(String.valueOf(value));
+  }
+
+  private String buildCacheKey(GitlabSyncConfig config, String webhookUrl) {
+    return String.join(
+        "|",
+        Objects.toString(config.getSourceMode(), ""),
+        Objects.toString(config.getDockerContainerName(), ""),
+        Objects.toString(config.getWebhookProjectId(), ""),
+        Objects.toString(webhookUrl, ""));
+  }
+
+  private record CacheEntry(Instant loadedAt, GitlabWebhookRegistrationStatus status) {
   }
 }

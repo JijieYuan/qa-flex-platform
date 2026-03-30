@@ -178,6 +178,7 @@ const modules: ShellModule[] = [
 const activeModuleKey = ref<ModuleKey>('quality-board');
 const activePageKey = ref<PageKey>('quality-board-home');
 const loading = ref(false);
+const refreshing = ref(false);
 const saving = ref(false);
 const syncing = ref(false);
 const cancelling = ref(false);
@@ -187,6 +188,8 @@ const purgeDialogVisible = ref(false);
 const purgeScope = ref<MirrorPurgeScope>('MIRROR_DATA_ONLY');
 const purgeConfirmText = ref('');
 const status = ref<MirrorStatusResponse | null>(null);
+const webhookRegistrationState = ref<MirrorStatusResponse['webhookRegistration'] | null>(null);
+const webhookRegistrationLoading = ref(false);
 const whitelistOptions = ref<TableWhitelistOption[]>([]);
 const whitelistOptionsLoading = ref(false);
 const whitelistOptionsLoaded = ref(false);
@@ -222,7 +225,7 @@ const progress = computed<SyncProgress | null>(() => status.value?.progress ?? n
 const currentTask = computed<GitlabSyncTask | null>(() => status.value?.currentTask ?? null);
 const recentLogs = computed(() => status.value?.logs ?? []);
 const latestLog = computed(() => recentLogs.value[0] ?? null);
-const webhookRegistration = computed(() => status.value?.webhookRegistration ?? null);
+const webhookRegistration = computed(() => webhookRegistrationState.value ?? null);
 const activePollingStatuses = ['PENDING', 'QUEUED', 'RUNNING', 'CANCELLING'];
 const canCancel = computed(() => currentTask.value != null && activePollingStatuses.includes(currentTask.value.status));
 
@@ -296,9 +299,7 @@ const progressHint = computed(() => {
 });
 
 async function loadStatus(showError = true, blocking = true) {
-  if (blocking) {
-    loading.value = true;
-  }
+  loading.value = blocking;
   try {
     const data = await api.getStatus();
     status.value = data;
@@ -322,9 +323,31 @@ async function loadStatus(showError = true, blocking = true) {
       ElMessage.error((error as Error).message);
     }
   } finally {
-    if (blocking) {
-      loading.value = false;
+    loading.value = false;
+  }
+}
+
+async function refreshStatus() {
+  refreshing.value = true;
+  try {
+    await loadStatus(false, false);
+    void loadWebhookRegistration(false);
+  } finally {
+    refreshing.value = false;
+  }
+}
+
+async function loadWebhookRegistration(showError = false) {
+  webhookRegistrationLoading.value = true;
+  try {
+    webhookRegistrationState.value = await api.getWebhookRegistrationStatus();
+  } catch (error) {
+    webhookRegistrationState.value = null;
+    if (showError) {
+      ElMessage.error((error as Error).message);
     }
+  } finally {
+    webhookRegistrationLoading.value = false;
   }
 }
 
@@ -398,6 +421,7 @@ async function saveConfig(showSuccess = true) {
       ElMessage.success('配置已保存');
     }
     await loadStatus(false, false);
+    void loadWebhookRegistration(false);
   } catch (error) {
     ElMessage.error((error as Error).message);
     throw error;
@@ -556,6 +580,7 @@ async function registerWebhook() {
     await api.registerWebhook();
     ElMessage.success('GitLab Webhook 已注册');
     await loadStatus(false, false);
+    await loadWebhookRegistration(false);
   } catch (error) {
     ElMessage.error((error as Error).message);
   } finally {
@@ -668,7 +693,8 @@ function syncLogMessage(log: GitlabSyncLog) {
 }
 
 onMounted(async () => {
-  await loadStatus(false, true);
+  await loadStatus(false, false);
+  void loadWebhookRegistration(false);
 });
 
 onBeforeUnmount(() => {
@@ -747,7 +773,14 @@ onBeforeUnmount(() => {
           </div>
 
           <div class="content-head-actions">
-            <el-button v-if="showingMirrorSettings" :icon="Refresh" @click="loadStatus()">刷新</el-button>
+            <el-button
+              v-if="showingMirrorSettings"
+              :icon="Refresh"
+              :loading="refreshing"
+              @click="refreshStatus"
+            >
+              刷新
+            </el-button>
           </div>
         </section>
 
@@ -757,14 +790,17 @@ onBeforeUnmount(() => {
 
         <template v-else-if="showingMirrorSettings">
           <div class="settings-grid">
-            <el-card shadow="never" class="panel-card" v-loading="loading">
+            <el-card shadow="never" class="panel-card">
               <template #header>
                 <div class="panel-header">
                   <div>
                     <div class="panel-title">GitLab 数据镜像设置</div>
                     <div class="panel-caption">全量靠 DB，增量靠 Webhook，一致性靠补偿同步。</div>
                   </div>
-                  <el-tag type="primary" effect="dark">数据源设置</el-tag>
+                  <el-space>
+                    <el-tag v-if="loading" type="info">正在加载</el-tag>
+                    <el-tag type="primary" effect="dark">数据源设置</el-tag>
+                  </el-space>
                 </div>
               </template>
 
@@ -886,18 +922,26 @@ onBeforeUnmount(() => {
                 <el-form-item label="Webhook 状态">
                   <div class="webhook-status-line">
                     <el-tag
-                      :type="webhookRegistration?.registered ? 'success' : webhookRegistration?.configured ? 'warning' : 'info'"
+                      :type="webhookRegistrationLoading ? 'info' : webhookRegistration?.registered ? 'success' : webhookRegistration?.configured ? 'warning' : 'info'"
                       round
                     >
                       {{
-                        webhookRegistration?.registered
+                        webhookRegistrationLoading
+                          ? '检测中'
+                          : webhookRegistration?.registered
                           ? '已注册'
                           : webhookRegistration?.configured
                             ? '未注册'
                             : '未配置'
                       }}
                     </el-tag>
-                    <span class="webhook-status-text">{{ webhookRegistration?.message || '尚未检测 GitLab Webhook 状态' }}</span>
+                    <span class="webhook-status-text">
+                      {{
+                        webhookRegistrationLoading
+                          ? '正在异步检测 GitLab Webhook 状态，不影响页面其他信息加载。'
+                          : webhookRegistration?.message || '尚未检测 GitLab Webhook 状态'
+                      }}
+                    </span>
                   </div>
                 </el-form-item>
 
@@ -972,7 +1016,7 @@ onBeforeUnmount(() => {
                       <div class="panel-title">最近同步日志</div>
                       <div class="panel-caption">快速确认最近一次全量、手工恢复增量、补偿或精确更新执行结果。</div>
                     </div>
-                    <el-button link :icon="Refresh" @click="loadStatus()">刷新</el-button>
+                    <el-button link :icon="Refresh" :loading="refreshing" @click="refreshStatus">刷新</el-button>
                   </div>
                 </template>
 
@@ -1019,31 +1063,56 @@ onBeforeUnmount(() => {
   <el-dialog
     v-model="purgeDialogVisible"
     :title="purgeDialogCopy.title"
-    width="560px"
+    width="680px"
+    class="mirror-purge-dialog"
     :close-on-click-modal="false"
     :close-on-press-escape="!purging"
     @close="closePurgeDialog"
   >
     <div class="purge-dialog-body">
-      <el-alert
-        title="此操作为真实删除，不可恢复，且只作用于本地镜像数据。"
-        type="error"
-        :closable="false"
-        show-icon
-      />
-      <div class="purge-dialog-text">{{ purgeDialogCopy.detail }}</div>
-      <el-radio-group v-model="purgeScope" class="purge-scope-group">
-        <el-radio value="MIRROR_DATA_ONLY">删除镜像数据</el-radio>
-        <el-radio value="MIRROR_DATA_EXCLUDING_CURRENT_WHITELIST">删除镜像数据（排除当前设置的白名单）</el-radio>
-      </el-radio-group>
-      <div class="purge-dialog-tip">
-        删除前请确认当前没有运行中或排队中的同步任务。本操作不会删除 GitLab 源端数据，也不会删除本地非镜像数据。
+      <div class="purge-hero">
+        <div class="purge-hero-badge">高风险操作</div>
+        <div class="purge-hero-title">此操作会真实删除本地镜像数据，且不可恢复。</div>
+        <div class="purge-hero-description">
+          {{ purgeDialogCopy.detail }}
+        </div>
       </div>
-      <el-form label-width="132px">
-        <el-form-item :label="`输入“${purgeDialogCopy.confirmText}”`">
-          <el-input v-model="purgeConfirmText" :placeholder="purgeDialogCopy.confirmText" />
-        </el-form-item>
-      </el-form>
+
+      <div class="purge-scope-cards">
+        <label
+          class="purge-scope-card"
+          :class="{ active: purgeScope === 'MIRROR_DATA_ONLY' }"
+        >
+          <input v-model="purgeScope" type="radio" value="MIRROR_DATA_ONLY" />
+          <div class="purge-scope-card-title">删除镜像数据</div>
+          <div class="purge-scope-card-desc">
+            删除所有镜像表、镜像注册信息和旧镜像总表数据，不影响 GitLab 源端和本地非镜像数据。
+          </div>
+        </label>
+
+        <label
+          class="purge-scope-card"
+          :class="{ active: purgeScope === 'MIRROR_DATA_EXCLUDING_CURRENT_WHITELIST' }"
+        >
+          <input v-model="purgeScope" type="radio" value="MIRROR_DATA_EXCLUDING_CURRENT_WHITELIST" />
+          <div class="purge-scope-card-title">删除镜像数据（排除当前设置的白名单）</div>
+          <div class="purge-scope-card-desc">
+            仅删除当前白名单之外的镜像数据，保留当前白名单内的镜像内容，不影响 GitLab 源端和本地非镜像数据。
+          </div>
+        </label>
+      </div>
+
+      <div class="purge-warning-list">
+        <div class="purge-warning-item">删除前请确认当前没有运行中或排队中的同步任务。</div>
+        <div class="purge-warning-item">本操作只作用于本地镜像数据，不会删除 GitLab 源端数据。</div>
+        <div class="purge-warning-item">本地非镜像业务数据不会被删除。</div>
+      </div>
+
+      <div class="purge-confirm-panel">
+        <div class="purge-confirm-label">请输入确认短语以继续</div>
+        <div class="purge-confirm-phrase">{{ purgeDialogCopy.confirmText }}</div>
+        <el-input v-model="purgeConfirmText" :placeholder="purgeDialogCopy.confirmText" />
+      </div>
     </div>
     <template #footer>
       <el-button @click="closePurgeDialog">取消</el-button>

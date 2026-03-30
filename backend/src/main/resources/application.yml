@@ -31,3 +31,4 @@ platform:
     dedupe-window-seconds: 15
     failure-backoff-minutes: 10
     schema-check-interval-minutes: 720
+    webhook-status-cache-seconds: 60

@@ -12,6 +12,7 @@ public class GitlabMirrorProperties {
   private int dedupeWindowSeconds = 15;
   private int failureBackoffMinutes = 10;
   private int schemaCheckIntervalMinutes = 720;
+  private int webhookStatusCacheSeconds = 60;
 
   public boolean isSchedulerEnabled() {
     return schedulerEnabled;
@@ -75,5 +76,13 @@ public class GitlabMirrorProperties {
 
   public void setSchemaCheckIntervalMinutes(int schemaCheckIntervalMinutes) {
     this.schemaCheckIntervalMinutes = schemaCheckIntervalMinutes;
+  }
+
+  public int getWebhookStatusCacheSeconds() {
+    return webhookStatusCacheSeconds;
+  }
+
+  public void setWebhookStatusCacheSeconds(int webhookStatusCacheSeconds) {
+    this.webhookStatusCacheSeconds = webhookStatusCacheSeconds;
   }
 }

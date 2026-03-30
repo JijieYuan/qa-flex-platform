@@ -7,7 +7,9 @@ import com.data.collection.platform.entity.GitlabSyncConfig;
 import com.data.collection.platform.entity.GitlabSyncLog;
 import com.data.collection.platform.entity.GitlabSyncTask;
 import com.data.collection.platform.entity.GitlabWebhookRegistrationStatus;
+import com.data.collection.platform.entity.MirrorStatusLogView;
 import com.data.collection.platform.entity.MirrorStatusResponse;
+import com.data.collection.platform.entity.MirrorStatusTaskView;
 import com.data.collection.platform.entity.MirrorPurgeResult;
 import com.data.collection.platform.entity.MirrorPurgeScope;
 import com.data.collection.platform.entity.SourceMode;
@@ -79,27 +81,30 @@ public class GitlabSyncController {
   @GetMapping("/status")
   public ApiResponse<MirrorStatusResponse> status() {
     GitlabSyncConfig config = configService.getConfig();
-    syncService.recoverTimedOutTasks();
     List<GitlabSyncLog> logs = config.getId() == null ? List.of() : logService.listRecent(config.getId(), 20);
     GitlabSyncTask currentTask = taskService.findDisplayTask(config.getId());
     SyncProgress progress = currentTask == null ? null : syncService.getProgress(currentTask.getId());
     SyncStatus currentStatus = currentTask == null ? SyncStatus.IDLE : currentTask.getStatus();
     String currentMessage = currentTask == null ? "" : taskService.extractMessage(currentTask);
     LocalDateTime currentStartedAt = currentTask == null ? null : currentTask.getStartedAt();
-    String webhookUrl = properties.getWebhookBaseUrl();
-    GitlabWebhookRegistrationStatus webhookRegistration =
-        webhookRegistrationService.getStatus(config, webhookUrl);
     return ApiResponse.success(
         new MirrorStatusResponse(
             config,
-            currentTask,
+            currentTask == null ? null : MirrorStatusTaskView.from(currentTask),
             currentStatus,
             currentMessage,
             currentStartedAt,
             progress,
-            logs,
-            webhookUrl,
-            webhookRegistration));
+            logs.stream().map(MirrorStatusLogView::from).toList(),
+            properties.getWebhookBaseUrl(),
+            null));
+  }
+
+  @GetMapping("/webhook-registration-status")
+  public ApiResponse<GitlabWebhookRegistrationStatus> webhookRegistrationStatus() {
+    GitlabSyncConfig config = configService.getConfig();
+    return ApiResponse.success(
+        webhookRegistrationService.getStatus(config, properties.getWebhookBaseUrl()));
   }
 
   @GetMapping("/whitelist-options")
