@@ -203,14 +203,21 @@ public class GitlabMirrorSyncService {
             currentProgress.setSyncedRecords(recordCount);
             taskService.heartbeat(taskId);
 
-            if (task.getTaskType() == SyncType.COMPENSATION
-                && (table.updatedAtColumn() == null || table.updatedAtColumn().isBlank())) {
+            boolean missingTimeColumn = table.updatedAtColumn() == null || table.updatedAtColumn().isBlank();
+            boolean skipWindowedScan = missingTimeColumn
+                && (task.getTaskType() == SyncType.COMPENSATION
+                    || task.getTaskType() == SyncType.INCREMENTAL
+                    || task.getTaskType() == SyncType.WEBHOOK);
+            if (skipWindowedScan) {
               skippedTableCount++;
               tableCount++;
               currentProgress.setCompletedTables(tableCount);
               mirrorSchemaService.markTableIdle(config.getId(), table.tableName(), LocalDateTime.now());
               try (GitlabSyncLogContext.Scope action = GitlabSyncLogContext.action("Data_Fetching")) {
-                log.info("Skipped table during compensation because no time column exists, tableName={}", table.tableName());
+                log.info(
+                    "Skipped table during {} because no time column exists, tableName={}",
+                    resolveScanMode(task.getTaskType()),
+                    table.tableName());
               }
               continue;
             }
@@ -342,7 +349,9 @@ public class GitlabMirrorSyncService {
       int intervalMinutes = config.getCompensationIntervalMinutes() == null ? 10 : config.getCompensationIntervalMinutes();
       return LocalDateTime.now().minusMinutes((long) intervalMinutes + COMPENSATION_EXTRA_LOOKBACK_MINUTES);
     }
-    return config.getLastIncrementalSyncAt();
+    return config.getLastIncrementalSyncAt() != null
+        ? config.getLastIncrementalSyncAt()
+        : config.getLastFullSyncAt();
   }
 
   private String buildCompletionMessage(SyncType type, int skippedTableCount) {

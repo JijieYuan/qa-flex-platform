@@ -25,6 +25,8 @@ import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -35,6 +37,32 @@ import org.springframework.stereotype.Service;
 @Slf4j
 public class GitlabExternalDbService {
   private static final TypeReference<LinkedHashMap<String, Object>> MAP_TYPE = new TypeReference<>() {};
+  private static final List<String> UPDATED_AT_CANDIDATES = List.of(
+      "updatedat",
+      "modifiedat",
+      "lastmodifiedat",
+      "lastupdatedat",
+      "updatetime",
+      "modifiedtime",
+      "lastupdatetime",
+      "lastmodifytime",
+      "updatedon",
+      "modifiedon",
+      "lastmodifiedon",
+      "lastupdatedon",
+      "gmtmodified",
+      "operatetime",
+      "eventtime",
+      "synctime");
+  private static final List<String> CREATED_AT_CANDIDATES = List.of(
+      "createdat",
+      "createdon",
+      "createtime",
+      "inserttime",
+      "writetime",
+      "gmtcreate",
+      "loadtime",
+      "etltime");
 
   private final GitlabMirrorProperties properties;
   private final ObjectMapper objectMapper;
@@ -65,18 +93,7 @@ public class GitlabExternalDbService {
     String sql = """
         select
           t.table_name,
-          string_agg(kcu.column_name, ',' order by kcu.ordinal_position) as primary_key,
-          case
-            when exists (
-              select 1 from information_schema.columns c
-              where c.table_schema = 'public' and c.table_name = t.table_name and c.column_name = 'updated_at'
-            ) then 'updated_at'
-            when exists (
-              select 1 from information_schema.columns c
-              where c.table_schema = 'public' and c.table_name = t.table_name and c.column_name = 'created_at'
-            ) then 'created_at'
-            else null
-          end as updated_at_column
+          string_agg(kcu.column_name, ',' order by kcu.ordinal_position) as primary_key
         from information_schema.tables t
         join information_schema.table_constraints tc
           on tc.table_schema = t.table_schema
@@ -92,12 +109,12 @@ public class GitlabExternalDbService {
         order by t.table_name
         """;
     List<Map<String, Object>> rows = isDockerMode(config) ? executeDockerQuery(config, sql) : executeJdbcQuery(config, sql);
+    Map<String, String> updatedAtColumnMap = discoverUpdatedAtColumns(config);
     List<TableWhitelistOption> result = new ArrayList<>(rows.size());
     for (Map<String, Object> row : rows) {
       String tableName = String.valueOf(row.get("table_name"));
       String primaryKey = String.valueOf(row.get("primary_key"));
-      Object updatedAtValue = row.get("updated_at_column");
-      String updatedAtColumn = updatedAtValue == null ? null : String.valueOf(updatedAtValue);
+      String updatedAtColumn = updatedAtColumnMap.get(tableName);
       String label = labels.getOrDefault(tableName, tableName);
       boolean recommended = recommendedTables.contains(tableName);
       result.add(new TableWhitelistOption(tableName, label, primaryKey, updatedAtColumn, recommended));
@@ -148,7 +165,7 @@ public class GitlabExternalDbService {
 
   public List<Map<String, Object>> incrementalScan(GitlabSyncConfig config, TableWhitelistOption option, LocalDateTime since) {
     if (since == null || option.updatedAtColumn() == null || option.updatedAtColumn().isBlank()) {
-      return fullTableScan(config, option);
+      return List.of();
     }
     return timeWindowScan(config, option, since);
   }
@@ -167,6 +184,48 @@ public class GitlabExternalDbService {
         option.updatedAtColumn(),
         gitlabSince.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
     return isDockerMode(config) ? executeDockerQuery(config, sql) : executeJdbcQuery(config, sql);
+  }
+
+  Map<String, String> discoverUpdatedAtColumns(GitlabSyncConfig config) {
+    String sql = """
+        select table_name, column_name
+        from information_schema.columns
+        where table_schema = 'public'
+        order by table_name, ordinal_position
+        """;
+    List<Map<String, Object>> rows = isDockerMode(config) ? executeDockerQuery(config, sql) : executeJdbcQuery(config, sql);
+    Map<String, List<String>> columnsByTable = new HashMap<>();
+    for (Map<String, Object> row : rows) {
+      String tableName = String.valueOf(row.get("table_name"));
+      String columnName = String.valueOf(row.get("column_name"));
+      columnsByTable.computeIfAbsent(tableName, ignored -> new ArrayList<>()).add(columnName);
+    }
+
+    Map<String, String> resolved = new HashMap<>();
+    for (Map.Entry<String, List<String>> entry : columnsByTable.entrySet()) {
+      String updatedAtColumn = resolveUpdatedAtColumn(entry.getValue());
+      if (updatedAtColumn != null) {
+        resolved.put(entry.getKey(), updatedAtColumn);
+      }
+    }
+    return resolved;
+  }
+
+  String resolveUpdatedAtColumn(List<String> columnNames) {
+    return resolveCandidate(columnNames, UPDATED_AT_CANDIDATES)
+        .orElseGet(() -> resolveCandidate(columnNames, CREATED_AT_CANDIDATES).orElse(null));
+  }
+
+  private java.util.Optional<String> resolveCandidate(List<String> columnNames, List<String> candidates) {
+    return columnNames.stream()
+        .map(columnName -> Map.entry(columnName, normalizeColumnName(columnName)))
+        .filter(entry -> candidates.contains(entry.getValue()))
+        .min(Comparator.comparingInt(entry -> candidates.indexOf(entry.getValue())))
+        .map(Map.Entry::getKey);
+  }
+
+  private String normalizeColumnName(String columnName) {
+    return columnName == null ? "" : columnName.replaceAll("[^A-Za-z0-9]", "").toLowerCase();
   }
 
   public String buildRecordKey(TableWhitelistOption option, Map<String, Object> row) {

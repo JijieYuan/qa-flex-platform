@@ -27,6 +27,7 @@ import com.data.collection.platform.mapper.GitlabMirrorRecordMapper;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import org.mockito.ArgumentCaptor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -152,6 +153,54 @@ class GitlabMirrorSyncServiceTest {
 
     verify(externalDbService, never()).compensationScan(any(), any(), any());
     verify(logService).finish(eq(1L), eq(SyncStatus.SUCCESS), contains("skipped 1 tables"), eq(1), eq(0));
+  }
+
+  @Test
+  void incrementalSyncShouldUseLastFullSyncTimeWhenIncrementalBaselineIsMissing() {
+    GitlabSyncTask task = runningTask(SyncType.INCREMENTAL);
+    GitlabSyncConfig config = baseConfig();
+    LocalDateTime lastFullSyncAt = LocalDateTime.now().minusMinutes(15);
+    config.setLastFullSyncAt(lastFullSyncAt);
+    TableWhitelistOption option = new TableWhitelistOption("merge_trains", "merge_trains", "id", "updated_at", true);
+
+    when(taskService.claimPendingTask(eq(202L), anyString())).thenReturn(task);
+    when(configService.getConfigById(1L)).thenReturn(config);
+    when(whitelistService.resolveOptions(config)).thenReturn(List.of(option));
+    when(mirrorSchemaService.getPreparedMirrorTableForSync(config, option))
+        .thenReturn(new GitlabMirrorSchemaService.PreparedMirrorTable(sourceSchema(option), "ods_gitlab_merge_trains", true, null));
+    when(taskService.extractMessage(task)).thenReturn("Manual incremental sync");
+    when(logService.start(anyLong(), any(), any(), anyString())).thenReturn(1L);
+    when(externalDbService.incrementalScan(any(), any(), any())).thenReturn(List.of());
+    when(taskService.promoteNextQueued(anyString())).thenReturn(null);
+
+    syncService.executeTaskAsync(202L);
+
+    ArgumentCaptor<LocalDateTime> sinceCaptor = ArgumentCaptor.forClass(LocalDateTime.class);
+    verify(externalDbService).incrementalScan(eq(config), eq(option), sinceCaptor.capture());
+    org.assertj.core.api.Assertions.assertThat(sinceCaptor.getValue()).isEqualTo(lastFullSyncAt);
+  }
+
+  @Test
+  void incrementalSyncShouldSkipTablesWithoutTimeColumn() {
+    GitlabSyncTask task = runningTask(SyncType.INCREMENTAL);
+    GitlabSyncConfig config = baseConfig();
+    config.setLastFullSyncAt(LocalDateTime.now().minusMinutes(20));
+    TableWhitelistOption option = new TableWhitelistOption("events", "events", "id", null, false);
+
+    when(taskService.claimPendingTask(eq(203L), anyString())).thenReturn(task);
+    when(configService.getConfigById(1L)).thenReturn(config);
+    when(whitelistService.resolveOptions(config)).thenReturn(List.of(option));
+    when(mirrorSchemaService.getPreparedMirrorTableForSync(config, option))
+        .thenReturn(new GitlabMirrorSchemaService.PreparedMirrorTable(sourceSchema(option), "ods_gitlab_events", true, null));
+    when(taskService.extractMessage(task)).thenReturn("Manual incremental sync");
+    when(logService.start(anyLong(), any(), any(), anyString())).thenReturn(1L);
+    when(taskService.promoteNextQueued(anyString())).thenReturn(null);
+
+    syncService.executeTaskAsync(203L);
+
+    verify(externalDbService, never()).incrementalScan(any(), any(), any());
+    verify(externalDbService, never()).fullTableScan(any(), any());
+    verify(logService).finish(eq(1L), eq(SyncStatus.SUCCESS), eq("Sync completed successfully"), eq(1), eq(0));
   }
 
   private GitlabSyncConfig baseConfig() {
