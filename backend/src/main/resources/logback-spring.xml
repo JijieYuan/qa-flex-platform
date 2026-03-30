@@ -32,6 +32,7 @@
               "traceId":"%X{traceId:-}",
               "taskId":"%X{taskId:-}",
               "scope":"%X{scope:-}",
+              "objectId":"%X{objectId:-}",
               "gitlabUrl":"%X{gitlabUrl:-}",
               "taskType":"%X{taskType:-}",
               "action":"%X{action:-}"
@@ -80,6 +81,7 @@
               "traceId":"%X{traceId:-}",
               "taskId":"%X{taskId:-}",
               "scope":"%X{scope:-}",
+              "objectId":"%X{objectId:-}",
               "gitlabUrl":"%X{gitlabUrl:-}",
               "taskType":"%X{taskType:-}",
               "action":"%X{action:-}"

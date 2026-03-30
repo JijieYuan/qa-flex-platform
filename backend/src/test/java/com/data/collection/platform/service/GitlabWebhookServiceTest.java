@@ -19,7 +19,7 @@ class GitlabWebhookServiceTest {
 
   private GitlabWebhookEventMapper webhookEventMapper;
   private GitlabConfigService configService;
-  private GitlabMirrorSyncService syncService;
+  private GitlabWebhookAsyncDispatchService asyncDispatchService;
   private JsonUtils jsonUtils;
   private GitlabWebhookService webhookService;
 
@@ -27,9 +27,9 @@ class GitlabWebhookServiceTest {
   void setUp() {
     webhookEventMapper = mock(GitlabWebhookEventMapper.class);
     configService = mock(GitlabConfigService.class);
-    syncService = mock(GitlabMirrorSyncService.class);
+    asyncDispatchService = mock(GitlabWebhookAsyncDispatchService.class);
     jsonUtils = mock(JsonUtils.class);
-    webhookService = new GitlabWebhookService(webhookEventMapper, configService, syncService, jsonUtils);
+    webhookService = new GitlabWebhookService(webhookEventMapper, configService, asyncDispatchService, jsonUtils);
   }
 
   @Test
@@ -51,6 +51,6 @@ class GitlabWebhookServiceTest {
     webhookService.accept("Issue Hook", payload, null);
 
     verify(webhookEventMapper).insert(org.mockito.ArgumentMatchers.<GitlabWebhookEvent>any());
-    verify(syncService).startWebhookSync(eq("Issue Hook"), eq(payload));
+    verify(asyncDispatchService).accept(eq("Issue Hook"), eq(payload));
   }
 }

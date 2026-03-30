@@ -42,6 +42,12 @@ public final class GitlabSyncLogContext {
     return scope;
   }
 
+  public static Scope object(String objectId) {
+    Scope scope = new Scope();
+    scope.put("objectId", objectId == null ? "" : objectId);
+    return scope;
+  }
+
   private static String resolveGitlabUrl(GitlabSyncConfig config) {
     if (config == null || config.getSourceMode() == null) {
       return "";

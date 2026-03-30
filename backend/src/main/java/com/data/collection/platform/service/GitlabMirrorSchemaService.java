@@ -153,6 +153,25 @@ public class GitlabMirrorSchemaService {
     updateSyncStatus(configId, sourceTableName, "ERROR", null);
   }
 
+  public int recoverStaleSyncingStatuses() {
+    LocalDateTime cutoff = LocalDateTime.now().minusSeconds(Math.max(30, properties.getHeartbeatTimeoutSeconds()));
+    Integer updated = jdbcTemplate.queryForObject(
+        """
+            with recovered as (
+              update sys_table_registry
+              set sync_status = 'IDLE',
+                  updated_at = current_timestamp
+              where sync_status = 'SYNCING'
+                and updated_at < ?
+              returning id
+            )
+            select count(*) from recovered
+            """,
+        Integer.class,
+        cutoff);
+    return updated == null ? 0 : updated;
+  }
+
   public List<GitlabMirrorTableRegistry> listRegistry(Long configId) {
     return registryMapper.selectList(new LambdaQueryWrapper<GitlabMirrorTableRegistry>()
         .eq(GitlabMirrorTableRegistry::getConfigId, configId)

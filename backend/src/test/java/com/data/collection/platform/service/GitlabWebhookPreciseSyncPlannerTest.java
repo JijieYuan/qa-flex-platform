@@ -116,4 +116,17 @@ class GitlabWebhookPreciseSyncPlannerTest {
 
     assertThat(planner.planTargets(payload)).isEmpty();
   }
+
+  @Test
+  void shouldBuildStableObjectKeyForIssueWebhook() {
+    Map<String, Object> payload = Map.of(
+        "object_kind", "issue",
+        "object_attributes", Map.of("id", 101L));
+
+    GitlabWebhookPreciseSyncPlan plan = planner.plan(payload);
+
+    assertThat(plan.objectKey()).isEqualTo("issue:101");
+    assertThat(plan.objectId()).isEqualTo("101");
+    assertThat(plan.targets()).isNotEmpty();
+  }
 }

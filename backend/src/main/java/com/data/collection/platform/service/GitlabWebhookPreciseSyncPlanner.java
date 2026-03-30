@@ -9,6 +9,15 @@ import org.springframework.stereotype.Component;
 
 @Component
 public class GitlabWebhookPreciseSyncPlanner {
+  public GitlabWebhookPreciseSyncPlan plan(Map<String, Object> payload) {
+    if (payload == null || payload.isEmpty()) {
+      return new GitlabWebhookPreciseSyncPlan("webhook:unknown", "unknown", List.of());
+    }
+    String objectKind = asString(payload.get("object_kind")).toLowerCase();
+    Map<String, Object> attributes = asMap(payload.get("object_attributes"));
+    String objectId = resolveObjectId(objectKind, payload, attributes);
+    return new GitlabWebhookPreciseSyncPlan(objectKind + ":" + objectId, objectId, planTargets(payload));
+  }
 
   public List<GitlabWebhookPreciseSyncTarget> planTargets(Map<String, Object> payload) {
     if (payload == null || payload.isEmpty()) {
@@ -81,5 +90,15 @@ public class GitlabWebhookPreciseSyncPlanner {
 
   private String asString(Object value) {
     return value == null ? "" : String.valueOf(value);
+  }
+
+  private String resolveObjectId(String objectKind, Map<String, Object> payload, Map<String, Object> attributes) {
+    Object candidate = switch (objectKind) {
+      case "issue", "merge_request", "note", "pipeline", "deployment", "release", "user" -> attributes.get("id");
+      case "build", "job" -> payload.getOrDefault("build_id", attributes.get("id"));
+      case "project" -> asMap(payload.get("project")).getOrDefault("id", attributes.get("id"));
+      default -> attributes.getOrDefault("id", payload.get("project_id"));
+    };
+    return candidate == null ? "unknown" : String.valueOf(candidate);
   }
 }

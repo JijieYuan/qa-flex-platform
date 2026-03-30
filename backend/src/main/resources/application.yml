@@ -32,3 +32,5 @@ platform:
     failure-backoff-minutes: 10
     schema-check-interval-minutes: 720
     webhook-status-cache-seconds: 60
+    webhook-batch-window-seconds: 3
+    webhook-batch-size: 10

@@ -17,17 +17,17 @@ import org.springframework.stereotype.Service;
 public class GitlabWebhookService {
   private final GitlabWebhookEventMapper webhookEventMapper;
   private final GitlabConfigService configService;
-  private final GitlabMirrorSyncService syncService;
+  private final GitlabWebhookAsyncDispatchService asyncDispatchService;
   private final JsonUtils jsonUtils;
 
   public GitlabWebhookService(
       GitlabWebhookEventMapper webhookEventMapper,
       GitlabConfigService configService,
-      GitlabMirrorSyncService syncService,
+      GitlabWebhookAsyncDispatchService asyncDispatchService,
       JsonUtils jsonUtils) {
     this.webhookEventMapper = webhookEventMapper;
     this.configService = configService;
-    this.syncService = syncService;
+    this.asyncDispatchService = asyncDispatchService;
     this.jsonUtils = jsonUtils;
   }
 
@@ -65,7 +65,7 @@ public class GitlabWebhookService {
     webhookEventMapper.insert(event);
 
     if (config.isAutoSyncEnabled()) {
-      syncService.startWebhookSync(effectiveEventType, payload);
+      asyncDispatchService.accept(effectiveEventType, payload);
     }
   }
 
