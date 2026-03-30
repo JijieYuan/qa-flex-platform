@@ -177,6 +177,21 @@ public class GitlabExternalDbService {
     return timeWindowScan(config, option, since);
   }
 
+  public List<Map<String, Object>> preciseScan(
+      GitlabSyncConfig config,
+      TableWhitelistOption option,
+      String lookupColumn,
+      Object lookupValue) {
+    if (lookupColumn == null || lookupColumn.isBlank() || lookupValue == null) {
+      return List.of();
+    }
+    String sql = "select * from public.%s where %s = %s".formatted(
+        option.tableName(),
+        quoteIdentifier(lookupColumn),
+        toSqlLiteral(lookupValue));
+    return isDockerMode(config) ? executeDockerQuery(config, sql) : executeJdbcQuery(config, sql);
+  }
+
   private List<Map<String, Object>> timeWindowScan(GitlabSyncConfig config, TableWhitelistOption option, LocalDateTime since) {
     LocalDateTime gitlabSince = toGitlabSourceTime(since);
     String sql = "select * from public.%s where %s >= timestamp '%s'".formatted(
@@ -226,6 +241,17 @@ public class GitlabExternalDbService {
 
   private String normalizeColumnName(String columnName) {
     return columnName == null ? "" : columnName.replaceAll("[^A-Za-z0-9]", "").toLowerCase();
+  }
+
+  private String quoteIdentifier(String identifier) {
+    return "\"" + identifier.replace("\"", "\"\"") + "\"";
+  }
+
+  private String toSqlLiteral(Object value) {
+    if (value instanceof Number || value instanceof Boolean) {
+      return String.valueOf(value);
+    }
+    return "'" + String.valueOf(value).replace("'", "''") + "'";
   }
 
   public String buildRecordKey(TableWhitelistOption option, Map<String, Object> row) {

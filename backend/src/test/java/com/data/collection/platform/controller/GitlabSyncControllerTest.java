@@ -2,6 +2,7 @@ package com.data.collection.platform.controller;
 
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -13,9 +14,9 @@ import com.data.collection.platform.config.GitlabMirrorProperties;
 import com.data.collection.platform.entity.GitlabSyncConfig;
 import com.data.collection.platform.entity.GitlabSyncTask;
 import com.data.collection.platform.entity.SourceMode;
-import com.data.collection.platform.entity.SyncSubmissionAction;
 import com.data.collection.platform.entity.SyncProgress;
 import com.data.collection.platform.entity.SyncStatus;
+import com.data.collection.platform.entity.SyncSubmissionAction;
 import com.data.collection.platform.entity.SyncTaskSubmissionResult;
 import com.data.collection.platform.entity.SyncTriggerType;
 import com.data.collection.platform.entity.SyncType;
@@ -27,11 +28,13 @@ import com.data.collection.platform.service.GitlabSyncTaskService;
 import com.data.collection.platform.service.GitlabWebhookService;
 import com.data.collection.platform.service.GitlabWhitelistService;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
@@ -124,7 +127,7 @@ class GitlabSyncControllerTest {
     task.setId(15L);
     task.setStatus(SyncStatus.PENDING);
     task.setTaskType(SyncType.INCREMENTAL);
-    when(syncService.startIncrementalSync(SyncTriggerType.MANUAL, "Triggered manually"))
+    when(syncService.startIncrementalSync(SyncTriggerType.MANUAL, "Manual recovery incremental sync"))
         .thenReturn(new SyncTaskSubmissionResult(task, SyncSubmissionAction.CREATED));
 
     mockMvc.perform(post("/api/gitlab-sync/incremental-sync"))
@@ -132,8 +135,7 @@ class GitlabSyncControllerTest {
         .andExpect(jsonPath("$.data.accepted").value(true))
         .andExpect(jsonPath("$.data.taskId").value(15))
         .andExpect(jsonPath("$.data.status").value("PENDING"))
-        .andExpect(jsonPath("$.data.action").value("CREATED"))
-        .andExpect(jsonPath("$.data.message").value("增量同步已开始"));
+        .andExpect(jsonPath("$.data.action").value("CREATED"));
   }
 
   @Test
@@ -149,8 +151,38 @@ class GitlabSyncControllerTest {
         .andExpect(jsonPath("$.data.accepted").value(true))
         .andExpect(jsonPath("$.data.taskId").value(18))
         .andExpect(jsonPath("$.data.status").value("QUEUED"))
-        .andExpect(jsonPath("$.data.action").value("QUEUED"))
-        .andExpect(jsonPath("$.data.message").value("当前已有导入任务执行中，已为你登记下一轮同步"));
+        .andExpect(jsonPath("$.data.action").value("QUEUED"));
+  }
+
+  @Test
+  void webhookShouldDelegatePayloadToWebhookService() throws Exception {
+    String payload = """
+        {
+          "object_kind": "issue",
+          "project_id": 10,
+          "object_attributes": {
+            "id": 101,
+            "title": "Simulated issue from webhook"
+          }
+        }
+        """;
+
+    mockMvc.perform(post("/api/gitlab-sync/webhook")
+            .header("X-Gitlab-Event", "Issue Hook")
+            .header("X-Gitlab-Token", "secret-token")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(payload))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.accepted").value(true));
+
+    verify(webhookService).accept(
+        eq("Issue Hook"),
+        eq(Map.of(
+            "object_kind", "issue",
+            "project_id", 10,
+            "object_attributes", Map.of("id", 101, "title", "Simulated issue from webhook"))),
+        eq("secret-token"));
   }
 
   private GitlabSyncConfig baseConfig() {

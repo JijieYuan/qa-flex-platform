@@ -151,9 +151,11 @@ public class GitlabSyncController {
     try (GitlabSyncLogContext.Scope context =
              GitlabSyncLogContext.openConfig(configService.getConfig(), SyncType.INCREMENTAL.name());
          GitlabSyncLogContext.Scope action = GitlabSyncLogContext.action("Task_Submit")) {
-      log.info("Manual incremental sync requested");
+      log.info("Manual recovery incremental sync requested");
     }
-    SyncTaskSubmissionResult result = syncService.startIncrementalSync(SyncTriggerType.MANUAL, "Triggered manually");
+    SyncTaskSubmissionResult result = syncService.startIncrementalSync(
+        SyncTriggerType.MANUAL,
+        "Manual recovery incremental sync");
     return ApiResponse.success(submissionMessage(result, SyncType.INCREMENTAL), buildSubmissionResponse(result));
   }
 

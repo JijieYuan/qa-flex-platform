@@ -72,6 +72,29 @@ class GitlabSyncTaskServiceTest {
   }
 
   @Test
+  void webhookTasksWithDifferentPayloadShouldQueueInsteadOfBeingReused() {
+    GitlabSyncConfig config = configService.saveConfig(baseConfig());
+    GitlabSyncTask first = taskService.submitTask(
+        config,
+        SyncType.WEBHOOK,
+        SyncTriggerType.WEBHOOK,
+        "Triggered by webhook: issue",
+        Map.of("eventType", "Issue Hook", "webhookPayload", Map.of("object_kind", "issue", "object_attributes", Map.of("id", 101))));
+    taskService.claimPendingTask(first.getId(), "tester");
+
+    GitlabSyncTask second = taskService.submitTask(
+        config,
+        SyncType.WEBHOOK,
+        SyncTriggerType.WEBHOOK,
+        "Triggered by webhook: note",
+        Map.of("eventType", "Note Hook", "webhookPayload", Map.of("object_kind", "note", "object_attributes", Map.of("id", 202))));
+
+    assertThat(second.getId()).isNotEqualTo(first.getId());
+    assertThat(second.getStatus()).isEqualTo(SyncStatus.QUEUED);
+    assertThat(taskMapper.selectCount(null)).isEqualTo(2);
+  }
+
+  @Test
   void staleRunningTaskShouldBeRecoveredAsTimeout() {
     GitlabSyncConfig config = configService.saveConfig(baseConfig());
     GitlabSyncTask first = taskService.submitTask(config, SyncType.FULL, SyncTriggerType.MANUAL, "Manual full sync", Map.of());

@@ -40,6 +40,7 @@ class GitlabMirrorSyncServiceTest {
   private GitlabMirrorRecordMapper mirrorRecordMapper;
   private GitlabSyncLogService logService;
   private GitlabSyncTaskService taskService;
+  private GitlabWebhookPreciseSyncPlanner webhookPreciseSyncPlanner;
   private JsonUtils jsonUtils;
   private GitlabMirrorSyncService selfProxy;
   private GitlabMirrorSyncService syncService;
@@ -54,6 +55,7 @@ class GitlabMirrorSyncServiceTest {
     mirrorRecordMapper = mock(GitlabMirrorRecordMapper.class);
     logService = mock(GitlabSyncLogService.class);
     taskService = mock(GitlabSyncTaskService.class);
+    webhookPreciseSyncPlanner = mock(GitlabWebhookPreciseSyncPlanner.class);
     jsonUtils = mock(JsonUtils.class);
     selfProxy = mock(GitlabMirrorSyncService.class);
     syncService =
@@ -66,6 +68,7 @@ class GitlabMirrorSyncServiceTest {
             mirrorRecordMapper,
             logService,
             taskService,
+            webhookPreciseSyncPlanner,
             jsonUtils,
             selfProxy);
   }
@@ -201,6 +204,59 @@ class GitlabMirrorSyncServiceTest {
     verify(externalDbService, never()).incrementalScan(any(), any(), any());
     verify(externalDbService, never()).fullTableScan(any(), any());
     verify(logService).finish(eq(1L), eq(SyncStatus.SUCCESS), eq("Sync completed successfully"), eq(1), eq(0));
+  }
+
+  @Test
+  void webhookSyncShouldUsePreciseTargetsInsteadOfIncrementalScan() {
+    GitlabSyncTask task = runningTask(SyncType.WEBHOOK);
+    task.setPayloadJson("{\"message\":\"Triggered by webhook: issue\",\"webhookPayload\":{}}");
+    GitlabSyncConfig config = baseConfig();
+    TableWhitelistOption option = new TableWhitelistOption("issues", "issues", "id", "updated_at", true);
+    List<GitlabWebhookPreciseSyncTarget> targets = List.of(new GitlabWebhookPreciseSyncTarget("issues", "id", 101L));
+
+    when(taskService.claimPendingTask(eq(204L), anyString())).thenReturn(task);
+    when(configService.getConfigById(1L)).thenReturn(config);
+    when(whitelistService.resolveOptions(config)).thenReturn(List.of(option));
+    when(mirrorSchemaService.getPreparedMirrorTableForSync(config, option))
+        .thenReturn(new GitlabMirrorSchemaService.PreparedMirrorTable(sourceSchema(option), "ods_gitlab_issues", true, null));
+    when(taskService.extractMessage(task)).thenReturn("Triggered by webhook: issue");
+    when(logService.start(anyLong(), any(), any(), anyString())).thenReturn(1L);
+    when(jsonUtils.toMap(task.getPayloadJson())).thenReturn(Map.of("message", "Triggered by webhook: issue", "webhookPayload", Map.of("object_kind", "issue")));
+    when(webhookPreciseSyncPlanner.planTargets(Map.of("object_kind", "issue"))).thenReturn(targets);
+    when(externalDbService.preciseScan(any(), any(), eq("id"), eq(101L))).thenReturn(List.of());
+    when(taskService.promoteNextQueued(anyString())).thenReturn(null);
+
+    syncService.executeTaskAsync(204L);
+
+    verify(externalDbService).preciseScan(eq(config), eq(option), eq("id"), eq(101L));
+    verify(externalDbService, never()).incrementalScan(any(), any(), any());
+    verify(externalDbService, never()).fullTableScan(any(), any());
+  }
+
+  @Test
+  void unsupportedWebhookShouldFallbackToIncrementalWindowScan() {
+    GitlabSyncTask task = runningTask(SyncType.WEBHOOK);
+    task.setPayloadJson("{\"message\":\"Triggered by webhook: push\",\"webhookPayload\":{}}");
+    GitlabSyncConfig config = baseConfig();
+    config.setLastFullSyncAt(LocalDateTime.now().minusMinutes(10));
+    TableWhitelistOption option = new TableWhitelistOption("issues", "issues", "id", "updated_at", true);
+
+    when(taskService.claimPendingTask(eq(205L), anyString())).thenReturn(task);
+    when(configService.getConfigById(1L)).thenReturn(config);
+    when(whitelistService.resolveOptions(config)).thenReturn(List.of(option));
+    when(mirrorSchemaService.getPreparedMirrorTableForSync(config, option))
+        .thenReturn(new GitlabMirrorSchemaService.PreparedMirrorTable(sourceSchema(option), "ods_gitlab_issues", true, null));
+    when(taskService.extractMessage(task)).thenReturn("Triggered by webhook: push");
+    when(logService.start(anyLong(), any(), any(), anyString())).thenReturn(1L);
+    when(jsonUtils.toMap(task.getPayloadJson())).thenReturn(Map.of("message", "Triggered by webhook: push", "webhookPayload", Map.of("object_kind", "push")));
+    when(webhookPreciseSyncPlanner.planTargets(Map.of("object_kind", "push"))).thenReturn(List.of());
+    when(externalDbService.incrementalScan(any(), any(), any())).thenReturn(List.of());
+    when(taskService.promoteNextQueued(anyString())).thenReturn(null);
+
+    syncService.executeTaskAsync(205L);
+
+    verify(externalDbService).incrementalScan(eq(config), eq(option), any());
+    verify(externalDbService, never()).preciseScan(any(), any(), anyString(), any());
   }
 
   private GitlabSyncConfig baseConfig() {

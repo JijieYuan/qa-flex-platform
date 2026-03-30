@@ -33,11 +33,14 @@ public class GitlabWebhookService {
 
   public void accept(String eventType, Map<String, Object> payload, String secret) {
     GitlabSyncConfig config = configService.getConfig();
+    String effectiveEventType = eventType == null || eventType.isBlank()
+        ? String.valueOf(payload.getOrDefault("object_kind", "webhook"))
+        : eventType;
     try (GitlabSyncLogContext.Scope context = GitlabSyncLogContext.openConfig(config, SyncTriggerType.WEBHOOK.name());
          GitlabSyncLogContext.Scope action = GitlabSyncLogContext.action("Webhook_Received")) {
       log.info(
           "Webhook received, eventType={}, projectId={}, objectKind={}",
-          eventType,
+          effectiveEventType,
           extractProjectId(payload),
           payload.get("object_kind"));
     }
@@ -45,7 +48,7 @@ public class GitlabWebhookService {
       if (secret == null || !config.getWebhookSecret().equals(secret)) {
         try (GitlabSyncLogContext.Scope context = GitlabSyncLogContext.openConfig(config, SyncTriggerType.WEBHOOK.name());
              GitlabSyncLogContext.Scope action = GitlabSyncLogContext.action("Webhook_Received")) {
-          log.warn("Webhook rejected because secret validation failed, eventType={}", eventType);
+          log.warn("Webhook rejected because secret validation failed, eventType={}", effectiveEventType);
         }
         throw new BizException("Invalid webhook secret");
       }
@@ -53,7 +56,7 @@ public class GitlabWebhookService {
 
     GitlabWebhookEvent event = new GitlabWebhookEvent();
     event.setConfigId(config.getId());
-    event.setEventType(eventType);
+    event.setEventType(effectiveEventType);
     event.setProjectId(extractProjectId(payload));
     event.setObjectKind(String.valueOf(payload.get("object_kind")));
     event.setPayload(jsonUtils.toJson(payload));
@@ -62,7 +65,7 @@ public class GitlabWebhookService {
     webhookEventMapper.insert(event);
 
     if (config.isAutoSyncEnabled()) {
-      syncService.startIncrementalSync(SyncTriggerType.WEBHOOK, "Triggered by webhook: " + eventType);
+      syncService.startWebhookSync(effectiveEventType, payload);
     }
   }
 
