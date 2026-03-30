@@ -11,7 +11,6 @@ public record MirrorStatusResponse(
     LocalDateTime currentStartedAt,
     SyncProgress progress,
     List<GitlabSyncLog> logs,
-    List<TableWhitelistOption> whitelistOptions,
     String webhookUrl,
     GitlabWebhookRegistrationStatus webhookRegistration) {
 }

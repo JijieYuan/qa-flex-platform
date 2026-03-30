@@ -8,6 +8,8 @@ import com.data.collection.platform.entity.GitlabSyncLog;
 import com.data.collection.platform.entity.GitlabSyncTask;
 import com.data.collection.platform.entity.GitlabWebhookRegistrationStatus;
 import com.data.collection.platform.entity.MirrorStatusResponse;
+import com.data.collection.platform.entity.MirrorPurgeResult;
+import com.data.collection.platform.entity.MirrorPurgeScope;
 import com.data.collection.platform.entity.SourceMode;
 import com.data.collection.platform.entity.SyncProgress;
 import com.data.collection.platform.entity.SyncStatus;
@@ -15,9 +17,11 @@ import com.data.collection.platform.entity.SyncSubmissionAction;
 import com.data.collection.platform.entity.SyncTaskSubmissionResult;
 import com.data.collection.platform.entity.SyncTriggerType;
 import com.data.collection.platform.entity.SyncType;
+import com.data.collection.platform.entity.TableWhitelistOption;
 import com.data.collection.platform.entity.WhitelistMode;
 import com.data.collection.platform.service.GitlabConfigService;
 import com.data.collection.platform.service.GitlabMirrorSyncService;
+import com.data.collection.platform.service.GitlabMirrorPurgeService;
 import com.data.collection.platform.service.GitlabSyncLogService;
 import com.data.collection.platform.service.GitlabSyncTaskService;
 import com.data.collection.platform.service.GitlabWebhookRegistrationService;
@@ -49,6 +53,7 @@ public class GitlabSyncController {
   private final GitlabWebhookService webhookService;
   private final GitlabSyncTaskService taskService;
   private final GitlabWebhookRegistrationService webhookRegistrationService;
+  private final GitlabMirrorPurgeService purgeService;
 
   public GitlabSyncController(
       GitlabConfigService configService,
@@ -58,7 +63,8 @@ public class GitlabSyncController {
       GitlabMirrorProperties properties,
       GitlabWebhookService webhookService,
       GitlabSyncTaskService taskService,
-      GitlabWebhookRegistrationService webhookRegistrationService) {
+      GitlabWebhookRegistrationService webhookRegistrationService,
+      GitlabMirrorPurgeService purgeService) {
     this.configService = configService;
     this.syncService = syncService;
     this.logService = logService;
@@ -67,6 +73,7 @@ public class GitlabSyncController {
     this.webhookService = webhookService;
     this.taskService = taskService;
     this.webhookRegistrationService = webhookRegistrationService;
+    this.purgeService = purgeService;
   }
 
   @GetMapping("/status")
@@ -91,9 +98,13 @@ public class GitlabSyncController {
             currentStartedAt,
             progress,
             logs,
-            whitelistService.listOptions(config),
             webhookUrl,
             webhookRegistration));
+  }
+
+  @GetMapping("/whitelist-options")
+  public ApiResponse<List<TableWhitelistOption>> whitelistOptions() {
+    return ApiResponse.success(whitelistService.listOptions(configService.getConfig()));
   }
 
   @PutMapping("/config")
@@ -196,6 +207,16 @@ public class GitlabSyncController {
         Map.of("accepted", true, "taskId", task.getId(), "status", task.getStatus()));
   }
 
+  @PostMapping("/purge")
+  public ApiResponse<MirrorPurgeResult> purge(@RequestBody PurgeRequest request) {
+    MirrorPurgeResult result = purgeService.purge(request.scope());
+    String message = switch (request.scope()) {
+      case MIRROR_DATA_ONLY -> "已真实删除全部镜像数据，GitLab 源端和本地非镜像数据均不受影响";
+      case MIRROR_DATA_EXCLUDING_CURRENT_WHITELIST -> "已真实删除当前白名单之外的镜像数据，GitLab 源端和本地非镜像数据均不受影响";
+    };
+    return ApiResponse.success(message, result);
+  }
+
   @PostMapping("/webhook")
   public ApiResponse<Map<String, Object>> webhook(
       @RequestHeader(value = "X-Gitlab-Event", required = false) String eventType,
@@ -221,6 +242,9 @@ public class GitlabSyncController {
       String webhookSecret,
       Long webhookProjectId,
       @NotNull Integer compensationIntervalMinutes) {
+  }
+
+  public record PurgeRequest(@NotNull MirrorPurgeScope scope) {
   }
 
   private Map<String, Object> buildSubmissionResponse(SyncTaskSubmissionResult result) {

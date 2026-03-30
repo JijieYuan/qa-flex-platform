@@ -21,9 +21,12 @@ import {
   type GitlabSyncConfig,
   type GitlabSyncLog,
   type GitlabSyncTask,
+  type MirrorPurgeScope,
   type MirrorStatusResponse,
+  type MirrorPurgeResult,
   type SyncProgress,
   type SyncSubmissionResponse,
+  type TableWhitelistOption,
 } from './api';
 
 type ModuleKey =
@@ -179,7 +182,14 @@ const saving = ref(false);
 const syncing = ref(false);
 const cancelling = ref(false);
 const registeringWebhook = ref(false);
+const purging = ref<MirrorPurgeScope | null>(null);
+const purgeDialogVisible = ref(false);
+const purgeScope = ref<MirrorPurgeScope>('MIRROR_DATA_ONLY');
+const purgeConfirmText = ref('');
 const status = ref<MirrorStatusResponse | null>(null);
+const whitelistOptions = ref<TableWhitelistOption[]>([]);
+const whitelistOptionsLoading = ref(false);
+const whitelistOptionsLoaded = ref(false);
 const refreshTimer = ref<number | null>(null);
 
 const form = ref<GitlabSyncConfig>({
@@ -205,7 +215,6 @@ const activePage = computed(() => activeModule.value.pages.find((item) => item.k
 const showingMirrorSettings = computed(() => activePageKey.value === 'mirror-settings');
 const showingStatisticBoard = computed(() => activePageKey.value === 'quality-board-home');
 const showingDatabaseBrowser = computed(() => activePageKey.value === 'database-browser');
-const whitelistOptions = computed(() => status.value?.whitelistOptions ?? []);
 const recommendedCount = computed(() => whitelistOptions.value.filter((item) => item.recommended).length);
 const isDockerMode = computed(() => form.value.sourceMode === 'DOCKER');
 const syncEnabled = computed(() => form.value.autoSyncEnabled);
@@ -286,8 +295,10 @@ const progressHint = computed(() => {
   return '同步任务已启动，正在准备表扫描。';
 });
 
-async function loadStatus(showError = true) {
-  loading.value = true;
+async function loadStatus(showError = true, blocking = true) {
+  if (blocking) {
+    loading.value = true;
+  }
   try {
     const data = await api.getStatus();
     status.value = data;
@@ -311,7 +322,27 @@ async function loadStatus(showError = true) {
       ElMessage.error((error as Error).message);
     }
   } finally {
-    loading.value = false;
+    if (blocking) {
+      loading.value = false;
+    }
+  }
+}
+
+async function ensureWhitelistOptions(force = false) {
+  if (whitelistOptionsLoading.value) {
+    return;
+  }
+  if (!force && whitelistOptionsLoaded.value) {
+    return;
+  }
+  whitelistOptionsLoading.value = true;
+  try {
+    whitelistOptions.value = await api.getWhitelistOptions();
+    whitelistOptionsLoaded.value = true;
+  } catch (error) {
+    ElMessage.error((error as Error).message);
+  } finally {
+    whitelistOptionsLoading.value = false;
   }
 }
 
@@ -340,6 +371,15 @@ watch(
   },
 );
 
+watch(
+  () => form.value.whitelistMode,
+  (nextMode) => {
+    if (nextMode === 'CUSTOM') {
+      void ensureWhitelistOptions();
+    }
+  },
+);
+
 function switchModule(moduleKey: ModuleKey) {
   activeModuleKey.value = moduleKey;
   activePageKey.value = modules.find((item) => item.key === moduleKey)?.pages[0]?.key ?? activePageKey.value;
@@ -357,7 +397,7 @@ async function saveConfig(showSuccess = true) {
     if (showSuccess) {
       ElMessage.success('配置已保存');
     }
-    await loadStatus(false);
+    await loadStatus(false, false);
   } catch (error) {
     ElMessage.error((error as Error).message);
     throw error;
@@ -371,7 +411,7 @@ async function testConnection() {
     await saveConfig(false);
     await api.testConnection();
     ElMessage.success('连接测试成功');
-    await loadStatus(false);
+    await loadStatus(false, false);
   } catch (error) {
     ElMessage.error((error as Error).message);
   }
@@ -383,7 +423,7 @@ async function startFullSync() {
     await saveConfig(false);
     const result = await api.startFullSync();
     showSubmissionFeedback(result);
-    await loadStatus(false);
+    await loadStatus(false, false);
   } catch (error) {
     ElMessage.error((error as Error).message);
   } finally {
@@ -398,7 +438,7 @@ async function startIncrementalSync() {
     await saveConfig(false);
     const result = await api.startIncrementalSync();
     showSubmissionFeedback(result);
-    await loadStatus(false);
+    await loadStatus(false, false);
   } catch (error) {
     ElMessage.error((error as Error).message);
   } finally {
@@ -427,7 +467,7 @@ async function cancelSyncTask() {
     } else {
       ElMessage.info('当前没有可中止的任务');
     }
-    await loadStatus(false);
+    await loadStatus(false, false);
   } catch (error) {
     ElMessage.error((error as Error).message);
   } finally {
@@ -515,12 +555,71 @@ async function registerWebhook() {
     await saveConfig(false);
     await api.registerWebhook();
     ElMessage.success('GitLab Webhook 已注册');
-    await loadStatus(false);
+    await loadStatus(false, false);
   } catch (error) {
     ElMessage.error((error as Error).message);
   } finally {
     registeringWebhook.value = false;
   }
+}
+
+const purgeDialogCopy = computed(() => {
+  if (purgeScope.value === 'MIRROR_DATA_EXCLUDING_CURRENT_WHITELIST') {
+    return {
+      title: '删除镜像数据（排除当前白名单）',
+      confirmText: '删除白名单外镜像数据',
+      detail:
+        '将真实删除当前白名单之外的镜像表、镜像注册信息和旧镜像总表数据。当前白名单内的镜像数据会保留，GitLab 源端和本地非镜像数据不会受影响。',
+    };
+  }
+  return {
+    title: '删除镜像数据',
+    confirmText: '删除镜像数据',
+    detail:
+      '将真实删除全部镜像表、镜像注册信息和旧镜像总表数据。GitLab 源端和本地非镜像数据不会受影响，此操作不可恢复。',
+  };
+});
+
+const purgeConfirmMatched = computed(() => purgeConfirmText.value === purgeDialogCopy.value.confirmText);
+
+function openPurgeDialog() {
+  purgeScope.value = 'MIRROR_DATA_ONLY';
+  purgeConfirmText.value = '';
+  purgeDialogVisible.value = true;
+}
+
+function closePurgeDialog() {
+  if (purging.value) {
+    return;
+  }
+  purgeDialogVisible.value = false;
+  purgeConfirmText.value = '';
+}
+
+async function purgeMirrorData() {
+  if (!purgeConfirmMatched.value) {
+    return;
+  }
+
+  purging.value = purgeScope.value;
+  try {
+    const result = await api.purgeMirrorData(purgeScope.value);
+    ElMessage.success(buildPurgeMessage(result));
+    await loadStatus(false, false);
+    purgeDialogVisible.value = false;
+    purgeConfirmText.value = '';
+  } catch (error) {
+    ElMessage.error((error as Error).message);
+  } finally {
+    purging.value = null;
+  }
+}
+
+function buildPurgeMessage(result: MirrorPurgeResult) {
+  if (result.scope === 'MIRROR_DATA_EXCLUDING_CURRENT_WHITELIST') {
+    return `已真实删除当前白名单之外的镜像数据：删除 ${result.droppedMirrorTables} 张镜像表，清理 ${result.truncatedTables} 张镜像数据表。`;
+  }
+  return `已真实删除镜像数据：删除 ${result.droppedMirrorTables} 张镜像表，清理 ${result.truncatedTables} 张镜像数据表。`;
 }
 
 function syncTypeTagType(syncType: string) {
@@ -569,7 +668,7 @@ function syncLogMessage(log: GitlabSyncLog) {
 }
 
 onMounted(async () => {
-  await loadStatus(false);
+  await loadStatus(false, true);
 });
 
 onBeforeUnmount(() => {
@@ -743,13 +842,20 @@ onBeforeUnmount(() => {
                 </el-form-item>
                 <el-form-item label="白名单模式">
                   <el-radio-group v-model="form.whitelistMode">
-                    <el-radio value="RECOMMENDED">推荐业务表（{{ recommendedCount }} 张）</el-radio>
+                    <el-radio value="RECOMMENDED">推荐业务表</el-radio>
                     <el-radio value="ALL">全部表</el-radio>
                     <el-radio value="CUSTOM">自定义白名单</el-radio>
                   </el-radio-group>
                 </el-form-item>
                 <el-form-item v-if="form.whitelistMode === 'CUSTOM'" label="自定义白名单">
-                  <el-select v-model="form.whitelistTables" multiple filterable style="width: 100%">
+                  <el-select
+                    v-model="form.whitelistTables"
+                    multiple
+                    filterable
+                    style="width: 100%"
+                    :loading="whitelistOptionsLoading"
+                    @visible-change="(visible:boolean) => visible && ensureWhitelistOptions()"
+                  >
                     <el-option
                       v-for="option in whitelistOptions"
                       :key="option.tableName"
@@ -757,6 +863,13 @@ onBeforeUnmount(() => {
                       :value="option.tableName"
                     />
                   </el-select>
+                  <div class="form-help-text">
+                    {{
+                      whitelistOptionsLoaded
+                        ? `已加载 ${whitelistOptions.length} 张可选表，推荐表 ${recommendedCount} 张。`
+                        : '进入自定义白名单时按需加载表选项，避免刷新设置页时等待。'
+                    }}
+                  </div>
                 </el-form-item>
 
                 <el-divider>Webhook 增量同步</el-divider>
@@ -798,6 +911,7 @@ onBeforeUnmount(() => {
                   <el-button type="danger" plain :loading="cancelling" :disabled="!canCancel" @click="cancelSyncTask">
                     中止导入
                   </el-button>
+                  <el-button type="danger" plain @click="openPurgeDialog">删除镜像数据</el-button>
                 </el-space>
               </el-form>
             </el-card>
@@ -901,6 +1015,48 @@ onBeforeUnmount(() => {
       </main>
     </div>
   </div>
+
+  <el-dialog
+    v-model="purgeDialogVisible"
+    :title="purgeDialogCopy.title"
+    width="560px"
+    :close-on-click-modal="false"
+    :close-on-press-escape="!purging"
+    @close="closePurgeDialog"
+  >
+    <div class="purge-dialog-body">
+      <el-alert
+        title="此操作为真实删除，不可恢复，且只作用于本地镜像数据。"
+        type="error"
+        :closable="false"
+        show-icon
+      />
+      <div class="purge-dialog-text">{{ purgeDialogCopy.detail }}</div>
+      <el-radio-group v-model="purgeScope" class="purge-scope-group">
+        <el-radio value="MIRROR_DATA_ONLY">删除镜像数据</el-radio>
+        <el-radio value="MIRROR_DATA_EXCLUDING_CURRENT_WHITELIST">删除镜像数据（排除当前设置的白名单）</el-radio>
+      </el-radio-group>
+      <div class="purge-dialog-tip">
+        删除前请确认当前没有运行中或排队中的同步任务。本操作不会删除 GitLab 源端数据，也不会删除本地非镜像数据。
+      </div>
+      <el-form label-width="132px">
+        <el-form-item :label="`输入“${purgeDialogCopy.confirmText}”`">
+          <el-input v-model="purgeConfirmText" :placeholder="purgeDialogCopy.confirmText" />
+        </el-form-item>
+      </el-form>
+    </div>
+    <template #footer>
+      <el-button @click="closePurgeDialog">取消</el-button>
+      <el-button
+        type="danger"
+        :loading="purging != null"
+        :disabled="!purgeConfirmMatched"
+        @click="purgeMirrorData()"
+      >
+        确认删除
+      </el-button>
+    </template>
+  </el-dialog>
 </template>
 
 

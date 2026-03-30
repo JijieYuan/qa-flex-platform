@@ -88,6 +88,17 @@ export interface SyncSubmissionResponse {
   message: string;
 }
 
+export type MirrorPurgeScope = 'MIRROR_DATA_ONLY' | 'MIRROR_DATA_EXCLUDING_CURRENT_WHITELIST';
+
+export interface MirrorPurgeResult {
+  scope: MirrorPurgeScope;
+  droppedMirrorTables: number;
+  droppedTableNames: string[];
+  truncatedTables: number;
+  truncatedTableNames: string[];
+  syncTimestampsReset: boolean;
+}
+
 export interface MirrorStatusResponse {
   config: GitlabSyncConfig;
   currentTask?: GitlabSyncTask | null;
@@ -96,7 +107,6 @@ export interface MirrorStatusResponse {
   currentStartedAt?: string | null;
   progress?: SyncProgress | null;
   logs: GitlabSyncLog[];
-  whitelistOptions: TableWhitelistOption[];
   webhookUrl: string;
   webhookRegistration?: GitlabWebhookRegistrationStatus | null;
 }
@@ -306,6 +316,9 @@ export const api = {
   getStatus() {
     return request<MirrorStatusResponse>('/api/gitlab-sync/status');
   },
+  getWhitelistOptions() {
+    return request<TableWhitelistOption[]>('/api/gitlab-sync/whitelist-options');
+  },
   saveConfig(config: GitlabSyncConfig) {
     return request<GitlabSyncConfig>('/api/gitlab-sync/config', {
       method: 'PUT',
@@ -343,6 +356,12 @@ export const api = {
   cancelSync() {
     return request<{ accepted: boolean; taskId?: number; status?: string }>('/api/gitlab-sync/cancel', {
       method: 'POST',
+    });
+  },
+  purgeMirrorData(scope: MirrorPurgeScope) {
+    return request<MirrorPurgeResult>('/api/gitlab-sync/purge', {
+      method: 'POST',
+      body: JSON.stringify({ scope }),
     });
   },
   getStatisticBoard(boardKey: string, params?: { filters?: Record<string, string>; filterGroup?: StatisticFilterGroup | null }) {

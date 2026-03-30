@@ -14,6 +14,8 @@ import com.data.collection.platform.config.GitlabMirrorProperties;
 import com.data.collection.platform.entity.GitlabSyncConfig;
 import com.data.collection.platform.entity.GitlabSyncTask;
 import com.data.collection.platform.entity.GitlabWebhookRegistrationStatus;
+import com.data.collection.platform.entity.MirrorPurgeResult;
+import com.data.collection.platform.entity.MirrorPurgeScope;
 import com.data.collection.platform.entity.SourceMode;
 import com.data.collection.platform.entity.SyncProgress;
 import com.data.collection.platform.entity.SyncStatus;
@@ -24,6 +26,7 @@ import com.data.collection.platform.entity.SyncType;
 import com.data.collection.platform.entity.WhitelistMode;
 import com.data.collection.platform.service.GitlabConfigService;
 import com.data.collection.platform.service.GitlabMirrorSyncService;
+import com.data.collection.platform.service.GitlabMirrorPurgeService;
 import com.data.collection.platform.service.GitlabSyncLogService;
 import com.data.collection.platform.service.GitlabSyncTaskService;
 import com.data.collection.platform.service.GitlabWebhookRegistrationService;
@@ -64,6 +67,9 @@ class GitlabSyncControllerTest {
   @Mock
   private GitlabWebhookRegistrationService webhookRegistrationService;
 
+  @Mock
+  private GitlabMirrorPurgeService purgeService;
+
   private MockMvc mockMvc;
 
   @BeforeEach
@@ -78,7 +84,8 @@ class GitlabSyncControllerTest {
         properties,
         webhookService,
         taskService,
-        webhookRegistrationService);
+        webhookRegistrationService,
+        purgeService);
     mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
   }
 
@@ -101,7 +108,6 @@ class GitlabSyncControllerTest {
     when(taskService.extractMessage(task)).thenReturn("Manual full sync");
     when(syncService.getProgress(10L)).thenReturn(progress);
     when(logService.listRecent(anyLong(), anyInt())).thenReturn(List.of());
-    when(whitelistService.listOptions(config)).thenReturn(List.of());
     when(webhookRegistrationService.getStatus(eq(config), eq("http://localhost:18080/api/gitlab-sync/webhook")))
         .thenReturn(new GitlabWebhookRegistrationStatus(true, true, false, 1L, "http://localhost:18080/api/gitlab-sync/webhook", "未注册", List.of()));
 
@@ -115,6 +121,31 @@ class GitlabSyncControllerTest {
         .andExpect(jsonPath("$.data.progress.completedTables").value(5));
 
     verify(syncService).recoverTimedOutTasks();
+  }
+
+  @Test
+  void purgeShouldDeleteMirrorDataOnly() throws Exception {
+    when(purgeService.purge(MirrorPurgeScope.MIRROR_DATA_ONLY))
+        .thenReturn(new MirrorPurgeResult(
+            MirrorPurgeScope.MIRROR_DATA_ONLY,
+            12,
+            List.of("ods_gitlab_issues"),
+            2,
+            List.of("sys_table_registry", "gitlab_mirror_records"),
+            true));
+
+    mockMvc.perform(post("/api/gitlab-sync/purge")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("""
+                {
+                  "scope": "MIRROR_DATA_ONLY"
+                }
+                """))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.scope").value("MIRROR_DATA_ONLY"))
+        .andExpect(jsonPath("$.data.droppedMirrorTables").value(12))
+        .andExpect(jsonPath("$.data.truncatedTables").value(2));
   }
 
   @Test

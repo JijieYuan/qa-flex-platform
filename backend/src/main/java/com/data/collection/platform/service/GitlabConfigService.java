@@ -70,6 +70,19 @@ public class GitlabConfigService {
     configMapper.update(null, updateWrapper);
   }
 
+  public void resetSyncTime(Long id) {
+    if (id == null) {
+      return;
+    }
+    configMapper.update(
+        null,
+        new LambdaUpdateWrapper<GitlabSyncConfig>()
+            .eq(GitlabSyncConfig::getId, id)
+            .set(GitlabSyncConfig::getLastFullSyncAt, null)
+            .set(GitlabSyncConfig::getLastIncrementalSyncAt, null)
+            .set(GitlabSyncConfig::getUpdatedAt, LocalDateTime.now()));
+  }
+
   private GitlabSyncConfig defaultConfig() {
     GitlabSyncConfig config = new GitlabSyncConfig();
     config.setName("GitLab 默认数据源");
