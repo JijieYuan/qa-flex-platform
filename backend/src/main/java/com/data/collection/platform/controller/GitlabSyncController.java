@@ -8,9 +8,9 @@ import com.data.collection.platform.entity.GitlabSyncLog;
 import com.data.collection.platform.entity.GitlabSyncTask;
 import com.data.collection.platform.entity.MirrorStatusResponse;
 import com.data.collection.platform.entity.SourceMode;
-import com.data.collection.platform.entity.SyncSubmissionAction;
 import com.data.collection.platform.entity.SyncProgress;
 import com.data.collection.platform.entity.SyncStatus;
+import com.data.collection.platform.entity.SyncSubmissionAction;
 import com.data.collection.platform.entity.SyncTaskSubmissionResult;
 import com.data.collection.platform.entity.SyncTriggerType;
 import com.data.collection.platform.entity.SyncType;
@@ -23,6 +23,7 @@ import com.data.collection.platform.service.GitlabWebhookService;
 import com.data.collection.platform.service.GitlabWhitelistService;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
@@ -72,17 +73,18 @@ public class GitlabSyncController {
     SyncProgress progress = currentTask == null ? null : syncService.getProgress(currentTask.getId());
     SyncStatus currentStatus = currentTask == null ? SyncStatus.IDLE : currentTask.getStatus();
     String currentMessage = currentTask == null ? "" : taskService.extractMessage(currentTask);
-    java.time.LocalDateTime currentStartedAt = currentTask == null ? null : currentTask.getStartedAt();
-    return ApiResponse.success(new MirrorStatusResponse(
-        config,
-        currentTask,
-        currentStatus,
-        currentMessage,
-        currentStartedAt,
-        progress,
-        logs,
-        whitelistService.listOptions(config),
-        properties.getWebhookBaseUrl()));
+    LocalDateTime currentStartedAt = currentTask == null ? null : currentTask.getStartedAt();
+    return ApiResponse.success(
+        new MirrorStatusResponse(
+            config,
+            currentTask,
+            currentStatus,
+            currentMessage,
+            currentStartedAt,
+            progress,
+            logs,
+            whitelistService.listOptions(config),
+            properties.getWebhookBaseUrl()));
   }
 
   @PutMapping("/config")
@@ -118,17 +120,19 @@ public class GitlabSyncController {
 
   @PostMapping("/test-connection")
   public ApiResponse<Map<String, Object>> testConnection() {
-    try (GitlabSyncLogContext.Scope context = GitlabSyncLogContext.openConfig(configService.getConfig(), "TEST_CONNECTION");
+    try (GitlabSyncLogContext.Scope context =
+             GitlabSyncLogContext.openConfig(configService.getConfig(), "TEST_CONNECTION");
          GitlabSyncLogContext.Scope action = GitlabSyncLogContext.action("Connection_Test")) {
       log.info("Manual test connection requested");
     }
     syncService.testConnection();
-    return ApiResponse.success("GitLab PostgreSQL connection succeeded", Map.of("checked", true));
+    return ApiResponse.success("GitLab PostgreSQL 连接成功", Map.of("checked", true));
   }
 
   @PostMapping("/full-sync")
   public ApiResponse<Map<String, Object>> fullSync() {
-    try (GitlabSyncLogContext.Scope context = GitlabSyncLogContext.openConfig(configService.getConfig(), SyncType.FULL.name());
+    try (GitlabSyncLogContext.Scope context =
+             GitlabSyncLogContext.openConfig(configService.getConfig(), SyncType.FULL.name());
          GitlabSyncLogContext.Scope action = GitlabSyncLogContext.action("Task_Submit")) {
       log.info("Manual full sync requested");
     }
@@ -138,7 +142,8 @@ public class GitlabSyncController {
 
   @PostMapping("/initialize-structures")
   public ApiResponse<Map<String, Object>> initializeStructures() {
-    try (GitlabSyncLogContext.Scope context = GitlabSyncLogContext.openConfig(configService.getConfig(), "INITIALIZE_STRUCTURES");
+    try (GitlabSyncLogContext.Scope context =
+             GitlabSyncLogContext.openConfig(configService.getConfig(), "INITIALIZE_STRUCTURES");
          GitlabSyncLogContext.Scope action = GitlabSyncLogContext.action("Schema_Init_Request")) {
       log.info("Manual mirror structure initialization requested");
     }
@@ -153,9 +158,8 @@ public class GitlabSyncController {
          GitlabSyncLogContext.Scope action = GitlabSyncLogContext.action("Task_Submit")) {
       log.info("Manual recovery incremental sync requested");
     }
-    SyncTaskSubmissionResult result = syncService.startIncrementalSync(
-        SyncTriggerType.MANUAL,
-        "Manual recovery incremental sync");
+    SyncTaskSubmissionResult result =
+        syncService.startIncrementalSync(SyncTriggerType.MANUAL, "Manual recovery incremental sync");
     return ApiResponse.success(submissionMessage(result, SyncType.INCREMENTAL), buildSubmissionResponse(result));
   }
 
@@ -168,9 +172,11 @@ public class GitlabSyncController {
     }
     GitlabSyncTask task = syncService.requestCancel(config.getId());
     if (task == null) {
-      return ApiResponse.success("No active task to cancel", Map.of("accepted", false));
+      return ApiResponse.success("当前没有可中止的任务", Map.of("accepted", false));
     }
-    return ApiResponse.success("Cancellation requested", Map.of("accepted", true, "taskId", task.getId(), "status", task.getStatus()));
+    return ApiResponse.success(
+        "已提交中止请求",
+        Map.of("accepted", true, "taskId", task.getId(), "status", task.getStatus()));
   }
 
   @PostMapping("/webhook")
@@ -179,7 +185,7 @@ public class GitlabSyncController {
       @RequestHeader(value = "X-Gitlab-Token", required = false) String secret,
       @RequestBody Map<String, Object> payload) {
     webhookService.accept(eventType, payload, secret);
-    return ApiResponse.success("Webhook accepted", Map.of("accepted", true));
+    return ApiResponse.success("Webhook 已接收", Map.of("accepted", true));
   }
 
   public record SaveConfigRequest(
@@ -216,12 +222,13 @@ public class GitlabSyncController {
       case CREATED -> switch (requestedType) {
         case FULL -> "全量同步已开始";
         case COMPENSATION -> "补偿同步已开始";
-        case INCREMENTAL, WEBHOOK -> "增量同步已开始";
+        case INCREMENTAL -> "手工恢复增量已开始";
+        case WEBHOOK -> "精确更新已开始";
       };
-      case QUEUED -> "当前已有导入任务执行中，已为你登记下一轮同步";
+      case QUEUED -> "当前已有同步任务执行中，本次请求已登记到下一轮";
       case REUSED_ACTIVE -> "当前已有同范围同步任务执行中，本次请求已接收，无需重复操作";
       case REUSED_QUEUED -> "当前已有后续同步任务排队中，本次请求已合并到后续同步";
-      case DEDUPED -> "导入任务已提交，请勿重复操作";
+      case DEDUPED -> "同步任务已提交，请勿重复操作";
     };
   }
 }
