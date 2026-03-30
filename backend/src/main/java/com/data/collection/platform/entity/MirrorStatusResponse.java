@@ -12,5 +12,6 @@ public record MirrorStatusResponse(
     SyncProgress progress,
     List<GitlabSyncLog> logs,
     List<TableWhitelistOption> whitelistOptions,
-    String webhookUrl) {
+    String webhookUrl,
+    GitlabWebhookRegistrationStatus webhookRegistration) {
 }

@@ -98,6 +98,29 @@ export interface MirrorStatusResponse {
   logs: GitlabSyncLog[];
   whitelistOptions: TableWhitelistOption[];
   webhookUrl: string;
+  webhookRegistration?: GitlabWebhookRegistrationStatus | null;
+}
+
+export interface GitlabRegisteredWebhook {
+  id: number;
+  url: string;
+  issuesEvents: boolean;
+  mergeRequestsEvents: boolean;
+  noteEvents: boolean;
+  pipelineEvents: boolean;
+  jobEvents: boolean;
+  releasesEvents: boolean;
+  enableSslVerification: boolean;
+}
+
+export interface GitlabWebhookRegistrationStatus {
+  supported: boolean;
+  configured: boolean;
+  registered: boolean;
+  projectId?: number | null;
+  webhookUrl: string;
+  message: string;
+  hooks: GitlabRegisteredWebhook[];
 }
 
 export interface StatisticFilterOption {
@@ -309,6 +332,11 @@ export const api = {
   },
   startIncrementalSync() {
     return request<SyncSubmissionResponse>('/api/gitlab-sync/incremental-sync', {
+      method: 'POST',
+    });
+  },
+  registerWebhook() {
+    return request<GitlabWebhookRegistrationStatus>('/api/gitlab-sync/register-webhook', {
       method: 'POST',
     });
   },

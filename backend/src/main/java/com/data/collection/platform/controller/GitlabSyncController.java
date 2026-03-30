@@ -6,6 +6,7 @@ import com.data.collection.platform.config.GitlabMirrorProperties;
 import com.data.collection.platform.entity.GitlabSyncConfig;
 import com.data.collection.platform.entity.GitlabSyncLog;
 import com.data.collection.platform.entity.GitlabSyncTask;
+import com.data.collection.platform.entity.GitlabWebhookRegistrationStatus;
 import com.data.collection.platform.entity.MirrorStatusResponse;
 import com.data.collection.platform.entity.SourceMode;
 import com.data.collection.platform.entity.SyncProgress;
@@ -19,6 +20,7 @@ import com.data.collection.platform.service.GitlabConfigService;
 import com.data.collection.platform.service.GitlabMirrorSyncService;
 import com.data.collection.platform.service.GitlabSyncLogService;
 import com.data.collection.platform.service.GitlabSyncTaskService;
+import com.data.collection.platform.service.GitlabWebhookRegistrationService;
 import com.data.collection.platform.service.GitlabWebhookService;
 import com.data.collection.platform.service.GitlabWhitelistService;
 import jakarta.validation.constraints.NotBlank;
@@ -46,6 +48,7 @@ public class GitlabSyncController {
   private final GitlabMirrorProperties properties;
   private final GitlabWebhookService webhookService;
   private final GitlabSyncTaskService taskService;
+  private final GitlabWebhookRegistrationService webhookRegistrationService;
 
   public GitlabSyncController(
       GitlabConfigService configService,
@@ -54,7 +57,8 @@ public class GitlabSyncController {
       GitlabWhitelistService whitelistService,
       GitlabMirrorProperties properties,
       GitlabWebhookService webhookService,
-      GitlabSyncTaskService taskService) {
+      GitlabSyncTaskService taskService,
+      GitlabWebhookRegistrationService webhookRegistrationService) {
     this.configService = configService;
     this.syncService = syncService;
     this.logService = logService;
@@ -62,6 +66,7 @@ public class GitlabSyncController {
     this.properties = properties;
     this.webhookService = webhookService;
     this.taskService = taskService;
+    this.webhookRegistrationService = webhookRegistrationService;
   }
 
   @GetMapping("/status")
@@ -74,6 +79,9 @@ public class GitlabSyncController {
     SyncStatus currentStatus = currentTask == null ? SyncStatus.IDLE : currentTask.getStatus();
     String currentMessage = currentTask == null ? "" : taskService.extractMessage(currentTask);
     LocalDateTime currentStartedAt = currentTask == null ? null : currentTask.getStartedAt();
+    String webhookUrl = properties.getWebhookBaseUrl();
+    GitlabWebhookRegistrationStatus webhookRegistration =
+        webhookRegistrationService.getStatus(config, webhookUrl);
     return ApiResponse.success(
         new MirrorStatusResponse(
             config,
@@ -84,7 +92,8 @@ public class GitlabSyncController {
             progress,
             logs,
             whitelistService.listOptions(config),
-            properties.getWebhookBaseUrl()));
+            webhookUrl,
+            webhookRegistration));
   }
 
   @PutMapping("/config")
@@ -161,6 +170,14 @@ public class GitlabSyncController {
     SyncTaskSubmissionResult result =
         syncService.startIncrementalSync(SyncTriggerType.MANUAL, "Manual recovery incremental sync");
     return ApiResponse.success(submissionMessage(result, SyncType.INCREMENTAL), buildSubmissionResponse(result));
+  }
+
+  @PostMapping("/register-webhook")
+  public ApiResponse<GitlabWebhookRegistrationStatus> registerWebhook() {
+    GitlabSyncConfig config = configService.getConfig();
+    GitlabWebhookRegistrationStatus result =
+        webhookRegistrationService.ensureRegistered(config, properties.getWebhookBaseUrl());
+    return ApiResponse.success("GitLab Webhook 已注册", result);
   }
 
   @PostMapping("/cancel")

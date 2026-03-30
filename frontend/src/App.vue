@@ -178,6 +178,7 @@ const loading = ref(false);
 const saving = ref(false);
 const syncing = ref(false);
 const cancelling = ref(false);
+const registeringWebhook = ref(false);
 const status = ref<MirrorStatusResponse | null>(null);
 const refreshTimer = ref<number | null>(null);
 
@@ -212,6 +213,7 @@ const progress = computed<SyncProgress | null>(() => status.value?.progress ?? n
 const currentTask = computed<GitlabSyncTask | null>(() => status.value?.currentTask ?? null);
 const recentLogs = computed(() => status.value?.logs ?? []);
 const latestLog = computed(() => recentLogs.value[0] ?? null);
+const webhookRegistration = computed(() => status.value?.webhookRegistration ?? null);
 const activePollingStatuses = ['PENDING', 'QUEUED', 'RUNNING', 'CANCELLING'];
 const canCancel = computed(() => currentTask.value != null && activePollingStatuses.includes(currentTask.value.status));
 
@@ -507,6 +509,20 @@ function syncTypeText(syncType: string) {
   }
 }
 
+async function registerWebhook() {
+  registeringWebhook.value = true;
+  try {
+    await saveConfig(false);
+    await api.registerWebhook();
+    ElMessage.success('GitLab Webhook 已注册');
+    await loadStatus(false);
+  } catch (error) {
+    ElMessage.error((error as Error).message);
+  } finally {
+    registeringWebhook.value = false;
+  }
+}
+
 function syncTypeTagType(syncType: string) {
   switch (syncType) {
     case 'FULL':
@@ -754,10 +770,28 @@ onBeforeUnmount(() => {
                 <el-form-item label="GitLab Project ID">
                   <el-input-number v-model="form.webhookProjectId" :min="1" style="width: 100%" />
                 </el-form-item>
+                <el-form-item label="Webhook 状态">
+                  <div class="webhook-status-line">
+                    <el-tag
+                      :type="webhookRegistration?.registered ? 'success' : webhookRegistration?.configured ? 'warning' : 'info'"
+                      round
+                    >
+                      {{
+                        webhookRegistration?.registered
+                          ? '已注册'
+                          : webhookRegistration?.configured
+                            ? '未注册'
+                            : '未配置'
+                      }}
+                    </el-tag>
+                    <span class="webhook-status-text">{{ webhookRegistration?.message || '尚未检测 GitLab Webhook 状态' }}</span>
+                  </div>
+                </el-form-item>
 
                 <el-space wrap>
                   <el-button type="primary" :loading="saving" @click="saveConfig()">保存配置</el-button>
                   <el-button :icon="Tools" @click="testConnection">测试连接</el-button>
+                  <el-button :loading="registeringWebhook" @click="registerWebhook">注册 Webhook</el-button>
 
                   <el-button type="success" :loading="syncing" :disabled="!syncEnabled" @click="startFullSync">首次全量同步</el-button>
                   <el-button :loading="syncing" :disabled="!syncEnabled" @click="startIncrementalSync">立即增量同步</el-button>

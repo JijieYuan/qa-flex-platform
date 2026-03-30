@@ -13,6 +13,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.data.collection.platform.config.GitlabMirrorProperties;
 import com.data.collection.platform.entity.GitlabSyncConfig;
 import com.data.collection.platform.entity.GitlabSyncTask;
+import com.data.collection.platform.entity.GitlabWebhookRegistrationStatus;
 import com.data.collection.platform.entity.SourceMode;
 import com.data.collection.platform.entity.SyncProgress;
 import com.data.collection.platform.entity.SyncStatus;
@@ -25,6 +26,7 @@ import com.data.collection.platform.service.GitlabConfigService;
 import com.data.collection.platform.service.GitlabMirrorSyncService;
 import com.data.collection.platform.service.GitlabSyncLogService;
 import com.data.collection.platform.service.GitlabSyncTaskService;
+import com.data.collection.platform.service.GitlabWebhookRegistrationService;
 import com.data.collection.platform.service.GitlabWebhookService;
 import com.data.collection.platform.service.GitlabWhitelistService;
 import java.util.List;
@@ -59,6 +61,9 @@ class GitlabSyncControllerTest {
   @Mock
   private GitlabSyncTaskService taskService;
 
+  @Mock
+  private GitlabWebhookRegistrationService webhookRegistrationService;
+
   private MockMvc mockMvc;
 
   @BeforeEach
@@ -66,7 +71,14 @@ class GitlabSyncControllerTest {
     GitlabMirrorProperties properties = new GitlabMirrorProperties();
     properties.setWebhookBaseUrl("http://localhost:18080/api/gitlab-sync/webhook");
     GitlabSyncController controller = new GitlabSyncController(
-        configService, syncService, logService, whitelistService, properties, webhookService, taskService);
+        configService,
+        syncService,
+        logService,
+        whitelistService,
+        properties,
+        webhookService,
+        taskService,
+        webhookRegistrationService);
     mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
   }
 
@@ -90,6 +102,8 @@ class GitlabSyncControllerTest {
     when(syncService.getProgress(10L)).thenReturn(progress);
     when(logService.listRecent(anyLong(), anyInt())).thenReturn(List.of());
     when(whitelistService.listOptions(config)).thenReturn(List.of());
+    when(webhookRegistrationService.getStatus(eq(config), eq("http://localhost:18080/api/gitlab-sync/webhook")))
+        .thenReturn(new GitlabWebhookRegistrationStatus(true, true, false, 1L, "http://localhost:18080/api/gitlab-sync/webhook", "未注册", List.of()));
 
     mockMvc.perform(get("/api/gitlab-sync/status"))
         .andExpect(status().isOk())
@@ -183,6 +197,36 @@ class GitlabSyncControllerTest {
             "project_id", 10,
             "object_attributes", Map.of("id", 101, "title", "Simulated issue from webhook"))),
         eq("secret-token"));
+  }
+
+  @Test
+  void registerWebhookShouldReturnRegistrationStatus() throws Exception {
+    GitlabSyncConfig config = baseConfig();
+    when(configService.getConfig()).thenReturn(config);
+    when(webhookRegistrationService.ensureRegistered(eq(config), eq("http://localhost:18080/api/gitlab-sync/webhook")))
+        .thenReturn(new GitlabWebhookRegistrationStatus(
+            true,
+            true,
+            true,
+            1L,
+            "http://localhost:18080/api/gitlab-sync/webhook",
+            "GitLab Webhook 已注册",
+            List.of(new GitlabWebhookRegistrationStatus.RegisteredGitlabWebhook(
+                1L,
+                "http://localhost:18080/api/gitlab-sync/webhook",
+                true,
+                true,
+                true,
+                true,
+                true,
+                true,
+                false))));
+
+    mockMvc.perform(post("/api/gitlab-sync/register-webhook"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.registered").value(true))
+        .andExpect(jsonPath("$.data.projectId").value(1));
   }
 
   private GitlabSyncConfig baseConfig() {
