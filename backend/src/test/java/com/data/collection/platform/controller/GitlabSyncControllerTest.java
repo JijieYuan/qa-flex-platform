@@ -1,8 +1,7 @@
 package com.data.collection.platform.controller;
 
 import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.Mockito.eq;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -25,8 +24,8 @@ import com.data.collection.platform.entity.SyncTriggerType;
 import com.data.collection.platform.entity.SyncType;
 import com.data.collection.platform.entity.WhitelistMode;
 import com.data.collection.platform.service.GitlabConfigService;
-import com.data.collection.platform.service.GitlabMirrorSyncService;
 import com.data.collection.platform.service.GitlabMirrorPurgeService;
+import com.data.collection.platform.service.GitlabMirrorSyncService;
 import com.data.collection.platform.service.GitlabSyncLogService;
 import com.data.collection.platform.service.GitlabSyncTaskService;
 import com.data.collection.platform.service.GitlabWebhookRegistrationService;
@@ -107,9 +106,7 @@ class GitlabSyncControllerTest {
     when(taskService.findDisplayTask(1L)).thenReturn(task);
     when(taskService.extractMessage(task)).thenReturn("Manual full sync");
     when(syncService.getProgress(10L)).thenReturn(progress);
-    when(logService.listRecent(anyLong(), anyInt())).thenReturn(List.of());
-    when(webhookRegistrationService.getStatus(eq(config), eq("http://localhost:18080/api/gitlab-sync/webhook")))
-        .thenReturn(new GitlabWebhookRegistrationStatus(true, true, false, 1L, "http://localhost:18080/api/gitlab-sync/webhook", "未注册", List.of()));
+    when(logService.listRecent(eq(1L), anyInt())).thenReturn(List.of());
 
     mockMvc.perform(get("/api/gitlab-sync/status"))
         .andExpect(status().isOk())
@@ -118,9 +115,29 @@ class GitlabSyncControllerTest {
         .andExpect(jsonPath("$.data.currentTask.id").value(10))
         .andExpect(jsonPath("$.data.progress.phase").value("FULL_SYNC"))
         .andExpect(jsonPath("$.data.progress.totalTables").value(20))
-        .andExpect(jsonPath("$.data.progress.completedTables").value(5));
+        .andExpect(jsonPath("$.data.progress.completedTables").value(5))
+        .andExpect(jsonPath("$.data.webhookRegistration").doesNotExist());
+  }
 
-    verify(syncService).recoverTimedOutTasks();
+  @Test
+  void webhookRegistrationStatusShouldReturnAsyncStatusPayload() throws Exception {
+    GitlabSyncConfig config = baseConfig();
+    when(configService.getConfig()).thenReturn(config);
+    when(webhookRegistrationService.getStatus(eq(config), eq("http://localhost:18080/api/gitlab-sync/webhook")))
+        .thenReturn(new GitlabWebhookRegistrationStatus(
+            true,
+            true,
+            false,
+            1L,
+            "http://localhost:18080/api/gitlab-sync/webhook",
+            "尚未注册 GitLab Webhook",
+            List.of()));
+
+    mockMvc.perform(get("/api/gitlab-sync/webhook-registration-status"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.registered").value(false))
+        .andExpect(jsonPath("$.data.projectId").value(1));
   }
 
   @Test

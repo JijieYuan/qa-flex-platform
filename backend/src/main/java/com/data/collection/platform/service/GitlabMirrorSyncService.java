@@ -87,35 +87,6 @@ public class GitlabMirrorSyncService {
     externalDbService.testConnection(configService.getConfig());
   }
 
-  public Map<String, Object> initializeMirrorStructures() {
-    GitlabSyncConfig config = configService.getConfig();
-    List<TableWhitelistOption> tables = whitelistService.resolveOptions(config);
-    int total = tables.size();
-    int schemaChanged = 0;
-    int reused = 0;
-    try (GitlabSyncLogContext.Scope context = GitlabSyncLogContext.openConfig(config, "INITIALIZE_STRUCTURES");
-         GitlabSyncLogContext.Scope action = GitlabSyncLogContext.action("Schema_Init")) {
-      log.info("Initializing mirror structures, totalTables={}", total);
-      for (TableWhitelistOption table : tables) {
-        GitlabMirrorSchemaService.PreparedMirrorTable prepared = mirrorSchemaService.prepareMirrorTable(config, table);
-        if (prepared.fastPath()) {
-          reused++;
-        } else {
-          schemaChanged++;
-        }
-      }
-      log.info(
-          "Mirror structure initialization completed, totalTables={}, schemaChanged={}, reused={}",
-          total,
-          schemaChanged,
-          reused);
-    }
-    return Map.of(
-        "totalTables", total,
-        "schemaChanged", schemaChanged,
-        "reused", reused);
-  }
-
   public SyncTaskSubmissionResult startFullSync() {
     return submitTask(SyncType.FULL, SyncTriggerType.MANUAL, "Manual full sync");
   }

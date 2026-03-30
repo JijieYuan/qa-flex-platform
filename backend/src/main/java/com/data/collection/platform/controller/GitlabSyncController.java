@@ -7,11 +7,11 @@ import com.data.collection.platform.entity.GitlabSyncConfig;
 import com.data.collection.platform.entity.GitlabSyncLog;
 import com.data.collection.platform.entity.GitlabSyncTask;
 import com.data.collection.platform.entity.GitlabWebhookRegistrationStatus;
+import com.data.collection.platform.entity.MirrorPurgeResult;
+import com.data.collection.platform.entity.MirrorPurgeScope;
 import com.data.collection.platform.entity.MirrorStatusLogView;
 import com.data.collection.platform.entity.MirrorStatusResponse;
 import com.data.collection.platform.entity.MirrorStatusTaskView;
-import com.data.collection.platform.entity.MirrorPurgeResult;
-import com.data.collection.platform.entity.MirrorPurgeScope;
 import com.data.collection.platform.entity.SourceMode;
 import com.data.collection.platform.entity.SyncProgress;
 import com.data.collection.platform.entity.SyncStatus;
@@ -22,8 +22,8 @@ import com.data.collection.platform.entity.SyncType;
 import com.data.collection.platform.entity.TableWhitelistOption;
 import com.data.collection.platform.entity.WhitelistMode;
 import com.data.collection.platform.service.GitlabConfigService;
-import com.data.collection.platform.service.GitlabMirrorSyncService;
 import com.data.collection.platform.service.GitlabMirrorPurgeService;
+import com.data.collection.platform.service.GitlabMirrorSyncService;
 import com.data.collection.platform.service.GitlabSyncLogService;
 import com.data.collection.platform.service.GitlabSyncTaskService;
 import com.data.collection.platform.service.GitlabWebhookRegistrationService;
@@ -132,7 +132,7 @@ public class GitlabSyncController {
     config.setWebhookProjectId(request.webhookProjectId());
     config.setCompensationIntervalMinutes(request.compensationIntervalMinutes());
     try (GitlabSyncLogContext.Scope context = GitlabSyncLogContext.openConfig(config, "CONFIG");
-         GitlabSyncLogContext.Scope action = GitlabSyncLogContext.action("Config_Save")) {
+        GitlabSyncLogContext.Scope action = GitlabSyncLogContext.action("Config_Save")) {
       log.info(
           "Saving GitLab sync config, enabled={}, autoSyncEnabled={}, sourceMode={}, whitelistMode={}",
           syncEnabled,
@@ -146,8 +146,8 @@ public class GitlabSyncController {
   @PostMapping("/test-connection")
   public ApiResponse<Map<String, Object>> testConnection() {
     try (GitlabSyncLogContext.Scope context =
-             GitlabSyncLogContext.openConfig(configService.getConfig(), "TEST_CONNECTION");
-         GitlabSyncLogContext.Scope action = GitlabSyncLogContext.action("Connection_Test")) {
+            GitlabSyncLogContext.openConfig(configService.getConfig(), "TEST_CONNECTION");
+        GitlabSyncLogContext.Scope action = GitlabSyncLogContext.action("Connection_Test")) {
       log.info("Manual test connection requested");
     }
     syncService.testConnection();
@@ -157,30 +157,19 @@ public class GitlabSyncController {
   @PostMapping("/full-sync")
   public ApiResponse<Map<String, Object>> fullSync() {
     try (GitlabSyncLogContext.Scope context =
-             GitlabSyncLogContext.openConfig(configService.getConfig(), SyncType.FULL.name());
-         GitlabSyncLogContext.Scope action = GitlabSyncLogContext.action("Task_Submit")) {
+            GitlabSyncLogContext.openConfig(configService.getConfig(), SyncType.FULL.name());
+        GitlabSyncLogContext.Scope action = GitlabSyncLogContext.action("Task_Submit")) {
       log.info("Manual full sync requested");
     }
     SyncTaskSubmissionResult result = syncService.startFullSync();
     return ApiResponse.success(submissionMessage(result, SyncType.FULL), buildSubmissionResponse(result));
   }
 
-  @PostMapping("/initialize-structures")
-  public ApiResponse<Map<String, Object>> initializeStructures() {
-    try (GitlabSyncLogContext.Scope context =
-             GitlabSyncLogContext.openConfig(configService.getConfig(), "INITIALIZE_STRUCTURES");
-         GitlabSyncLogContext.Scope action = GitlabSyncLogContext.action("Schema_Init_Request")) {
-      log.info("Manual mirror structure initialization requested");
-    }
-    Map<String, Object> result = syncService.initializeMirrorStructures();
-    return ApiResponse.success("镜像结构初始化完成", result);
-  }
-
   @PostMapping("/incremental-sync")
   public ApiResponse<Map<String, Object>> incrementalSync() {
     try (GitlabSyncLogContext.Scope context =
-             GitlabSyncLogContext.openConfig(configService.getConfig(), SyncType.INCREMENTAL.name());
-         GitlabSyncLogContext.Scope action = GitlabSyncLogContext.action("Task_Submit")) {
+            GitlabSyncLogContext.openConfig(configService.getConfig(), SyncType.INCREMENTAL.name());
+        GitlabSyncLogContext.Scope action = GitlabSyncLogContext.action("Task_Submit")) {
       log.info("Manual recovery incremental sync requested");
     }
     SyncTaskSubmissionResult result =
@@ -200,7 +189,7 @@ public class GitlabSyncController {
   public ApiResponse<Map<String, Object>> cancel() {
     GitlabSyncConfig config = configService.getConfig();
     try (GitlabSyncLogContext.Scope context = GitlabSyncLogContext.openConfig(config, "CANCEL");
-         GitlabSyncLogContext.Scope action = GitlabSyncLogContext.action("Task_Cancel_Request")) {
+        GitlabSyncLogContext.Scope action = GitlabSyncLogContext.action("Task_Cancel_Request")) {
       log.info("Manual task cancel requested");
     }
     GitlabSyncTask task = syncService.requestCancel(config.getId());
@@ -217,7 +206,8 @@ public class GitlabSyncController {
     MirrorPurgeResult result = purgeService.purge(request.scope());
     String message = switch (request.scope()) {
       case MIRROR_DATA_ONLY -> "已真实删除全部镜像数据，GitLab 源端和本地非镜像数据均不受影响";
-      case MIRROR_DATA_EXCLUDING_CURRENT_WHITELIST -> "已真实删除当前白名单之外的镜像数据，GitLab 源端和本地非镜像数据均不受影响";
+      case MIRROR_DATA_EXCLUDING_CURRENT_WHITELIST ->
+          "已真实删除当前白名单之外的镜像数据，GitLab 源端和本地非镜像数据均不受影响";
     };
     return ApiResponse.success(message, result);
   }
@@ -246,11 +236,9 @@ public class GitlabSyncController {
       String dockerContainerName,
       String webhookSecret,
       Long webhookProjectId,
-      @NotNull Integer compensationIntervalMinutes) {
-  }
+      @NotNull Integer compensationIntervalMinutes) {}
 
-  public record PurgeRequest(@NotNull MirrorPurgeScope scope) {
-  }
+  public record PurgeRequest(@NotNull MirrorPurgeScope scope) {}
 
   private Map<String, Object> buildSubmissionResponse(SyncTaskSubmissionResult result) {
     GitlabSyncTask task = result.task();
