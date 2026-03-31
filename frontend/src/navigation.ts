@@ -107,10 +107,10 @@ export const modules: ShellModule[] = [
   },
   {
     key: 'question-metrics',
-    label: '系统测试缺陷汇总',
+    label: '议题统计',
     icon: DataAnalysis,
-    title: '系统测试缺陷汇总',
-    description: '按模块查看系统测试缺陷的层级、优先级与综合汇总。',
+    title: '议题统计',
+    description: '按业务专题查看议题相关统计看板。',
     pages: [
       {
         key: 'question-metrics-home',

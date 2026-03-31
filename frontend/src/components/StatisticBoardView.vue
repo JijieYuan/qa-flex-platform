@@ -166,6 +166,7 @@ const boardViewPrefs = ref<StatisticBoardViewPrefs>({
   widthStrategy: 'compact',
 });
 const draftVisibleColumnKeys = ref<string[]>([]);
+const expandedViewSettingGroups = ref<string[]>([]);
 
 const detailPagination = reactive({
   page: 1,
@@ -254,6 +255,11 @@ const tableRenderKey = computed(
 );
 
 const rowHeaderLabel = computed(() => board.value?.definition.rowHeaderLabel || '统计对象');
+const allColumnKeys = computed(() => board.value?.definition.columnGroups.flatMap((group) => group.columns.map((column) => column.key)) ?? []);
+const allColumnsSelected = computed(() => allColumnKeys.value.length > 0 && allColumnKeys.value.every((key) => draftVisibleColumnKeys.value.includes(key)));
+const partiallySelectedColumns = computed(
+  () => draftVisibleColumnKeys.value.length > 0 && draftVisibleColumnKeys.value.length < allColumnKeys.value.length,
+);
 
 const firstColumnWidth = computed(() => {
   if (!board.value) {
@@ -370,6 +376,7 @@ function openSettings() {
     return;
   }
   draftVisibleColumnKeys.value = [...boardViewPrefs.value.visibleColumnKeys];
+  expandedViewSettingGroups.value = [];
   settingsVisible.value = true;
 }
 
@@ -435,6 +442,34 @@ function clearCurrentSort() {
     sortOrder: '',
   });
   ElMessage.success('已恢复默认排序');
+}
+
+function toggleAllColumns(checked: boolean | string | number) {
+  draftVisibleColumnKeys.value = checked ? [...allColumnKeys.value] : [];
+}
+
+function groupColumnKeys(group: StatisticColumnGroup) {
+  return group.columns.map((column) => column.key);
+}
+
+function isGroupFullySelected(group: StatisticColumnGroup) {
+  const columnKeys = groupColumnKeys(group);
+  return columnKeys.length > 0 && columnKeys.every((key) => draftVisibleColumnKeys.value.includes(key));
+}
+
+function isGroupPartiallySelected(group: StatisticColumnGroup) {
+  const columnKeys = groupColumnKeys(group);
+  const selectedCount = columnKeys.filter((key) => draftVisibleColumnKeys.value.includes(key)).length;
+  return selectedCount > 0 && selectedCount < columnKeys.length;
+}
+
+function toggleGroupColumns(group: StatisticColumnGroup, checked: boolean | string | number) {
+  const groupKeys = new Set(groupColumnKeys(group));
+  if (checked) {
+    draftVisibleColumnKeys.value = [...new Set([...draftVisibleColumnKeys.value, ...groupKeys])];
+    return;
+  }
+  draftVisibleColumnKeys.value = draftVisibleColumnKeys.value.filter((key) => !groupKeys.has(key));
 }
 
 function detailCellValue(record: Record<string, unknown>, column: StatisticDetailColumn) {
@@ -1101,7 +1136,7 @@ watch(
       </div>
     </el-dialog>
 
-    <el-drawer v-model="settingsVisible" title="表格视图设置" size="360px" append-to-body>
+    <el-drawer v-model="settingsVisible" title="表格视图设置" size="360px" append-to-body class="view-settings-drawer">
       <div class="view-settings-panel" :class="props.uiHooks.settingsPanelClass" v-if="board">
         <div class="view-settings-summary">
           <div class="view-settings-summary-title">列显示控制</div>
@@ -1118,26 +1153,60 @@ watch(
           <div class="view-settings-strategy-tip">首列继续单独压缩处理，纯数字统计列保持固定宽度，但会随策略在紧凑、标准、宽松之间切换。</div>
         </div>
 
-        <el-checkbox-group v-model="draftVisibleColumnKeys" class="view-settings-checklist">
-          <div v-for="group in board.definition.columnGroups" :key="group.key" class="view-settings-group">
-            <div class="view-settings-group-title">{{ group.label }}</div>
-            <div class="view-settings-group-body">
-              <el-checkbox
-                v-for="column in group.columns"
-                :key="column.key"
-                :value="column.key"
-                class="view-settings-check"
-              >
-                {{ column.label }}
-              </el-checkbox>
-            </div>
+        <div class="view-settings-scroll">
+          <div class="view-settings-global-toggle">
+            <el-checkbox
+              :model-value="allColumnsSelected"
+              :indeterminate="partiallySelectedColumns"
+              @update:model-value="toggleAllColumns"
+            >
+              勾选全部列
+            </el-checkbox>
+            <span class="view-settings-global-meta">{{ draftVisibleColumnKeys.length }}/{{ allColumnKeys.length }}</span>
           </div>
-        </el-checkbox-group>
+
+          <el-checkbox-group v-model="draftVisibleColumnKeys" class="view-settings-checklist">
+            <el-collapse v-model="expandedViewSettingGroups" class="view-settings-collapse">
+              <el-collapse-item
+                v-for="group in board.definition.columnGroups"
+                :key="group.key"
+                :name="group.key"
+                class="view-settings-group"
+              >
+                <template #title>
+                  <div class="view-settings-group-head">
+                    <span class="view-settings-group-title">{{ group.label }}</span>
+                    <el-checkbox
+                      :model-value="isGroupFullySelected(group)"
+                      :indeterminate="isGroupPartiallySelected(group)"
+                      @click.stop
+                      @update:model-value="(value) => toggleGroupColumns(group, value)"
+                    >
+                      全选
+                    </el-checkbox>
+                  </div>
+                </template>
+                <div class="view-settings-group-body">
+                  <el-checkbox
+                    v-for="column in group.columns"
+                    :key="column.key"
+                    :value="column.key"
+                    class="view-settings-check"
+                  >
+                    {{ column.label }}
+                  </el-checkbox>
+                </div>
+              </el-collapse-item>
+            </el-collapse>
+          </el-checkbox-group>
+        </div>
 
         <div class="view-settings-actions">
-          <el-button @click="restoreDefaultView">恢复默认</el-button>
-          <el-button @click="settingsVisible = false">取消</el-button>
-          <el-button type="primary" :icon="ArrowRight" @click="saveViewPrefs">保存视图</el-button>
+          <div class="view-settings-actions-main">
+            <el-button @click="restoreDefaultView">重置</el-button>
+            <el-button @click="settingsVisible = false">取消</el-button>
+            <el-button type="primary" :icon="ArrowRight" @click="saveViewPrefs">保存视图</el-button>
+          </div>
         </div>
       </div>
     </el-drawer>
