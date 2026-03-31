@@ -10,10 +10,10 @@
   --nav-border: #f0f0f0;
   --nav-text: rgba(0, 0, 0, 0.65);
   --nav-text-strong: rgba(0, 0, 0, 0.88);
-  --accent: #1677ff;
-  --accent-soft: rgba(22, 119, 255, 0.08);
-  --brand: #2563eb;
-  --brand-strong: #1d4ed8;
+  --accent: #1890ff;
+  --accent-soft: rgba(24, 144, 255, 0.08);
+  --brand: #1890ff;
+  --brand-strong: #096dd9;
   --text-main: rgba(0, 0, 0, 0.88);
   --text-subtle: rgba(0, 0, 0, 0.45);
   --line: #f0f0f0;
@@ -1088,4 +1088,221 @@ button {
   .purge-scope-cards {
     grid-template-columns: 1fr;
   }
+}
+
+/* Ant Design style alignment for Element Plus */
+.el-link,
+.el-button.is-link,
+a {
+  color: #1890ff;
+}
+
+.el-link:hover,
+.el-button.is-link:hover,
+a:hover {
+  color: #40a9ff;
+}
+
+.el-button {
+  border-radius: 2px !important;
+  font-weight: 400;
+}
+
+.el-button--default,
+.el-button--info,
+.el-button--primary.is-plain,
+.el-button--default.is-plain {
+  border-color: #d9d9d9 !important;
+  color: rgba(0, 0, 0, 0.88) !important;
+  background: #ffffff !important;
+  box-shadow: none !important;
+}
+
+.el-button--default:hover,
+.el-button--info:hover,
+.el-button--primary.is-plain:hover,
+.el-button--default.is-plain:hover {
+  color: #1890ff !important;
+  border-color: #40a9ff !important;
+  background: #ffffff !important;
+}
+
+.el-button--primary {
+  background: #1890ff !important;
+  border-color: #1890ff !important;
+  color: #ffffff !important;
+  box-shadow: none !important;
+}
+
+.el-button--primary:hover,
+.el-button--primary:focus {
+  background: #40a9ff !important;
+  border-color: #40a9ff !important;
+  color: #ffffff !important;
+}
+
+.el-button--danger {
+  box-shadow: none !important;
+}
+
+.el-input__wrapper,
+.el-select__wrapper,
+.el-textarea__inner,
+.el-input-number,
+.el-input-number__decrease,
+.el-input-number__increase,
+.el-pagination .btn-next,
+.el-pagination .btn-prev,
+.el-pagination .el-pager li,
+.el-card,
+.el-dialog,
+.el-message-box,
+.el-dropdown-menu,
+.el-alert,
+.el-tag {
+  border-radius: 2px !important;
+}
+
+.el-input__wrapper,
+.el-select__wrapper,
+.el-textarea__inner,
+.el-input-number {
+  box-shadow: 0 0 0 1px #d9d9d9 inset !important;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.el-input__wrapper:hover,
+.el-select__wrapper:hover,
+.el-textarea__inner:hover,
+.el-input-number:hover {
+  box-shadow: 0 0 0 1px #40a9ff inset !important;
+}
+
+.el-input__wrapper.is-focus,
+.el-select__wrapper.is-focused,
+.el-textarea__inner:focus,
+.el-input-number.is-controls-right .el-input__wrapper.is-focus,
+.el-input-number:focus-within {
+  box-shadow:
+    0 0 0 1px #1890ff inset,
+    0 0 0 2px rgba(24, 144, 255, 0.12) !important;
+}
+
+.el-select__placeholder.is-transparent,
+.el-input__inner::placeholder,
+.el-textarea__inner::placeholder {
+  color: rgba(0, 0, 0, 0.25);
+}
+
+.el-loading-mask {
+  background-color: rgba(255, 255, 255, 0.72) !important;
+}
+
+.el-loading-spinner .path,
+.el-loading-spinner .circular,
+.el-icon.is-loading {
+  color: #1890ff !important;
+  stroke: #1890ff !important;
+}
+
+.el-table {
+  border: 1px solid #f0f0f0 !important;
+  box-shadow: none !important;
+  --el-table-border-color: #f0f0f0;
+  --el-table-header-bg-color: #fafafa;
+  --el-table-row-hover-bg-color: #f5faff;
+}
+
+.el-table::before,
+.el-table--border::before,
+.el-table--group::after,
+.el-table--border::after {
+  background-color: #f0f0f0 !important;
+}
+
+.el-table th.el-table__cell {
+  background: #fafafa !important;
+  color: rgba(0, 0, 0, 0.85) !important;
+  font-weight: 500 !important;
+  border-bottom: 1px solid #f0f0f0 !important;
+}
+
+.el-table td.el-table__cell,
+.el-table th.el-table__cell.is-leaf,
+.el-table--border .el-table__cell {
+  border-color: #f0f0f0 !important;
+}
+
+.el-table .el-table__cell {
+  padding: 10px 0 !important;
+}
+
+.el-table .cell {
+  line-height: 1.5 !important;
+}
+
+.el-table--small .el-table__cell {
+  padding: 8px 0 !important;
+}
+
+.el-dialog {
+  box-shadow:
+    0 3px 6px -4px rgba(0, 0, 0, 0.12),
+    0 6px 16px 0 rgba(0, 0, 0, 0.08) !important;
+  overflow: hidden;
+}
+
+.el-dialog__header {
+  background: #ffffff !important;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.el-dialog__title {
+  font-size: 16px !important;
+  font-weight: 600 !important;
+  color: rgba(0, 0, 0, 0.88) !important;
+}
+
+.el-overlay-dialog {
+  backdrop-filter: none;
+}
+
+.el-pagination {
+  color: rgba(0, 0, 0, 0.65);
+}
+
+.el-pagination .btn-prev,
+.el-pagination .btn-next,
+.el-pagination .el-pager li {
+  min-width: 28px;
+  height: 28px;
+  border: 1px solid #d9d9d9 !important;
+  background: #ffffff !important;
+  color: rgba(0, 0, 0, 0.65) !important;
+  box-shadow: none !important;
+}
+
+.el-pagination .btn-prev:hover,
+.el-pagination .btn-next:hover,
+.el-pagination .el-pager li:hover {
+  color: #1890ff !important;
+  border-color: #40a9ff !important;
+}
+
+.el-pagination .el-pager li.is-active {
+  color: #1890ff !important;
+  border-color: #1890ff !important;
+  background: #ffffff !important;
+  font-weight: 500;
+}
+
+.el-tag--primary,
+.el-tag--primary.el-tag--plain {
+  color: #1890ff !important;
+  border-color: rgba(24, 144, 255, 0.22) !important;
+  background: rgba(24, 144, 255, 0.08) !important;
+}
+
+.el-alert {
+  border: 1px solid #f0f0f0 !important;
 }
