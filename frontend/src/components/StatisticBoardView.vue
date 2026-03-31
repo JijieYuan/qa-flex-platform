@@ -157,6 +157,8 @@ const activeRow = ref<StatisticRowData | null>(null);
 const activeCell = ref<StatisticCellData | null>(null);
 const detail = ref<StatisticDetailResponse | null>(null);
 const settingsVisible = ref(false);
+const tableCurrentPage = ref(1);
+const tablePageSize = ref(50);
 const boardViewPrefs = ref<StatisticBoardViewPrefs>({
   visibleColumnKeys: [],
   groupOrder: [],
@@ -216,6 +218,11 @@ const sortedRows = computed(() => {
   const columns = board.value?.definition.columnGroups.flatMap((group) => group.columns) ?? [];
   return sortRowsFromSource(rows, columns, boardViewPrefs.value);
 });
+const totalTableRows = computed(() => sortedRows.value.length);
+const paginatedRows = computed(() => {
+  const start = (tableCurrentPage.value - 1) * tablePageSize.value;
+  return sortedRows.value.slice(start, start + tablePageSize.value);
+});
 
 const currentVisibleColumnCount = computed(() => boardViewPrefs.value.visibleColumnKeys.length);
 const currentSortColumn = computed(() => {
@@ -259,6 +266,22 @@ const allColumnKeys = computed(() => board.value?.definition.columnGroups.flatMa
 const allColumnsSelected = computed(() => allColumnKeys.value.length > 0 && allColumnKeys.value.every((key) => draftVisibleColumnKeys.value.includes(key)));
 const partiallySelectedColumns = computed(
   () => draftVisibleColumnKeys.value.length > 0 && draftVisibleColumnKeys.value.length < allColumnKeys.value.length,
+);
+const groupCheckAllStates = computed<Record<string, boolean>>(() =>
+  Object.fromEntries(
+    (board.value?.definition.columnGroups ?? []).map((group) => [
+      group.key,
+      group.columns.length > 0 && group.columns.every((column) => draftVisibleColumnKeys.value.includes(column.key)),
+    ]),
+  ),
+);
+const groupIndeterminateStates = computed<Record<string, boolean>>(() =>
+  Object.fromEntries(
+    (board.value?.definition.columnGroups ?? []).map((group) => {
+      const selectedCount = group.columns.filter((column) => draftVisibleColumnKeys.value.includes(column.key)).length;
+      return [group.key, selectedCount > 0 && selectedCount < group.columns.length];
+    }),
+  ),
 );
 
 const firstColumnWidth = computed(() => {
@@ -444,23 +467,21 @@ function clearCurrentSort() {
   ElMessage.success('已恢复默认排序');
 }
 
+function handleTableCurrentChange(nextPage: number) {
+  tableCurrentPage.value = nextPage;
+}
+
+function handleTableSizeChange(nextSize: number) {
+  tablePageSize.value = nextSize;
+  tableCurrentPage.value = 1;
+}
+
 function toggleAllColumns(checked: boolean | string | number) {
   draftVisibleColumnKeys.value = checked ? [...allColumnKeys.value] : [];
 }
 
 function groupColumnKeys(group: StatisticColumnGroup) {
   return group.columns.map((column) => column.key);
-}
-
-function isGroupFullySelected(group: StatisticColumnGroup) {
-  const columnKeys = groupColumnKeys(group);
-  return columnKeys.length > 0 && columnKeys.every((key) => draftVisibleColumnKeys.value.includes(key));
-}
-
-function isGroupPartiallySelected(group: StatisticColumnGroup) {
-  const columnKeys = groupColumnKeys(group);
-  const selectedCount = columnKeys.filter((key) => draftVisibleColumnKeys.value.includes(key)).length;
-  return selectedCount > 0 && selectedCount < columnKeys.length;
 }
 
 function toggleGroupColumns(group: StatisticColumnGroup, checked: boolean | string | number) {
@@ -470,6 +491,20 @@ function toggleGroupColumns(group: StatisticColumnGroup, checked: boolean | stri
     return;
   }
   draftVisibleColumnKeys.value = draftVisibleColumnKeys.value.filter((key) => !groupKeys.has(key));
+}
+
+function isColumnSelected(columnKey: string) {
+  return draftVisibleColumnKeys.value.includes(columnKey);
+}
+
+function toggleColumnSelection(columnKey: string, checked: boolean | string | number) {
+  if (checked) {
+    if (!draftVisibleColumnKeys.value.includes(columnKey)) {
+      draftVisibleColumnKeys.value = [...draftVisibleColumnKeys.value, columnKey];
+    }
+    return;
+  }
+  draftVisibleColumnKeys.value = draftVisibleColumnKeys.value.filter((key) => key !== columnKey);
 }
 
 function detailCellValue(record: Record<string, unknown>, column: StatisticDetailColumn) {
@@ -850,6 +885,17 @@ watch(detailVisible, (visible) => {
 });
 
 watch(
+  [sortedRows, tablePageSize],
+  () => {
+    const maxPage = Math.max(1, Math.ceil(totalTableRows.value / tablePageSize.value));
+    if (tableCurrentPage.value > maxPage) {
+      tableCurrentPage.value = 1;
+    }
+  },
+  { immediate: true },
+);
+
+watch(
   () => route.query,
   async () => {
     loading.value = true;
@@ -955,7 +1001,7 @@ watch(
       <div v-if="board" class="stat-matrix-wrapper">
         <el-table
           :key="tableRenderKey"
-          :data="sortedRows"
+          :data="paginatedRows"
           border
           stripe
           fit
@@ -1076,6 +1122,19 @@ watch(
         </el-table>
       </div>
 
+      <div v-if="board && sortedRows.length" class="stat-board-pagination">
+        <el-pagination
+          background
+          layout="total, sizes, prev, pager, next, jumper"
+          :current-page="tableCurrentPage"
+          :page-size="tablePageSize"
+          :page-sizes="[20, 50, 100, 200]"
+          :total="totalTableRows"
+          @size-change="handleTableSizeChange"
+          @current-change="handleTableCurrentChange"
+        />
+      </div>
+
       <el-empty
         v-if="board && !sortedRows.length"
         :description="board?.definition.emptyText || '当前筛选条件下没有可展示的统计结果。'"
@@ -1165,7 +1224,7 @@ watch(
             <span class="view-settings-global-meta">{{ draftVisibleColumnKeys.length }}/{{ allColumnKeys.length }}</span>
           </div>
 
-          <el-checkbox-group v-model="draftVisibleColumnKeys" class="view-settings-checklist">
+          <div class="view-settings-checklist">
             <el-collapse v-model="expandedViewSettingGroups" class="view-settings-collapse">
               <el-collapse-item
                 v-for="group in board.definition.columnGroups"
@@ -1177,8 +1236,8 @@ watch(
                   <div class="view-settings-group-head">
                     <span class="view-settings-group-title">{{ group.label }}</span>
                     <el-checkbox
-                      :model-value="isGroupFullySelected(group)"
-                      :indeterminate="isGroupPartiallySelected(group)"
+                      :model-value="groupCheckAllStates[group.key]"
+                      :indeterminate="groupIndeterminateStates[group.key]"
                       @click.stop
                       @update:model-value="(value) => toggleGroupColumns(group, value)"
                     >
@@ -1190,15 +1249,16 @@ watch(
                   <el-checkbox
                     v-for="column in group.columns"
                     :key="column.key"
-                    :value="column.key"
+                    :model-value="isColumnSelected(column.key)"
                     class="view-settings-check"
+                    @update:model-value="(value) => toggleColumnSelection(column.key, value)"
                   >
                     {{ column.label }}
                   </el-checkbox>
                 </div>
               </el-collapse-item>
             </el-collapse>
-          </el-checkbox-group>
+          </div>
         </div>
 
         <div class="view-settings-actions">

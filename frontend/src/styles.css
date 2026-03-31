@@ -434,7 +434,7 @@ button {
   min-width: 0;
   display: block;
   overflow-x: hidden;
-  overflow-y: hidden;
+  overflow-y: visible;
 }
 
 .stat-matrix-table {
@@ -450,13 +450,19 @@ button {
 }
 
 .stat-matrix-table .el-table__header-wrapper {
+  position: sticky;
+  top: 64px;
+  z-index: 8;
   overflow-x: hidden !important;
   overflow-y: hidden;
+  background: #ffffff;
+  border-bottom: 1px solid #f0f0f0;
 }
 
 .stat-matrix-table .el-table__body-wrapper {
   overflow-x: auto !important;
   overflow-y: hidden;
+  scrollbar-gutter: stable both-edges;
 }
 
 .stat-matrix-table .el-table__inner-wrapper,
@@ -484,12 +490,29 @@ button {
   box-shadow: none !important;
 }
 
+.stat-matrix-table .el-table__fixed-header-wrapper {
+  position: sticky;
+  top: 64px;
+  z-index: 9;
+  background: #ffffff;
+}
+
 .stat-matrix-table .el-table__fixed-body-wrapper {
   overflow-x: hidden !important;
 }
 
 .stat-matrix-table .el-table__fixed-right-patch {
   background: #ffffff !important;
+}
+
+.stat-matrix-table.is-scrolling-middle .el-table__fixed,
+.stat-matrix-table.is-scrolling-right .el-table__fixed {
+  box-shadow: 8px 0 12px -8px rgba(5, 34, 66, 0.14) !important;
+}
+
+.stat-matrix-table.is-scrolling-middle .el-table__fixed-right,
+.stat-matrix-table.is-scrolling-left .el-table__fixed-right {
+  box-shadow: -8px 0 12px -8px rgba(5, 34, 66, 0.14) !important;
 }
 
 .stat-group-header,
@@ -663,6 +686,28 @@ button {
   border: 0;
   border-radius: 0;
   background: transparent;
+}
+
+.stat-board-pagination {
+  display: flex;
+  justify-content: flex-end;
+  padding: 12px 0;
+  border-top: 1px solid #f0f0f0;
+  background: #ffffff;
+}
+
+.stat-board-pagination .el-pagination,
+.stat-board-pagination .el-pagination *,
+.stat-board-pagination .el-input__inner,
+.stat-board-pagination .el-select__placeholder,
+.stat-board-pagination .el-pagination__jump,
+.stat-board-pagination .el-pagination__total {
+  font-size: 13px !important;
+}
+
+.stat-board-pagination .el-pagination {
+  justify-content: flex-end;
+  width: 100%;
 }
 
 .stat-detail-dialog {
