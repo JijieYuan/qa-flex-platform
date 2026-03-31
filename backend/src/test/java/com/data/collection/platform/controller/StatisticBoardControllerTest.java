@@ -23,8 +23,10 @@ class StatisticBoardControllerTest {
   @Test
   void shouldLoadMirrorTableOverviewBoard() {
     StatisticBoardResponse response = controller.getBoard("mirror-table-overview", Map.of()).getData();
+
     assertThat(response).isNotNull();
     assertThat(response.definition().boardKey()).isEqualTo("mirror-table-overview");
+    assertThat(response.definition().rowHeaderLabel()).isEqualTo("统计对象");
     assertThat(response.definition().columnGroups()).isNotEmpty();
     assertThat(response.rows()).isNotEmpty();
     assertThat(response.meta()).isNotNull();
@@ -47,6 +49,35 @@ class StatisticBoardControllerTest {
           assertThat(field.type()).isEqualTo("datetime");
           assertThat(field.operators()).contains("before", "after", "between");
         });
+  }
+
+  @Test
+  void shouldLoadSystemTestDefectSummaryBoard() {
+    StatisticBoardResponse response = controller.getBoard("system-test-defect-summary", Map.of()).getData();
+
+    assertThat(response).isNotNull();
+    assertThat(response.definition().boardKey()).isEqualTo("system-test-defect-summary");
+    assertThat(response.definition().rowHeaderLabel()).isEqualTo("模块名称");
+    assertThat(response.definition().columnGroups()).extracting("key")
+        .containsExactly("level1", "level2", "level3", "priority", "summary");
+    assertThat(response.definition().columnGroups())
+        .anySatisfy(group -> {
+          assertThat(group.key()).isEqualTo("level1");
+          assertThat(group.columns()).extracting("key")
+              .containsExactly("level1_back", "level1_hang", "level1_others", "level1_fixed", "level1_rate");
+        })
+        .anySatisfy(group -> {
+          assertThat(group.key()).isEqualTo("priority");
+          assertThat(group.columns()).extracting("key")
+              .containsExactly("p1_count", "p1_rate", "p2_count", "p2_rate", "p3_count", "p3_rate");
+        })
+        .anySatisfy(group -> {
+          assertThat(group.key()).isEqualTo("summary");
+          assertThat(group.columns()).extracting("key")
+              .containsExactly("totalDefects", "defectRatio", "closeRate", "unclosedCount");
+        });
+    assertThat(response.rows()).isEmpty();
+    assertThat(response.meta().columnCount()).isEqualTo(21);
   }
 
   @Test

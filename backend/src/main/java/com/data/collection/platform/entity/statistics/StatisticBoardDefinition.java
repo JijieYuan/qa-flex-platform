@@ -8,6 +8,7 @@ public record StatisticBoardDefinition(
     String description,
     String queryTitle,
     String queryDescription,
+    String rowHeaderLabel,
     List<StatisticFilterField> filters,
     List<StatisticColumnGroup> columnGroups,
     List<StatisticDetailColumn> detailColumns,

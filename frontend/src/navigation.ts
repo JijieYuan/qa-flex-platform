@@ -107,15 +107,15 @@ export const modules: ShellModule[] = [
   },
   {
     key: 'question-metrics',
-    label: '议题统计',
+    label: '系统测试缺陷汇总',
     icon: DataAnalysis,
-    title: '议题统计',
-    description: '预留后续统计分析页面。',
+    title: '系统测试缺陷汇总',
+    description: '按模块查看系统测试缺陷的层级、优先级与综合汇总。',
     pages: [
       {
         key: 'question-metrics-home',
-        label: '议题统计',
-        description: '当前模块暂未接入统计表。',
+        label: '系统测试缺陷汇总',
+        description: '展示系统测试缺陷的多级统计表头与模块维度汇总。',
         path: '/question-metrics/home',
       },
     ],
@@ -164,6 +164,5 @@ export const modules: ShellModule[] = [
   },
 ];
 
-export const moduleByKey = new Map(modules.map((item) => [item.key, item]));
+export const moduleByKey = new Map(modules.map((item) => [item.key, item] as const));
 export const pageByKey = new Map(modules.flatMap((item) => item.pages.map((page) => [page.key, page] as const)));
-

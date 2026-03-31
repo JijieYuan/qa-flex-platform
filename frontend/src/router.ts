@@ -73,12 +73,14 @@ const routes: RouteRecordRaw[] = [
   },
   {
     path: '/question-metrics/home',
-    component: ModulePlaceholderView,
+    component: StatisticBoardPage,
     meta: {
       moduleKey: 'question-metrics',
       pageKey: 'question-metrics-home',
       title: pageByKey.get('question-metrics-home')!.label,
       description: pageByKey.get('question-metrics-home')!.description,
+      allowedQueryKeys: ['sortBy', 'sortOrder', 'detailPage', 'detailPageSize', 'detailSortBy', 'detailSortOrder', 'detailVisible', 'detailRowKey', 'detailColumnKey', 'projectId'],
+      allowedQueryPrefixes: ['filters.'],
       persistedQueryKeys: ['projectId'],
     },
   },

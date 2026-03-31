@@ -53,7 +53,7 @@ public abstract class AbstractStatisticBoardService {
     StatisticBoardResponse response = loadBoard(filters);
     StringBuilder builder = new StringBuilder();
     StringJoiner headerJoiner = new StringJoiner(",");
-    headerJoiner.add(csvValue("统计对象"));
+    headerJoiner.add(csvValue(response.definition().rowHeaderLabel()));
     for (StatisticColumnLeaf column : response.definition().columnGroups().stream().flatMap(group -> group.columns().stream()).toList()) {
       headerJoiner.add(csvValue(column.label()));
     }

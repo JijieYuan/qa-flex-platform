@@ -144,6 +144,7 @@ public class MirrorTableOverviewBoardService extends AbstractStatisticBoardServi
         "基于已同步到本地的镜像记录，对各类 GitLab 源表的记录规模和同步覆盖情况进行汇总展示。",
         "查询与操作",
         "按真实镜像字段配置筛选条件。当前页面只使用镜像表中的标准字段，不引入额外业务规则。",
+        "统计对象",
         List.of(
             new StatisticFilterField("tableName", "统计对象", "select", "", "", 220, List.of("eq", "ne"), tableOptions),
             new StatisticFilterField("totalRecords", "总记录数", "number", "", "", 160, List.of("eq", "gt", "gte", "lt", "lte", "between"), List.of()),
@@ -190,7 +191,7 @@ public class MirrorTableOverviewBoardService extends AbstractStatisticBoardServi
 
   private boolean matchesRow(Map<String, Object> row, StatisticFilterGroup filterGroup) {
     boolean isOr = "OR".equalsIgnoreCase(filterGroup.logic());
-    boolean matched = isOr ? false : true;
+    boolean matched = !isOr;
     for (StatisticFilterCondition condition : filterGroup.conditions()) {
       boolean result = matchesCondition(row, condition);
       if (isOr) {

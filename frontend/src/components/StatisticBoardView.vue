@@ -253,6 +253,8 @@ const tableRenderKey = computed(
     ].join('::'),
 );
 
+const rowHeaderLabel = computed(() => board.value?.definition.rowHeaderLabel || '统计对象');
+
 const firstColumnWidth = computed(() => {
   if (!board.value) {
     return 132;
@@ -915,7 +917,7 @@ watch(
         <el-tag size="small" type="primary" effect="plain">{{ currentSortSummary }}</el-tag>
       </div>
 
-      <div v-if="board && sortedRows.length" class="stat-matrix-wrapper">
+      <div v-if="board" class="stat-matrix-wrapper">
         <el-table
           :key="tableRenderKey"
           :data="sortedRows"
@@ -928,7 +930,7 @@ watch(
         >
           <el-table-column
             prop="rowLabel"
-            label="统计对象"
+            :label="rowHeaderLabel"
             fixed="left"
             :width="firstColumnWidth"
             :min-width="firstColumnMinWidth"
@@ -939,7 +941,7 @@ watch(
                 class="stat-column-header first-column"
                 :class="{ sorting: sortDirectionForColumn(ROW_LABEL_SORT_KEY) !== 'default' }"
               >
-                <span class="stat-column-header-label">统计对象</span>
+                <span class="stat-column-header-label">{{ rowHeaderLabel }}</span>
                 <button
                   class="sort-trigger"
                   :class="`is-${sortDirectionForColumn(ROW_LABEL_SORT_KEY)}`"
@@ -1040,7 +1042,7 @@ watch(
       </div>
 
       <el-empty
-        v-else
+        v-if="board && !sortedRows.length"
         :description="board?.definition.emptyText || '当前筛选条件下没有可展示的统计结果。'"
         class="stat-empty"
       />

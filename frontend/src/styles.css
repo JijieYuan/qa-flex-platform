@@ -1233,8 +1233,18 @@ a:hover {
   border-color: #f0f0f0 !important;
 }
 
+.el-table__header-wrapper th,
+.el-table .el-table__header-wrapper th.el-table__cell {
+  padding: 4px 0 !important;
+}
+
 .el-table .el-table__cell {
   padding: 10px 0 !important;
+}
+
+.el-table__header-wrapper .cell,
+.el-table th.el-table__cell .cell {
+  line-height: 20px !important;
 }
 
 .el-table .cell {
@@ -1243,6 +1253,44 @@ a:hover {
 
 .el-table--small .el-table__cell {
   padding: 8px 0 !important;
+}
+
+.el-table__empty-block {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+.el-table__empty-text {
+  padding: 32px 0 !important;
+}
+
+.el-empty {
+  padding: 32px 0 !important;
+}
+
+.el-empty__image {
+  width: 80px !important;
+  height: 80px !important;
+  margin-bottom: 8px !important;
+}
+
+.el-empty__image svg,
+.el-empty__image img {
+  max-width: 80px !important;
+  max-height: 80px !important;
+}
+
+.el-empty__description {
+  margin-top: 0 !important;
+}
+
+.el-empty__description p,
+.el-table__empty-text .el-empty__description p,
+.el-table__empty-text {
+  color: rgba(0, 0, 0, 0.45) !important;
+  font-size: 13px !important;
+  line-height: 20px !important;
 }
 
 .el-dialog {

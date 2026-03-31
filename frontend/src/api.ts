@@ -206,6 +206,7 @@ export interface StatisticBoardDefinition {
   description: string;
   queryTitle: string;
   queryDescription: string;
+  rowHeaderLabel: string;
   filters: StatisticFilterField[];
   columnGroups: StatisticColumnGroup[];
   detailColumns: StatisticDetailColumn[];
