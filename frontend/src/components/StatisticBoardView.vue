@@ -924,7 +924,7 @@ watch(
 <template>
   <div class="stat-board" :class="props.uiHooks.rootClass">
     <el-card shadow="never" class="stat-board-card" :class="props.uiHooks.cardClass" v-loading="loading">
-      <template #header>
+      <div class="stat-board-query-shell">
         <div class="stat-board-toolbar" :class="props.uiHooks.toolbarClass">
           <div class="stat-board-toolbar-main" :class="props.uiHooks.toolbarMainClass">
             <div class="stat-filter-builder">
@@ -982,7 +982,7 @@ watch(
             </el-dropdown>
           </div>
         </div>
-      </template>
+      </div>
 
       <el-alert
         v-if="errorMessage"

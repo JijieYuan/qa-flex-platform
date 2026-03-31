@@ -291,21 +291,21 @@ button {
   min-width: 0;
 }
 
-.stat-board-card .el-card__header,
 .stat-board-card .el-card__body {
   width: 100%;
   min-width: 0;
 }
 
-.stat-board-card .el-card__header {
-  padding: 12px 16px 0 !important;
-  border-bottom: 1px solid #f0f0f0;
-  background: #ffffff !important;
-}
-
 .stat-board-card .el-card__body {
   padding: 0 16px 16px !important;
   background: #ffffff !important;
+}
+
+.stat-board-query-shell {
+  margin: 0;
+  padding: 10px 0 6px;
+  border-bottom: 1px solid #f0f0f0;
+  background: #ffffff;
 }
 
 .stat-board-alert {
@@ -315,7 +315,7 @@ button {
 
 .stat-board-sortbar {
   margin-bottom: 0;
-  padding: 10px 0 12px;
+  padding: 4px 0 6px;
   border: 0;
   border-radius: 0;
   background: #ffffff;
@@ -435,6 +435,7 @@ button {
   display: block;
   overflow-x: hidden;
   overflow-y: visible;
+  background: #ffffff;
 }
 
 .stat-matrix-table {
@@ -442,6 +443,7 @@ button {
   overflow: visible;
   width: 100%;
   min-width: 100%;
+  border-top: 0 !important;
 }
 
 .stat-matrix-table .el-table__header-wrapper,
@@ -517,9 +519,9 @@ button {
 
 .stat-group-header,
 .stat-column-header {
-  min-height: 44px;
+  min-height: 34px;
   display: inline-flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: center;
   gap: 8px;
   width: 100%;
@@ -528,12 +530,12 @@ button {
 }
 
 .stat-group-header {
-  padding: 0 8px;
+  padding: 0 8px 2px;
   cursor: grab;
 }
 
 .stat-column-header {
-  padding: 0 2px;
+  padding: 0 2px 2px;
   cursor: grab;
 }
 
@@ -1390,7 +1392,7 @@ a:hover {
 
 .el-table__header-wrapper th,
 .el-table .el-table__header-wrapper th.el-table__cell {
-  padding: 4px 0 !important;
+  padding: 0 0 4px !important;
 }
 
 .el-table .el-table__cell {
