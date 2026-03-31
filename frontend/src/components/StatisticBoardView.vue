@@ -72,6 +72,15 @@ function routeBoardSortDirection() {
   return parseSortDirection(route.query.sortOrder, 'default');
 }
 
+function routeTablePage() {
+  return parsePositiveInteger(route.query.tablePage, 1);
+}
+
+function routeTablePageSize() {
+  const value = parsePositiveInteger(route.query.tablePageSize, 50);
+  return [20, 50, 100, 200].includes(value) ? value : 50;
+}
+
 function routeDetailPage() {
   return parsePositiveInteger(route.query.detailPage, 1);
 }
@@ -157,8 +166,8 @@ const activeRow = ref<StatisticRowData | null>(null);
 const activeCell = ref<StatisticCellData | null>(null);
 const detail = ref<StatisticDetailResponse | null>(null);
 const settingsVisible = ref(false);
-const tableCurrentPage = ref(1);
-const tablePageSize = ref(50);
+const tableCurrentPage = ref(routeTablePage());
+const tablePageSize = ref(routeTablePageSize());
 const boardViewPrefs = ref<StatisticBoardViewPrefs>({
   visibleColumnKeys: [],
   groupOrder: [],
@@ -476,12 +485,16 @@ function clearCurrentSort() {
 }
 
 function handleTableCurrentChange(nextPage: number) {
-  tableCurrentPage.value = nextPage;
+  void replaceRouteQuery({
+    tablePage: nextPage,
+  });
 }
 
 function handleTableSizeChange(nextSize: number) {
-  tablePageSize.value = nextSize;
-  tableCurrentPage.value = 1;
+  void replaceRouteQuery({
+    tablePageSize: nextSize,
+    tablePage: 1,
+  });
 }
 
 function toggleAllColumns(checked: boolean | string | number) {
@@ -907,7 +920,9 @@ watch(
   () => {
     const maxPage = Math.max(1, Math.ceil(totalTableRows.value / tablePageSize.value));
     if (tableCurrentPage.value > maxPage) {
-      tableCurrentPage.value = 1;
+      void replaceRouteQuery({
+        tablePage: 1,
+      });
     }
   },
   { immediate: true },
@@ -915,11 +930,13 @@ watch(
 
 watch(
   () => route.query,
-  async () => {
-    loading.value = true;
-    try {
-      await loadBoard(false);
-      detailVisible.value = routeDetailVisible();
+    async () => {
+      loading.value = true;
+      try {
+        tableCurrentPage.value = routeTablePage();
+        tablePageSize.value = routeTablePageSize();
+        await loadBoard(false);
+        detailVisible.value = routeDetailVisible();
       if (detailVisible.value) {
         activeRow.value = board.value?.rows.find((row) => row.rowKey === String(route.query.detailRowKey ?? '')) ?? null;
         activeCell.value = activeRow.value?.cells.find((cell) => cell.columnKey === String(route.query.detailColumnKey ?? '')) ?? null;
