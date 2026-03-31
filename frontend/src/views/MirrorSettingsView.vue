@@ -61,6 +61,14 @@ const latestLog = computed(() => recentLogs.value[0] ?? null);
 const webhookRegistration = computed(() => webhookRegistrationState.value ?? null);
 const activePollingStatuses = ['PENDING', 'QUEUED', 'RUNNING', 'CANCELLING'];
 const canCancel = computed(() => currentTask.value != null && activePollingStatuses.includes(currentTask.value.status));
+const lastSyncDisplay = computed(() => {
+  const lastFinishedAt = latestLog.value?.finishedAt || latestLog.value?.startedAt;
+  if (!lastFinishedAt) {
+    return 'Last Sync: -';
+  }
+  const syncStatus = latestLog.value?.status === 'SUCCESS' ? 'Success' : latestLog.value?.status === 'FAILED' ? 'Failed' : latestLog.value?.status === 'CANCELLED' ? 'Cancelled' : latestLog.value?.status ?? 'Idle';
+  return `Last Sync: ${formatDateTime(lastFinishedAt)} (${syncStatus})`;
+});
 
 const progressPercent = computed(() => {
   const current = progress.value;
@@ -532,12 +540,11 @@ onBeforeUnmount(() => {
         <div class="panel-header">
           <div>
             <div class="panel-title">GitLab 数据镜像设置</div>
-            <div class="panel-caption">全量靠 DB，增量靠 Webhook，一致性靠补偿同步。</div>
           </div>
-          <el-space>
-            <el-tag v-if="loading" type="info">正在加载</el-tag>
-            <el-tag type="primary" effect="dark">数据源设置</el-tag>
-          </el-space>
+          <div class="panel-header-meta">
+            <span class="header-secondary-text">{{ lastSyncDisplay }}</span>
+            <el-tag v-if="loading" size="small" type="info">加载中</el-tag>
+          </div>
         </div>
       </template>
 
@@ -702,7 +709,6 @@ onBeforeUnmount(() => {
           <div class="panel-header">
             <div>
               <div class="panel-title">同步状态</div>
-              <div class="panel-caption">仅在排队、执行或中止过程中自动轮询刷新。</div>
             </div>
             <el-tag :type="displayStatus.type">{{ displayStatus.text }}</el-tag>
           </div>
@@ -750,7 +756,6 @@ onBeforeUnmount(() => {
           <div class="panel-header">
             <div>
               <div class="panel-title">最近同步日志</div>
-              <div class="panel-caption">快速确认最近一次全量、手工恢复增量、补偿或精确更新执行结果。</div>
             </div>
             <el-button link :icon="Refresh" :loading="refreshing" @click="refreshStatus">刷新</el-button>
           </div>

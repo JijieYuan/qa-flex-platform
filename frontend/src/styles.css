@@ -249,7 +249,7 @@ button {
 
 .shell-content {
   position: relative;
-  padding: 24px 28px 28px;
+  padding: 16px 20px 20px;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.28), rgba(255, 255, 255, 0.12));
 }
@@ -270,17 +270,18 @@ button {
 }
 
 .content-head {
-  padding: 4px 0 18px;
+  min-height: 36px;
+  padding: 0 0 12px;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  gap: 18px;
+  gap: 12px;
 }
 
 .content-title-row {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
 }
 
 .back-button {
@@ -290,28 +291,22 @@ button {
 
 .content-title {
   margin: 0;
-  font-size: 34px;
-  font-weight: 800;
-  letter-spacing: -0.02em;
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
   color: #13263a;
-}
-
-.content-description {
-  margin: 10px 0 0;
-  color: var(--text-subtle);
-  font-size: 14px;
 }
 
 .settings-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.65fr) minmax(360px, 0.95fr);
-  gap: 22px;
+  gap: 16px;
 }
 
 .settings-side-panel {
   display: grid;
   align-content: start;
-  gap: 22px;
+  gap: 16px;
 }
 
 .panel-card,
@@ -322,6 +317,12 @@ button {
   background: var(--panel-bg) !important;
   backdrop-filter: blur(20px);
   box-shadow: var(--panel-shadow) !important;
+}
+
+.panel-card > .el-card__body,
+.empty-stage-card > .el-card__body,
+.empty-placeholder-card > .el-card__body {
+  padding: 16px !important;
 }
 
 .stat-board {
@@ -814,18 +815,32 @@ button {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 14px;
+  gap: 12px;
 }
 
 .panel-title {
-  font-size: 17px;
+  font-size: 16px;
   font-weight: 700;
 }
 
 .panel-caption {
-  margin-top: 6px;
+  margin-top: 4px;
   color: var(--text-subtle);
   font-size: 12px;
+}
+
+.panel-header-meta {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.header-secondary-text {
+  color: var(--text-subtle);
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .status-message {

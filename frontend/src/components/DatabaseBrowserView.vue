@@ -224,9 +224,7 @@ onMounted(async () => {
         <div class="db-table-header">
           <div>
             <div class="db-table-title">{{ rowsResponse?.label || '数据库查看' }}</div>
-            <div class="db-table-caption">
-              {{ rowsResponse?.tableName || '请选择一张本地表开始查看' }}
-            </div>
+            <div class="db-table-caption">{{ rowsResponse?.tableName || '-' }}</div>
           </div>
 
           <div class="db-table-meta">

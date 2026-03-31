@@ -13,9 +13,6 @@ const activeModule = computed(
 );
 const activePageKey = computed(() => String(route.meta.pageKey ?? activeModule.value.pages[0]?.key ?? ''));
 const pageTitle = computed(() => String(route.meta.title ?? activeModule.value.pages[0]?.label ?? '数据平台'));
-const pageDescription = computed(
-  () => String(route.meta.description ?? activeModule.value.pages[0]?.description ?? '统一的数据采集、镜像与统计分析平台。'),
-);
 
 function openModule(moduleKey: string) {
   const targetModule = moduleByKey.get(moduleKey as never);
@@ -87,11 +84,8 @@ function openPage(path: string) {
 
       <main class="shell-content">
         <section class="content-head">
-          <div>
-            <div class="content-title-row">
-              <h1 class="content-title">{{ pageTitle }}</h1>
-            </div>
-            <p class="content-description">{{ pageDescription }}</p>
+          <div class="content-title-row">
+            <h1 class="content-title">{{ pageTitle }}</h1>
           </div>
 
           <div class="content-head-actions">
