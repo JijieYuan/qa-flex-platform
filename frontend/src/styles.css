@@ -248,9 +248,25 @@ button {
 }
 
 .shell-content {
+  position: relative;
   padding: 24px 28px 28px;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.28), rgba(255, 255, 255, 0.12));
+}
+
+.route-loading-mask {
+  position: absolute;
+  inset: 24px 28px 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  border-radius: 24px;
+  background: rgba(247, 250, 253, 0.74);
+  color: var(--brand-strong);
+  font-weight: 700;
+  backdrop-filter: blur(5px);
+  z-index: 5;
 }
 
 .content-head {

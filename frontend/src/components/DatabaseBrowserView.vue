@@ -1,20 +1,36 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { ElMessage } from 'element-plus';
 import { Refresh, Search, WarningFilled } from '@element-plus/icons-vue';
 import { api, type DatabaseTableOption, type DatabaseTableRowsResponse } from '../api';
+import { useRouteTableState } from '../composables/useRouteTableState';
 
-const loading = ref(false);
 const tablesLoading = ref(false);
 const tableOptions = ref<DatabaseTableOption[]>([]);
-const selectedTable = ref('');
-const keyword = ref('');
 const keywordDraft = ref('');
-const page = ref(1);
-const size = ref(20);
-const sortField = ref('');
-const sortOrder = ref<'asc' | 'desc' | ''>('');
 const rowsResponse = ref<DatabaseTableRowsResponse | null>(null);
+
+const {
+  route,
+  page,
+  pageSize,
+  sortBy,
+  sortOrder,
+  keyword,
+  isTableLoading,
+  patchQuery,
+  bindLoader,
+} = useRouteTableState({
+  defaults: {
+    page: 1,
+    pageSize: 20,
+    sortBy: '',
+    sortOrder: '',
+    keyword: '',
+  },
+});
+
+const selectedTable = computed(() => String(route.query.table ?? ''));
 
 const columns = computed(() => rowsResponse.value?.columns ?? []);
 const rows = computed(() => rowsResponse.value?.rows ?? []);
@@ -38,7 +54,7 @@ async function loadTables() {
     const tables = await api.getDatabaseTables();
     tableOptions.value = tables;
     if (!selectedTable.value && tables.length > 0) {
-      selectedTable.value = tables[0].tableName;
+      await patchQuery({ table: tables[0].tableName }, 'replace');
     }
   } catch (error) {
     ElMessage.error((error as Error).message);
@@ -52,45 +68,46 @@ async function loadRows(showError = true) {
     rowsResponse.value = null;
     return;
   }
-  loading.value = true;
   try {
     rowsResponse.value = await api.getDatabaseTableRows({
       tableName: selectedTable.value,
       page: page.value,
-      size: size.value,
+      size: pageSize.value,
       keyword: keyword.value || undefined,
-      sortField: sortField.value || undefined,
+      sortField: sortBy.value || undefined,
       sortOrder: sortOrder.value || undefined,
     });
   } catch (error) {
     if (showError) {
       ElMessage.error((error as Error).message);
     }
-  } finally {
-    loading.value = false;
   }
 }
 
 async function handleTableChange() {
-  page.value = 1;
-  sortField.value = '';
-  sortOrder.value = '';
-  await loadRows();
+  await patchQuery({
+    table: selectedTable.value,
+    page: 1,
+    sortBy: '',
+    sortOrder: '',
+  });
 }
 
 async function handleSearch() {
-  keyword.value = keywordDraft.value.trim();
-  page.value = 1;
-  await loadRows();
+  await patchQuery({
+    keyword: keywordDraft.value.trim(),
+    page: 1,
+  });
 }
 
 async function handleReset() {
   keywordDraft.value = '';
-  keyword.value = '';
-  page.value = 1;
-  sortField.value = '';
-  sortOrder.value = '';
-  await loadRows();
+  await patchQuery({
+    keyword: '',
+    page: 1,
+    sortBy: '',
+    sortOrder: '',
+  });
 }
 
 async function handleRefresh() {
@@ -99,21 +116,24 @@ async function handleRefresh() {
 }
 
 async function handleSizeChange(nextSize: number) {
-  size.value = nextSize;
-  page.value = 1;
-  await loadRows();
+  await patchQuery({
+    pageSize: nextSize,
+    page: 1,
+  });
 }
 
 async function handleCurrentChange(nextPage: number) {
-  page.value = nextPage;
-  await loadRows();
+  await patchQuery({
+    page: nextPage,
+  });
 }
 
 async function handleSortChange(payload: { prop: string; order: 'ascending' | 'descending' | null }) {
-  sortField.value = payload.prop || '';
-  sortOrder.value = payload.order === 'ascending' ? 'asc' : payload.order === 'descending' ? 'desc' : '';
-  page.value = 1;
-  await loadRows();
+  await patchQuery({
+    sortBy: payload.prop || '',
+    sortOrder: payload.order === 'ascending' ? 'asc' : payload.order === 'descending' ? 'desc' : '',
+    page: 1,
+  });
 }
 
 function formatCellValue(value: unknown) {
@@ -130,9 +150,16 @@ function formatTime(value?: string | null) {
   return value || '-';
 }
 
+watch(keyword, (nextKeyword) => {
+  keywordDraft.value = nextKeyword;
+}, { immediate: true });
+
+bindLoader(async () => {
+  await loadRows(false);
+});
+
 onMounted(async () => {
   await loadTables();
-  await loadRows(false);
 });
 </script>
 
@@ -141,12 +168,12 @@ onMounted(async () => {
     <div class="db-toolbar">
       <div class="db-toolbar-filters">
         <el-select
-          v-model="selectedTable"
+          :model-value="selectedTable"
           class="db-table-select"
           placeholder="请选择要查看的本地表"
           filterable
           :loading="tablesLoading"
-          @change="handleTableChange"
+          @change="(value:string) => patchQuery({ table: value, page: 1, sortBy: '', sortOrder: '' })"
         >
           <el-option
             v-for="option in tableOptions"
@@ -210,7 +237,7 @@ onMounted(async () => {
         />
 
         <el-table
-          v-loading="loading"
+          v-loading="isTableLoading"
           :data="rows"
           border
           stripe
@@ -238,7 +265,7 @@ onMounted(async () => {
             background
             layout="total, sizes, prev, pager, next"
             :current-page="page"
-            :page-size="size"
+            :page-size="pageSize"
             :page-sizes="[10, 20, 50, 100]"
             :total="total"
             @size-change="handleSizeChange"

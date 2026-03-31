@@ -1,7 +1,8 @@
 ﻿<script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { computed, reactive, ref, watch } from 'vue';
 import { ArrowDown, ArrowRight, Download, RefreshRight, Search, Sort } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
+import { useRoute, useRouter } from 'vue-router';
 import {
   api,
   type StatisticBoardResponse,
@@ -50,6 +51,101 @@ const props = withDefaults(
     uiHooks: () => ({}),
   },
 );
+
+const route = useRoute();
+const router = useRouter();
+
+function parsePositiveInteger(rawValue: unknown, fallback: number) {
+  const parsed = Number.parseInt(String(rawValue ?? ''), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function parseSortDirection(rawValue: unknown, fallback: SortDirection) {
+  return rawValue === 'asc' || rawValue === 'desc' || rawValue === 'default' ? rawValue : fallback;
+}
+
+function routeBoardSortColumn() {
+  return String(route.query.sortBy ?? '');
+}
+
+function routeBoardSortDirection() {
+  return parseSortDirection(route.query.sortOrder, 'default');
+}
+
+function routeDetailPage() {
+  return parsePositiveInteger(route.query.detailPage, 1);
+}
+
+function routeDetailPageSize() {
+  return parsePositiveInteger(route.query.detailPageSize, board.value?.definition.defaultPageSize ?? 10);
+}
+
+function routeDetailSortBy() {
+  return String(route.query.detailSortBy ?? 'syncedAt');
+}
+
+function routeDetailSortOrder() {
+  const value = String(route.query.detailSortOrder ?? 'descending');
+  return value === 'ascending' || value === 'descending' ? value : 'descending';
+}
+
+function routeDetailVisible() {
+  return String(route.query.detailVisible ?? '') === '1';
+}
+
+function buildFilterGroupFromRoute() {
+  const draftGroup = createEmptyFilterGroup();
+  draftGroup.logic = route.query.filterLogic === 'OR' ? 'OR' : 'AND';
+  const keyedConditions = new Map<number, StatisticFilterConditionDraft>();
+
+  for (const [key, rawValue] of Object.entries(route.query)) {
+    const match = /^filters\.(\d+)\.(field|operator|value|value2)$/.exec(key);
+    if (!match) {
+      continue;
+    }
+    const index = Number.parseInt(match[1], 10);
+    const nextValue = Array.isArray(rawValue) ? String(rawValue[0] ?? '') : String(rawValue ?? '');
+    const currentCondition =
+      keyedConditions.get(index) ?? {
+        id: crypto.randomUUID(),
+        fieldKey: '',
+        operator: '' as StatisticFilterOperator | '',
+        value: '',
+        secondaryValue: '',
+      };
+    if (match[2] === 'field') {
+      currentCondition.fieldKey = nextValue;
+    } else if (match[2] === 'operator') {
+      currentCondition.operator = nextValue as StatisticFilterOperator;
+    } else if (match[2] === 'value') {
+      currentCondition.value = nextValue;
+    } else {
+      currentCondition.secondaryValue = nextValue;
+    }
+    keyedConditions.set(index, currentCondition);
+  }
+
+  draftGroup.conditions.push(
+    ...[...keyedConditions.entries()].sort((left, right) => left[0] - right[0]).map(([, condition]) => condition),
+  );
+  return draftGroup;
+}
+
+async function replaceRouteQuery(patch: Record<string, string | number | null | undefined>) {
+  const nextQuery = { ...route.query } as Record<string, string>;
+  for (const [key, value] of Object.entries(patch)) {
+    if (value == null || value === '') {
+      delete nextQuery[key];
+    } else {
+      nextQuery[key] = String(value);
+    }
+  }
+  await router.replace({
+    path: route.path,
+    query: nextQuery,
+    hash: route.hash,
+  });
+}
 
 const loading = ref(false);
 const detailLoading = ref(false);
@@ -181,14 +277,20 @@ const firstColumnMinWidth = computed(() => {
   return 132;
 });
 
-function initializeFilters(fields: StatisticFilterField[], appliedFilters?: Record<string, string>) {
-  const nextDraft = normalizeFilterDraftGroup(board.value?.appliedFilterGroup, fields);
+function initializeFilters(fields: StatisticFilterField[]) {
+  const routeFilterGroup = buildFilterGroupFromRoute();
+  const nextDraft = normalizeFilterDraftGroup(routeFilterGroup, fields);
   filterDraft.logic = nextDraft.logic;
   filterDraft.conditions.splice(0, filterDraft.conditions.length, ...nextDraft.conditions);
 }
 
 function applyStoredViewPrefs(response: StatisticBoardResponse) {
-  boardViewPrefs.value = loadStatisticBoardViewPrefs(props.boardKey, response.definition);
+  const storedPrefs = loadStatisticBoardViewPrefs(props.boardKey, response.definition);
+  boardViewPrefs.value = {
+    ...storedPrefs,
+    sortColumnKey: routeBoardSortColumn(),
+    sortDirection: routeBoardSortDirection(),
+  };
   draftVisibleColumnKeys.value = [...boardViewPrefs.value.visibleColumnKeys];
 }
 
@@ -208,11 +310,12 @@ async function loadBoard(showError = true) {
       filterGroup: buildFilterPayload(),
     });
     board.value = response;
-    initializeFilters(response.definition.filters, response.appliedFilters);
+    initializeFilters(response.definition.filters);
     applyStoredViewPrefs(response);
-    if (detailPagination.size <= 0) {
-      detailPagination.size = response.definition.defaultPageSize ?? 10;
-    }
+    detailPagination.page = routeDetailPage();
+    detailPagination.size = routeDetailPageSize();
+    detailPagination.sortField = routeDetailSortBy();
+    detailPagination.sortOrder = routeDetailSortOrder();
   } catch (error) {
     errorMessage.value = (error as Error).message;
     if (showError) {
@@ -246,7 +349,18 @@ async function exportBoard() {
 function resetFilters() {
   filterDraft.logic = 'AND';
   filterDraft.conditions.splice(0, filterDraft.conditions.length);
-  void loadBoard();
+  const nextQuery = { ...route.query } as Record<string, string>;
+  delete nextQuery.filterLogic;
+  for (const key of Object.keys(nextQuery)) {
+    if (key.startsWith('filters.')) {
+      delete nextQuery[key];
+    }
+  }
+  void router.replace({
+    path: route.path,
+    query: nextQuery,
+    hash: route.hash,
+  });
 }
 
 function openSettings() {
@@ -314,6 +428,10 @@ function clearCurrentSort() {
     ...clearSortState(),
   };
   persistViewPrefs();
+  void replaceRouteQuery({
+    sortBy: '',
+    sortOrder: '',
+  });
   ElMessage.success('已恢复默认排序');
 }
 
@@ -356,12 +474,15 @@ async function openDetail(row: StatisticRowData, cell: StatisticCellData) {
   }
   activeRow.value = row;
   activeCell.value = cell;
-  detailVisible.value = true;
-  detailPagination.page = 1;
-  detailPagination.size = board.value?.definition.defaultPageSize ?? 10;
-  detailPagination.sortField = 'syncedAt';
-  detailPagination.sortOrder = 'descending';
-  await loadDetail();
+  await replaceRouteQuery({
+    detailVisible: '1',
+    detailRowKey: row.rowKey,
+    detailColumnKey: cell.columnKey,
+    detailPage: 1,
+    detailPageSize: board.value?.definition.defaultPageSize ?? 10,
+    detailSortBy: 'syncedAt',
+    detailSortOrder: 'descending',
+  });
 }
 
 function handleDetailSortChange({
@@ -372,10 +493,40 @@ function handleDetailSortChange({
   prop: string;
   order: 'ascending' | 'descending' | null;
 }) {
-  detailPagination.sortField = prop || '';
-  detailPagination.sortOrder = order ?? 'descending';
-  detailPagination.page = 1;
-  void loadDetail();
+  void replaceRouteQuery({
+    detailSortBy: prop || '',
+    detailSortOrder: order ?? 'descending',
+    detailPage: 1,
+  });
+}
+
+function handleDetailCurrentChange(nextPage: number) {
+  void replaceRouteQuery({
+    detailPage: nextPage,
+  });
+}
+
+function handleDetailSizeChange(nextSize: number) {
+  void replaceRouteQuery({
+    detailPageSize: nextSize,
+    detailPage: 1,
+  });
+}
+
+function handleDetailVisibleChange(visible: boolean) {
+  if (visible) {
+    return;
+  }
+  detailVisible.value = false;
+  void replaceRouteQuery({
+    detailVisible: '',
+    detailRowKey: '',
+    detailColumnKey: '',
+    detailPage: '',
+    detailPageSize: '',
+    detailSortBy: '',
+    detailSortOrder: '',
+  });
 }
 
 function cellForColumn(row: StatisticRowData, columnKey: string) {
@@ -387,11 +538,16 @@ function sortDirectionForColumn(columnKey: string) {
 }
 
 function toggleColumnSort(columnKey: string) {
+  const nextSortState = nextColumnSortState(boardViewPrefs.value, columnKey);
   boardViewPrefs.value = {
     ...boardViewPrefs.value,
-    ...nextColumnSortState(boardViewPrefs.value, columnKey),
+    ...nextSortState,
   };
   persistViewPrefs();
+  void replaceRouteQuery({
+    sortBy: nextSortState.sortColumnKey,
+    sortOrder: nextSortState.sortDirection,
+  });
 }
 
 function sortStateLabel(direction: SortDirection) {
@@ -407,6 +563,49 @@ function sortStateLabel(direction: SortDirection) {
 function addFilterCondition() {
   const field = activeFilterFields.value[0];
   filterDraft.conditions.push(createFilterConditionDraft(field));
+}
+
+function buildFilterQueryPatch() {
+  const patch: Record<string, string | number | null> = {
+    filterLogic: filterDraft.conditions.length ? filterDraft.logic : null,
+  };
+  for (const key of Object.keys(route.query)) {
+    if (key.startsWith('filters.')) {
+      patch[key] = null;
+    }
+  }
+  filterDraft.conditions.forEach((condition, index) => {
+    patch[`filters.${index}.field`] = condition.fieldKey || null;
+    patch[`filters.${index}.operator`] = condition.operator || null;
+    patch[`filters.${index}.value`] = condition.value || null;
+    patch[`filters.${index}.value2`] = condition.secondaryValue || null;
+  });
+  return patch;
+}
+
+async function applyFiltersToRoute() {
+  await replaceRouteQuery({
+    ...buildFilterQueryPatch(),
+    detailVisible: '',
+    detailRowKey: '',
+    detailColumnKey: '',
+    detailPage: '',
+    detailPageSize: '',
+    detailSortBy: '',
+    detailSortOrder: '',
+  });
+}
+
+async function refreshBoard() {
+  loading.value = true;
+  try {
+    await loadBoard();
+    if (detailVisible.value) {
+      await loadDetail();
+    }
+  } finally {
+    loading.value = false;
+  }
 }
 
 function removeFilterCondition(conditionId: string) {
@@ -613,9 +812,30 @@ watch(detailVisible, (visible) => {
   }
 });
 
-onMounted(async () => {
-  await loadBoard();
-});
+watch(
+  () => route.query,
+  async () => {
+    loading.value = true;
+    try {
+      await loadBoard(false);
+      detailVisible.value = routeDetailVisible();
+      if (detailVisible.value) {
+        activeRow.value = board.value?.rows.find((row) => row.rowKey === String(route.query.detailRowKey ?? '')) ?? null;
+        activeCell.value = activeRow.value?.cells.find((cell) => cell.columnKey === String(route.query.detailColumnKey ?? '')) ?? null;
+        if (activeRow.value && activeCell.value) {
+          await loadDetail();
+        } else {
+          detail.value = null;
+        }
+      } else {
+        detail.value = null;
+      }
+    } finally {
+      loading.value = false;
+    }
+  },
+  { immediate: true, deep: true },
+);
 </script>
 
 <template>
@@ -658,9 +878,9 @@ onMounted(async () => {
           </div>
 
           <div class="stat-board-toolbar-actions" :class="props.uiHooks.toolbarActionsClass">
-            <el-button type="primary" :icon="Search" @click="loadBoard()">查询</el-button>
+            <el-button type="primary" :icon="Search" @click="applyFiltersToRoute">查询</el-button>
             <el-button @click="resetFilters">重置</el-button>
-            <el-button :icon="RefreshRight" @click="loadBoard()">刷新</el-button>
+            <el-button :icon="RefreshRight" @click="refreshBoard">刷新</el-button>
             <el-button plain :icon="Download" @click="exportBoard">导出</el-button>
             <el-dropdown trigger="click" @command="handleSettingsCommand">
               <el-button class="view-settings-trigger">
@@ -829,12 +1049,13 @@ onMounted(async () => {
     </el-card>
 
     <el-dialog
-      v-model="detailVisible"
+      :model-value="detailVisible"
       :title="detail?.title || '明细数据'"
       class="stat-detail-dialog"
       width="72%"
       top="8vh"
       align-center
+      @update:model-value="handleDetailVisibleChange"
       destroy-on-close
       append-to-body
     >
@@ -867,19 +1088,14 @@ onMounted(async () => {
         <div class="detail-pagination">
           <el-pagination
             v-if="detail"
-            v-model:current-page="detailPagination.page"
-            v-model:page-size="detailPagination.size"
+            :current-page="detailPagination.page"
+            :page-size="detailPagination.size"
             background
             layout="total, sizes, prev, pager, next"
             :page-sizes="[10, 20, 50, 100]"
             :total="detail.total"
-            @current-change="loadDetail"
-            @size-change="
-              () => {
-                detailPagination.page = 1;
-                loadDetail();
-              }
-            "
+            @current-change="handleDetailCurrentChange"
+            @size-change="handleDetailSizeChange"
           />
         </div>
       </div>
