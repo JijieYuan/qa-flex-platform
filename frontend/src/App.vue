@@ -77,10 +77,6 @@ function openPage(path: string) {
 
       <main class="shell-content">
         <section class="content-head">
-          <div class="content-title-row">
-            <h1 class="content-title">{{ pageTitle }}</h1>
-          </div>
-
           <div class="content-head-actions">
             <el-alert
               v-if="routerState.routeError"
