@@ -844,9 +844,6 @@ watch(
       <template #header>
         <div class="stat-board-toolbar" :class="props.uiHooks.toolbarClass">
           <div class="stat-board-toolbar-main" :class="props.uiHooks.toolbarMainClass">
-            <div class="stat-board-heading">
-              <div class="stat-board-title">{{ board?.definition.title || '统计表' }}</div>
-            </div>
             <div class="stat-filter-builder">
               <el-segmented
                 v-model="filterDraft.logic"
@@ -878,6 +875,7 @@ watch(
           </div>
 
           <div class="stat-board-toolbar-actions" :class="props.uiHooks.toolbarActionsClass">
+            <span v-if="board?.definition.title" class="stat-board-meta-text">{{ board.definition.title }}</span>
             <el-button type="primary" :icon="Search" @click="applyFiltersToRoute">查询</el-button>
             <el-button @click="resetFilters">重置</el-button>
             <el-button :icon="RefreshRight" @click="refreshBoard">刷新</el-button>

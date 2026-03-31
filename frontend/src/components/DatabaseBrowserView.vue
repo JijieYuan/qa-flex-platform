@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { ElMessage } from 'element-plus';
 import { Refresh, Search, WarningFilled } from '@element-plus/icons-vue';
 import { api, type DatabaseTableOption, type DatabaseTableRowsResponse } from '../api';
@@ -9,6 +9,7 @@ const tablesLoading = ref(false);
 const tableOptions = ref<DatabaseTableOption[]>([]);
 const keywordDraft = ref('');
 const rowsResponse = ref<DatabaseTableRowsResponse | null>(null);
+const viewportHeight = ref(typeof window !== 'undefined' ? window.innerHeight : 1080);
 
 const {
   route,
@@ -50,6 +51,7 @@ const syncStatusTagType = computed(() => {
       return 'info';
   }
 });
+const tableHeight = computed(() => Math.max(460, viewportHeight.value - 272));
 
 async function loadTables() {
   tablesLoading.value = true;
@@ -85,15 +87,6 @@ async function loadRows(showError = true) {
       ElMessage.error((error as Error).message);
     }
   }
-}
-
-async function handleTableChange() {
-  await patchQuery({
-    table: selectedTable.value,
-    page: 1,
-    sortBy: '',
-    sortOrder: '',
-  });
 }
 
 async function handleSearch() {
@@ -155,6 +148,14 @@ function formatTime(value?: string | null) {
   return value || '-';
 }
 
+function syncStatusText() {
+  return rowsResponse.value?.syncStatus || selectedOption.value?.syncStatus || 'IDLE';
+}
+
+function handleResize() {
+  viewportHeight.value = window.innerHeight;
+}
+
 watch(keyword, (nextKeyword) => {
   keywordDraft.value = nextKeyword;
 }, { immediate: true });
@@ -174,7 +175,12 @@ bindLoader(async () => {
 });
 
 onMounted(async () => {
+  window.addEventListener('resize', handleResize);
   await loadTables();
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', handleResize);
 });
 </script>
 
@@ -222,17 +228,17 @@ onMounted(async () => {
     <el-card shadow="never" class="db-table-card">
       <template #header>
         <div class="db-table-header">
-          <div>
-            <div class="db-table-title">{{ rowsResponse?.label || '数据库查看' }}</div>
-            <div class="db-table-caption">{{ rowsResponse?.tableName || '-' }}</div>
+          <div class="db-table-context">
+            <el-tag v-if="rowsResponse?.label || selectedOption?.label" effect="plain" round>
+              {{ rowsResponse?.label || selectedOption?.label }}
+            </el-tag>
+            <span class="db-table-name">{{ rowsResponse?.tableName || selectedTable || '-' }}</span>
           </div>
 
           <div class="db-table-meta">
-            <el-tag :type="syncStatusTagType" round>
-              {{ rowsResponse?.syncStatus || selectedOption?.syncStatus || 'IDLE' }}
-            </el-tag>
-            <el-tag type="info" round>最近同步：{{ formatTime(rowsResponse?.lastSyncTime || selectedOption?.lastSyncTime) }}</el-tag>
-            <el-tag type="info" round>共 {{ total }} 条</el-tag>
+            <el-tag :type="syncStatusTagType" round>{{ syncStatusText() }}</el-tag>
+            <span class="db-table-meta-text">Last Sync: {{ formatTime(rowsResponse?.lastSyncTime || selectedOption?.lastSyncTime) }}</span>
+            <span class="db-table-meta-text">Total: {{ total }}</span>
           </div>
         </div>
       </template>
@@ -255,7 +261,7 @@ onMounted(async () => {
           border
           stripe
           class="db-table"
-          height="620"
+          :height="tableHeight"
           @sort-change="handleSortChange"
         >
           <el-table-column
@@ -293,14 +299,14 @@ onMounted(async () => {
 <style scoped>
 .db-browser-card {
   display: grid;
-  gap: 16px;
+  gap: 12px;
 }
 
 .db-toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: 12px;
   flex-wrap: wrap;
 }
 
@@ -323,30 +329,31 @@ onMounted(async () => {
 .db-toolbar-actions {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
 }
 
 .db-table-card {
-  border-radius: 24px;
+  border-radius: 12px;
 }
 
 .db-table-header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
-.db-table-title {
-  font-size: 20px;
-  font-weight: 700;
-  color: #122131;
+.db-table-context {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
-.db-table-caption {
-  margin-top: 4px;
-  font-size: 13px;
-  color: #6b7d91;
+.db-table-name {
+  color: rgba(0, 0, 0, 0.45);
+  font-size: 12px;
 }
 
 .db-table-meta {
@@ -357,8 +364,14 @@ onMounted(async () => {
   justify-content: flex-end;
 }
 
+.db-table-meta-text {
+  color: rgba(0, 0, 0, 0.45);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 .db-status-alert {
-  margin-bottom: 16px;
+  margin-bottom: 12px;
 }
 
 .db-table {
@@ -371,7 +384,7 @@ onMounted(async () => {
 }
 
 .db-pagination {
-  margin-top: 16px;
+  margin-top: 12px;
   display: flex;
   justify-content: flex-end;
 }

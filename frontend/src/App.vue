@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Loading, Plus } from '@element-plus/icons-vue';
+import { Loading } from '@element-plus/icons-vue';
 import { computed } from 'vue';
 import { RouterView, useRoute, useRouter } from 'vue-router';
 import { modules, moduleByKey } from './navigation';
@@ -12,7 +12,7 @@ const activeModule = computed(
   () => moduleByKey.get((route.meta.moduleKey as never) ?? 'quality-board') ?? modules[0],
 );
 const activePageKey = computed(() => String(route.meta.pageKey ?? activeModule.value.pages[0]?.key ?? ''));
-const pageTitle = computed(() => String(route.meta.title ?? activeModule.value.pages[0]?.label ?? '数据平台'));
+const pageTitle = computed(() => String(route.meta.title ?? activeModule.value.pages[0]?.label ?? '数据采集平台'));
 
 function openModule(moduleKey: string) {
   const targetModule = moduleByKey.get(moduleKey as never);
@@ -31,10 +31,9 @@ function openPage(path: string) {
   <div class="app-shell">
     <header class="shell-header">
       <div class="brand-wrap">
-        <div class="brand-mark">DC</div>
+        <div class="brand-mark">数</div>
         <div class="brand-copy">
-          <div class="brand-title">Data Collection Platform</div>
-          <div class="brand-subtitle">统一的数据采集、镜像与统计分析平台</div>
+          <div class="brand-title">数据采集平台</div>
         </div>
       </div>
 
@@ -51,9 +50,8 @@ function openPage(path: string) {
       </nav>
 
       <div class="header-actions">
-        <el-tag v-if="routerState.routeLoading" type="warning" round>页面切换中</el-tag>
-        <el-tag v-else-if="routerState.routeError" type="danger" round>连接异常</el-tag>
-        <el-button class="ghost-button" :icon="Plus">添加菜单项</el-button>
+        <el-tag v-if="routerState.routeLoading" size="small" type="warning" round>页面切换中</el-tag>
+        <el-tag v-else-if="routerState.routeError" size="small" type="danger" round>连接异常</el-tag>
       </div>
     </header>
 
@@ -75,11 +73,6 @@ function openPage(path: string) {
             {{ page.label }}
           </button>
         </div>
-
-        <button class="sidebar-add-button">
-          <el-icon><Plus /></el-icon>
-          <span>添加菜单项</span>
-        </button>
       </aside>
 
       <main class="shell-content">
@@ -104,7 +97,7 @@ function openPage(path: string) {
 
         <div v-if="routerState.routeLoading" class="route-loading-mask">
           <el-icon class="is-loading"><Loading /></el-icon>
-          <span>页面切换中，请稍候…</span>
+          <span>页面切换中，请稍候</span>
         </div>
       </main>
     </div>
