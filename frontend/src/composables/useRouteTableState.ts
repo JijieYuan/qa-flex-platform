@@ -1,4 +1,4 @@
-import { computed, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
 type QueryValue = string | number | undefined | null;
@@ -22,12 +22,14 @@ export interface RouteTableStateOptions {
     sortOrder?: 'asc' | 'desc' | '';
     keyword?: string;
   };
+  debounceMs?: number;
 }
 
 export function useRouteTableState(options: RouteTableStateOptions = {}) {
   const route = useRoute();
   const router = useRouter();
   const isTableLoading = ref(false);
+  let debounceTimer: number | null = null;
 
   const page = computed(() => parsePositiveInteger(route.query.page, options.defaults?.page ?? 1));
   const pageSize = computed(() => parsePositiveInteger(route.query.pageSize, options.defaults?.pageSize ?? 20));
@@ -36,6 +38,10 @@ export function useRouteTableState(options: RouteTableStateOptions = {}) {
   const keyword = computed(() => String(route.query.keyword ?? options.defaults?.keyword ?? ''));
 
   async function patchQuery(patch: QueryPatch, mode: QueryMode = 'replace') {
+    if (debounceTimer != null) {
+      window.clearTimeout(debounceTimer);
+      debounceTimer = null;
+    }
     const nextQuery = { ...route.query } as Record<string, string>;
     for (const [key, rawValue] of Object.entries(patch)) {
       if (rawValue == null || rawValue === '') {
@@ -49,6 +55,23 @@ export function useRouteTableState(options: RouteTableStateOptions = {}) {
       query: nextQuery,
       hash: route.hash,
     });
+  }
+
+  function debouncedPatchQuery(patch: QueryPatch, mode: QueryMode = 'replace') {
+    if (debounceTimer != null) {
+      window.clearTimeout(debounceTimer);
+    }
+    debounceTimer = window.setTimeout(() => {
+      debounceTimer = null;
+      void patchQuery(patch, mode);
+    }, options.debounceMs ?? 300);
+  }
+
+  function cancelDebouncedQuery() {
+    if (debounceTimer != null) {
+      window.clearTimeout(debounceTimer);
+      debounceTimer = null;
+    }
   }
 
   function bindLoader(loader: () => Promise<void>) {
@@ -66,6 +89,10 @@ export function useRouteTableState(options: RouteTableStateOptions = {}) {
     );
   }
 
+  onBeforeUnmount(() => {
+    cancelDebouncedQuery();
+  });
+
   return {
     route,
     router,
@@ -76,7 +103,8 @@ export function useRouteTableState(options: RouteTableStateOptions = {}) {
     keyword,
     isTableLoading,
     patchQuery,
+    debouncedPatchQuery,
+    cancelDebouncedQuery,
     bindLoader,
   };
 }
-

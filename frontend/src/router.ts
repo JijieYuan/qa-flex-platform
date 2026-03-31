@@ -143,10 +143,11 @@ function sameStringArray(left: string[], right: string[]) {
   return left.length === right.length && left.every((value, index) => value === right[index]);
 }
 
-function normalizeQuery(to: RouteLocationNormalized) {
+function normalizeQuery(to: RouteLocationNormalized, from?: RouteLocationNormalized) {
   const allowedKeys = to.meta.allowedQueryKeys ?? [];
   const allowedPrefixes = to.meta.allowedQueryPrefixes ?? [];
   const persistedKeys = to.meta.persistedQueryKeys ?? [];
+  const moduleChanged = from != null && from.meta.moduleKey !== to.meta.moduleKey;
   const currentEntries = Object.entries(to.query);
   const normalizedEntries: Array<[string, string | string[]]> = [];
 
@@ -155,6 +156,9 @@ function normalizeQuery(to: RouteLocationNormalized) {
       continue;
     }
     const keyAllowed = allowedKeys.includes(key) || allowedPrefixes.some((prefix) => key.startsWith(prefix));
+    if (moduleChanged && !persistedKeys.includes(key) && !keyAllowed) {
+      continue;
+    }
     if (!keyAllowed && !persistedKeys.includes(key)) {
       continue;
     }
@@ -219,10 +223,10 @@ const router = createRouter({
   },
 });
 
-router.beforeEach((to) => {
+router.beforeEach((to, from) => {
   routerState.routeLoading = true;
   routerState.routeError = '';
-  const normalizedQuery = normalizeQuery(to);
+  const normalizedQuery = normalizeQuery(to, from);
   if (normalizedQuery) {
     return {
       path: to.path,
@@ -244,4 +248,3 @@ router.onError((error) => {
 });
 
 export default router;
-

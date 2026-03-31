@@ -19,6 +19,8 @@ const {
   keyword,
   isTableLoading,
   patchQuery,
+  debouncedPatchQuery,
+  cancelDebouncedQuery,
   bindLoader,
 } = useRouteTableState({
   defaults: {
@@ -28,6 +30,7 @@ const {
     sortOrder: '',
     keyword: '',
   },
+  debounceMs: 300,
 });
 
 const selectedTable = computed(() => String(route.query.table ?? ''));
@@ -94,6 +97,7 @@ async function handleTableChange() {
 }
 
 async function handleSearch() {
+  cancelDebouncedQuery();
   await patchQuery({
     keyword: keywordDraft.value.trim(),
     page: 1,
@@ -101,6 +105,7 @@ async function handleSearch() {
 }
 
 async function handleReset() {
+  cancelDebouncedQuery();
   keywordDraft.value = '';
   await patchQuery({
     keyword: '',
@@ -153,6 +158,16 @@ function formatTime(value?: string | null) {
 watch(keyword, (nextKeyword) => {
   keywordDraft.value = nextKeyword;
 }, { immediate: true });
+
+watch(keywordDraft, (nextKeyword, previousKeyword) => {
+  if (nextKeyword === previousKeyword || nextKeyword === keyword.value) {
+    return;
+  }
+  debouncedPatchQuery({
+    keyword: nextKeyword.trim(),
+    page: 1,
+  });
+});
 
 bindLoader(async () => {
   await loadRows(false);
