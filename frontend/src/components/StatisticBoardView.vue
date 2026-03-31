@@ -1,8 +1,9 @@
 ﻿<script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue';
-import { ArrowDown, ArrowRight, ArrowUp, Download, RefreshRight, Search, Sort } from '@element-plus/icons-vue';
+import { ArrowDown, ArrowUp, Download, RefreshRight, Search, Sort } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
 import { useRoute, useRouter } from 'vue-router';
+import BaseStatisticTable from './base/BaseStatisticTable.vue';
 import {
   api,
   type StatisticBoardResponse,
@@ -23,6 +24,8 @@ import {
   type StatisticBoardViewPrefs,
 } from './statistic-board-view-prefs';
 import type { StatisticBoardUiHooks } from './statistic-board-ui';
+import { useStatisticRoutePagination } from '../composables/useStatisticRoutePagination';
+import { useStatisticViewSettings } from '../composables/useStatisticViewSettings';
 import {
   clearSortState,
   nextColumnSortState,
@@ -54,7 +57,6 @@ const props = withDefaults(
 
 const route = useRoute();
 const router = useRouter();
-const TABLE_PAGE_SIZE_STORAGE_PREFIX = 'stat-board-page-size:';
 
 function parsePositiveInteger(rawValue: unknown, fallback: number) {
   const parsed = Number.parseInt(String(rawValue ?? ''), 10);
@@ -71,36 +73,6 @@ function routeBoardSortColumn() {
 
 function routeBoardSortDirection() {
   return parseSortDirection(route.query.sortOrder, 'default');
-}
-
-function routeTablePage() {
-  return parsePositiveInteger(route.query.tablePage, 1);
-}
-
-function tablePageSizeStorageKey() {
-  return `${TABLE_PAGE_SIZE_STORAGE_PREFIX}${props.boardKey}`;
-}
-
-function readPersistedTablePageSize() {
-  if (typeof window === 'undefined') {
-    return 50;
-  }
-  const rawValue = window.sessionStorage.getItem(tablePageSizeStorageKey());
-  const parsed = parsePositiveInteger(rawValue, 50);
-  return [20, 50, 100, 200].includes(parsed) ? parsed : 50;
-}
-
-function persistTablePageSize(value: number) {
-  if (typeof window === 'undefined') {
-    return;
-  }
-  window.sessionStorage.setItem(tablePageSizeStorageKey(), String(value));
-}
-
-function routeTablePageSize() {
-  const fallback = readPersistedTablePageSize();
-  const value = parsePositiveInteger(route.query.tablePageSize, fallback);
-  return [20, 50, 100, 200].includes(value) ? value : 50;
 }
 
 function routeDetailPage() {
@@ -187,9 +159,6 @@ const detailVisible = ref(false);
 const activeRow = ref<StatisticRowData | null>(null);
 const activeCell = ref<StatisticCellData | null>(null);
 const detail = ref<StatisticDetailResponse | null>(null);
-const settingsVisible = ref(false);
-const tableCurrentPage = ref(routeTablePage());
-const tablePageSize = ref(routeTablePageSize());
 const boardViewPrefs = ref<StatisticBoardViewPrefs>({
   visibleColumnKeys: [],
   groupOrder: [],
@@ -198,8 +167,6 @@ const boardViewPrefs = ref<StatisticBoardViewPrefs>({
   sortDirection: 'default',
   widthStrategy: 'compact',
 });
-const draftVisibleColumnKeys = ref<string[]>([]);
-const expandedViewSettingGroups = ref<string[]>([]);
 
 const detailPagination = reactive({
   page: 1,
@@ -255,7 +222,6 @@ const paginatedRows = computed(() => {
   return sortedRows.value.slice(start, start + tablePageSize.value);
 });
 
-const currentVisibleColumnCount = computed(() => boardViewPrefs.value.visibleColumnKeys.length);
 const currentSortColumn = computed(() => {
   if (!board.value || !boardViewPrefs.value.sortColumnKey || boardViewPrefs.value.sortDirection === 'default') {
     return null;
@@ -293,26 +259,35 @@ const tableRenderKey = computed(
 );
 
 const rowHeaderLabel = computed(() => board.value?.definition.rowHeaderLabel || '统计对象');
-const allColumnKeys = computed(() => board.value?.definition.columnGroups.flatMap((group) => group.columns.map((column) => column.key)) ?? []);
-const allColumnsSelected = computed(() => allColumnKeys.value.length > 0 && allColumnKeys.value.every((key) => draftVisibleColumnKeys.value.includes(key)));
-const partiallySelectedColumns = computed(
-  () => draftVisibleColumnKeys.value.length > 0 && draftVisibleColumnKeys.value.length < allColumnKeys.value.length,
-);
-const groupCheckAllStates = computed<Record<string, boolean>>(() =>
-  Object.fromEntries(
-    (board.value?.definition.columnGroups ?? []).map((group) => [
-      group.key,
-      group.columns.length > 0 && group.columns.every((column) => draftVisibleColumnKeys.value.includes(column.key)),
-    ]),
-  ),
-);
-const groupIndeterminateStates = computed<Record<string, boolean>>(() =>
-  Object.fromEntries(
-    (board.value?.definition.columnGroups ?? []).map((group) => {
-      const selectedCount = group.columns.filter((column) => draftVisibleColumnKeys.value.includes(column.key)).length;
-      return [group.key, selectedCount > 0 && selectedCount < group.columns.length];
-    }),
-  ),
+const {
+  tableCurrentPage,
+  tablePageSize,
+  pageSizeOptions,
+  syncFromRoute: syncTablePaginationFromRoute,
+  handleTableCurrentChange,
+  handleTableSizeChange,
+  clampPageWithinBounds,
+} = useStatisticRoutePagination(props.boardKey);
+const {
+  settingsVisible,
+  draftVisibleColumnKeys,
+  expandedViewSettingGroups,
+  allColumnKeys,
+  currentVisibleColumnCount,
+  allColumnsSelected,
+  partiallySelectedColumns,
+  groupCheckAllStates,
+  groupIndeterminateStates,
+  syncDraftFromVisible,
+  openSettings,
+  closeSettings,
+  toggleAllColumns,
+  toggleGroupColumns,
+  isColumnSelected,
+  toggleColumnSelection,
+} = useStatisticViewSettings(
+  computed(() => board.value?.definition.columnGroups ?? []),
+  computed(() => boardViewPrefs.value.visibleColumnKeys),
 );
 
 const firstColumnWidth = computed(() => {
@@ -361,7 +336,7 @@ function applyStoredViewPrefs(response: StatisticBoardResponse) {
     sortColumnKey: routeBoardSortColumn(),
     sortDirection: routeBoardSortDirection(),
   };
-  draftVisibleColumnKeys.value = [...boardViewPrefs.value.visibleColumnKeys];
+  syncDraftFromVisible();
 }
 
 function persistViewPrefs() {
@@ -433,15 +408,6 @@ function resetFilters() {
   });
 }
 
-function openSettings() {
-  if (!board.value) {
-    return;
-  }
-  draftVisibleColumnKeys.value = [...boardViewPrefs.value.visibleColumnKeys];
-  expandedViewSettingGroups.value = [];
-  settingsVisible.value = true;
-}
-
 function handleSettingsCommand(command: string) {
   if (command === 'open-settings') {
     openSettings();
@@ -469,7 +435,7 @@ function saveViewPrefs() {
     visibleColumnKeys: [...draftVisibleColumnKeys.value],
   };
   persistViewPrefs();
-  settingsVisible.value = false;
+  closeSettings();
   ElMessage.success('视图配置已保存');
 }
 
@@ -487,9 +453,9 @@ function restoreDefaultView() {
     sortDirection: 'default',
     widthStrategy: 'compact',
   };
-  draftVisibleColumnKeys.value = [...boardViewPrefs.value.visibleColumnKeys];
+  syncDraftFromVisible();
   resetStatisticBoardViewPrefs(props.boardKey);
-  settingsVisible.value = false;
+  closeSettings();
   ElMessage.success('已恢复默认视图');
 }
 
@@ -506,49 +472,8 @@ function clearCurrentSort() {
   ElMessage.success('已恢复默认排序');
 }
 
-function handleTableCurrentChange(nextPage: number) {
-  void replaceRouteQuery({
-    tablePage: nextPage,
-  });
-}
-
-function handleTableSizeChange(nextSize: number) {
-  persistTablePageSize(nextSize);
-  void replaceRouteQuery({
-    tablePageSize: nextSize,
-    tablePage: 1,
-  });
-}
-
-function toggleAllColumns(checked: boolean | string | number) {
-  draftVisibleColumnKeys.value = checked ? [...allColumnKeys.value] : [];
-}
-
-function groupColumnKeys(group: StatisticColumnGroup) {
-  return group.columns.map((column) => column.key);
-}
-
-function toggleGroupColumns(group: StatisticColumnGroup, checked: boolean | string | number) {
-  const groupKeys = new Set(groupColumnKeys(group));
-  if (checked) {
-    draftVisibleColumnKeys.value = [...new Set([...draftVisibleColumnKeys.value, ...groupKeys])];
-    return;
-  }
-  draftVisibleColumnKeys.value = draftVisibleColumnKeys.value.filter((key) => !groupKeys.has(key));
-}
-
-function isColumnSelected(columnKey: string) {
-  return draftVisibleColumnKeys.value.includes(columnKey);
-}
-
-function toggleColumnSelection(columnKey: string, checked: boolean | string | number) {
-  if (checked) {
-    if (!draftVisibleColumnKeys.value.includes(columnKey)) {
-      draftVisibleColumnKeys.value = [...draftVisibleColumnKeys.value, columnKey];
-    }
-    return;
-  }
-  draftVisibleColumnKeys.value = draftVisibleColumnKeys.value.filter((key) => key !== columnKey);
+function handleExpandedViewSettingGroupsChange(value: string[]) {
+  expandedViewSettingGroups.value = value;
 }
 
 function detailCellValue(record: Record<string, unknown>, column: StatisticDetailColumn) {
@@ -941,12 +866,7 @@ watch(detailVisible, (visible) => {
 watch(
   [sortedRows, tablePageSize],
   () => {
-    const maxPage = Math.max(1, Math.ceil(totalTableRows.value / tablePageSize.value));
-    if (tableCurrentPage.value > maxPage) {
-      void replaceRouteQuery({
-        tablePage: 1,
-      });
-    }
+    clampPageWithinBounds(totalTableRows.value);
   },
   { immediate: true },
 );
@@ -956,9 +876,7 @@ watch(
       async () => {
         loading.value = true;
         try {
-          tableCurrentPage.value = routeTablePage();
-          tablePageSize.value = routeTablePageSize();
-          persistTablePageSize(tablePageSize.value);
+          syncTablePaginationFromRoute();
           await loadBoard(false);
           detailVisible.value = routeDetailVisible();
       if (detailVisible.value) {
@@ -1052,156 +970,57 @@ watch(
         class="stat-board-alert"
       />
 
-      <div v-if="currentSortColumn" class="stat-board-sortbar">
-        <span class="stat-board-sortbar-label">当前排序</span>
-        <el-tag size="small" type="primary" effect="plain">{{ currentSortSummary }}</el-tag>
-      </div>
-
-      <div v-if="board" class="stat-matrix-wrapper">
-        <el-table
-          :key="tableRenderKey"
-          :data="paginatedRows"
-          border
-          stripe
-          fit
-          class="stat-matrix-table"
-          :class="props.uiHooks.tableClass"
-          style="width: 100%"
-        >
-          <el-table-column
-            prop="rowLabel"
-            :label="rowHeaderLabel"
-            fixed="left"
-            :width="firstColumnWidth"
-            :min-width="firstColumnMinWidth"
-            :resizable="true"
-          >
-            <template #header>
-              <div
-                class="stat-column-header first-column"
-                :class="{ sorting: sortDirectionForColumn(ROW_LABEL_SORT_KEY) !== 'default' }"
-              >
-                <span class="stat-column-header-label">{{ rowHeaderLabel }}</span>
-                  <button
-                    class="sort-trigger"
-                    :class="`is-${sortDirectionForColumn(ROW_LABEL_SORT_KEY)}`"
-                    type="button"
-                    :title="sortStateLabel(sortDirectionForColumn(ROW_LABEL_SORT_KEY))"
-                    @click.stop="toggleColumnSort(ROW_LABEL_SORT_KEY)"
-                  >
-                    <el-icon class="sort-trigger-icon">
-                      <component :is="sortIconForDirection(sortDirectionForColumn(ROW_LABEL_SORT_KEY))" />
-                    </el-icon>
-                    <span class="sort-trigger-state">
-                      {{ sortDirectionForColumn(ROW_LABEL_SORT_KEY) === 'asc' ? '升序' : sortDirectionForColumn(ROW_LABEL_SORT_KEY) === 'desc' ? '降序' : '排序' }}
-                    </span>
-                  </button>
-              </div>
-            </template>
-          </el-table-column>
-          <el-table-column
-            v-for="group in orderedColumnGroups"
-            :key="group.key"
-            align="center"
-          >
-            <template #header>
-              <div
-                class="stat-group-header"
-                :class="{ dragging: isGroupDragging(group.key) }"
-                draggable="true"
-                @dragstart="onGroupDragStart(group.key)"
-                @dragover.prevent
-                @drop.prevent="onGroupDrop(group.key)"
-                @dragend="clearDragState"
-              >
-                <span class="drag-handle group" aria-hidden="true">
-                  <span></span>
-                  <span></span>
-                  <span></span>
-                </span>
-                <span class="stat-group-header-label">{{ group.label }}</span>
-                <span class="drag-handle" aria-hidden="true">
-                  <span></span>
-                  <span></span>
-                </span>
-              </div>
-            </template>
-            <el-table-column
-              v-for="column in group.columns"
-              :key="column.key"
-              align="center"
-              :min-width="columnMinWidth(column)"
-              :resizable="columnResizable(column)"
-            >
-              <template #header>
-                <div
-                  class="stat-column-header"
-                  :class="{
-                    dragging: isColumnDragging(group.key, column.key),
-                    sorting: sortDirectionForColumn(column.key) !== 'default',
-                  }"
-                  draggable="true"
-                  @dragstart="onColumnDragStart(group.key, column.key)"
-                  @dragover.prevent
-                  @drop.prevent="onColumnDrop(group.key, column.key)"
-                  @dragend="clearDragState"
-                >
-                  <span class="drag-handle subtle" aria-hidden="true">
-                    <span></span>
-                    <span></span>
-                    <span></span>
-                  </span>
-                  <span class="stat-column-header-label">{{ column.label }}</span>
-                    <button
-                      class="sort-trigger"
-                      :class="`is-${sortDirectionForColumn(column.key)}`"
-                      type="button"
-                      :title="sortStateLabel(sortDirectionForColumn(column.key))"
-                      @click.stop="toggleColumnSort(column.key)"
-                    >
-                      <el-icon class="sort-trigger-icon">
-                        <component :is="sortIconForDirection(sortDirectionForColumn(column.key))" />
-                      </el-icon>
-                      <span class="sort-trigger-state">
-                        {{ sortDirectionForColumn(column.key) === 'asc' ? '升序' : sortDirectionForColumn(column.key) === 'desc' ? '降序' : '排序' }}
-                      </span>
-                    </button>
-                </div>
-              </template>
-              <template #default="{ row }">
-                <button
-                  v-if="cellForColumn(row, column.key)?.drilldown"
-                  class="stat-cell drilldown"
-                  @click="openDetail(row, cellForColumn(row, column.key)!)"
-                >
-                  {{ cellForColumn(row, column.key)?.displayValue || '-' }}
-                </button>
-                <span v-else class="stat-cell">
-                  {{ cellForColumn(row, column.key)?.displayValue || '-' }}
-                </span>
-              </template>
-            </el-table-column>
-          </el-table-column>
-        </el-table>
-      </div>
-
-      <div v-if="board && sortedRows.length" class="stat-board-pagination">
-        <el-pagination
-          background
-          layout="total, sizes, prev, pager, next, jumper"
-          :current-page="tableCurrentPage"
-          :page-size="tablePageSize"
-          :page-sizes="[20, 50, 100, 200]"
-          :total="totalTableRows"
-          @size-change="handleTableSizeChange"
-          @current-change="handleTableCurrentChange"
-        />
-      </div>
-
-      <el-empty
-        v-if="board && !sortedRows.length"
-        :description="board?.definition.emptyText || '当前筛选条件下没有可展示的统计结果。'"
-        class="stat-empty"
+      <BaseStatisticTable
+        :board="board"
+        :ui-hooks="props.uiHooks"
+        :table-render-key="tableRenderKey"
+        :paginated-rows="paginatedRows"
+        :sorted-rows-length="sortedRows.length"
+        :total-table-rows="totalTableRows"
+        :row-header-label="rowHeaderLabel"
+        :ordered-column-groups="orderedColumnGroups"
+        :current-sort-summary="currentSortColumn ? currentSortSummary : ''"
+        :first-column-width="firstColumnWidth"
+        :first-column-min-width="firstColumnMinWidth"
+        :page-size-options="pageSizeOptions"
+        :table-current-page="tableCurrentPage"
+        :table-page-size="tablePageSize"
+        :settings-visible="settingsVisible"
+        :width-strategy="boardViewPrefs.widthStrategy"
+        :current-visible-column-count="currentVisibleColumnCount"
+        :all-columns-selected="allColumnsSelected"
+        :partially-selected-columns="partiallySelectedColumns"
+        :draft-visible-column-keys-count="draftVisibleColumnKeys.length"
+        :all-column-keys-count="allColumnKeys.length"
+        :expanded-view-setting-groups="expandedViewSettingGroups"
+        :on-expanded-view-setting-groups-change="handleExpandedViewSettingGroupsChange"
+        :group-check-all-states="groupCheckAllStates"
+        :group-indeterminate-states="groupIndeterminateStates"
+        :sort-direction-for-column="sortDirectionForColumn"
+        :sort-state-label="sortStateLabel"
+        :sort-icon-for-direction="sortIconForDirection"
+        :toggle-column-sort="toggleColumnSort"
+        :cell-for-column="cellForColumn"
+        :open-detail="openDetail"
+        :column-min-width="columnMinWidth"
+        :column-resizable="columnResizable"
+        :is-group-dragging="isGroupDragging"
+        :on-group-drag-start="onGroupDragStart"
+        :on-group-drop="onGroupDrop"
+        :is-column-dragging="isColumnDragging"
+        :on-column-drag-start="onColumnDragStart"
+        :on-column-drop="onColumnDrop"
+        :clear-drag-state="clearDragState"
+        :handle-table-current-change="handleTableCurrentChange"
+        :handle-table-size-change="handleTableSizeChange"
+        :on-settings-visible-change="(visible) => (visible ? openSettings() : closeSettings())"
+        :on-width-strategy-change="(value) => (boardViewPrefs.widthStrategy = value)"
+        :on-save-view-prefs="saveViewPrefs"
+        :on-restore-default-view="restoreDefaultView"
+        :toggle-all-columns="toggleAllColumns"
+        :toggle-group-columns="toggleGroupColumns"
+        :is-column-selected="isColumnSelected"
+        :toggle-column-selection="toggleColumnSelection"
       />
     </el-card>
 
@@ -1258,80 +1077,5 @@ watch(
       </div>
     </el-dialog>
 
-    <el-drawer v-model="settingsVisible" title="表格视图设置" size="360px" append-to-body class="view-settings-drawer">
-      <div class="view-settings-panel" :class="props.uiHooks.settingsPanelClass" v-if="board">
-        <div class="view-settings-summary">
-          <div class="view-settings-summary-title">列显示控制</div>
-          <div class="view-settings-summary-text">当前已选择 {{ currentVisibleColumnCount }} 列，可按需调整当前页面的展示视图。</div>
-        </div>
-
-        <div class="view-settings-strategy">
-          <div class="view-settings-group-title">列宽展示策略</div>
-          <el-radio-group v-model="boardViewPrefs.widthStrategy" class="width-strategy-group">
-            <el-radio-button value="compact">统一紧凑</el-radio-button>
-            <el-radio-button value="header">按字段长度</el-radio-button>
-            <el-radio-button value="content">按内容长度</el-radio-button>
-          </el-radio-group>
-          <div class="view-settings-strategy-tip">首列继续单独压缩处理，纯数字统计列保持固定宽度，但会随策略在紧凑、标准、宽松之间切换。</div>
-        </div>
-
-        <div class="view-settings-scroll">
-          <div class="view-settings-global-toggle">
-            <el-checkbox
-              :model-value="allColumnsSelected"
-              :indeterminate="partiallySelectedColumns"
-              @update:model-value="toggleAllColumns"
-            >
-              勾选全部列
-            </el-checkbox>
-            <span class="view-settings-global-meta">{{ draftVisibleColumnKeys.length }}/{{ allColumnKeys.length }}</span>
-          </div>
-
-          <div class="view-settings-checklist">
-            <el-collapse v-model="expandedViewSettingGroups" class="view-settings-collapse">
-              <el-collapse-item
-                v-for="group in board.definition.columnGroups"
-                :key="group.key"
-                :name="group.key"
-                class="view-settings-group"
-              >
-                <template #title>
-                  <div class="view-settings-group-head">
-                    <span class="view-settings-group-title">{{ group.label }}</span>
-                    <el-checkbox
-                      :model-value="groupCheckAllStates[group.key]"
-                      :indeterminate="groupIndeterminateStates[group.key]"
-                      @click.stop
-                      @update:model-value="(value) => toggleGroupColumns(group, value)"
-                    >
-                      全选
-                    </el-checkbox>
-                  </div>
-                </template>
-                <div class="view-settings-group-body">
-                  <el-checkbox
-                    v-for="column in group.columns"
-                    :key="column.key"
-                    :model-value="isColumnSelected(column.key)"
-                    class="view-settings-check"
-                    @update:model-value="(value) => toggleColumnSelection(column.key, value)"
-                  >
-                    {{ column.label }}
-                  </el-checkbox>
-                </div>
-              </el-collapse-item>
-            </el-collapse>
-          </div>
-        </div>
-
-        <div class="view-settings-actions">
-          <div class="view-settings-actions-main">
-            <el-button @click="restoreDefaultView">重置</el-button>
-            <el-button @click="settingsVisible = false">取消</el-button>
-            <el-button type="primary" :icon="ArrowRight" @click="saveViewPrefs">保存视图</el-button>
-          </div>
-        </div>
-      </div>
-    </el-drawer>
   </div>
 </template>
