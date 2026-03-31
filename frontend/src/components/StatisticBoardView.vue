@@ -1,6 +1,6 @@
 ﻿<script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue';
-import { ArrowDown, ArrowRight, Download, RefreshRight, Search, Sort } from '@element-plus/icons-vue';
+import { ArrowDown, ArrowRight, ArrowUp, Download, RefreshRight, Search, Sort } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
 import { useRoute, useRouter } from 'vue-router';
 import {
@@ -640,6 +640,16 @@ function sortStateLabel(direction: SortDirection) {
   return '当前为默认顺序，点击开始排序';
 }
 
+function sortIconForDirection(direction: SortDirection) {
+  if (direction === 'asc') {
+    return ArrowUp;
+  }
+  if (direction === 'desc') {
+    return ArrowDown;
+  }
+  return Sort;
+}
+
 function addFilterCondition() {
   const field = activeFilterFields.value[0];
   filterDraft.conditions.push(createFilterConditionDraft(field));
@@ -1031,18 +1041,20 @@ watch(
                 :class="{ sorting: sortDirectionForColumn(ROW_LABEL_SORT_KEY) !== 'default' }"
               >
                 <span class="stat-column-header-label">{{ rowHeaderLabel }}</span>
-                <button
-                  class="sort-trigger"
-                  :class="`is-${sortDirectionForColumn(ROW_LABEL_SORT_KEY)}`"
-                  type="button"
-                  :title="sortStateLabel(sortDirectionForColumn(ROW_LABEL_SORT_KEY))"
-                  @click.stop="toggleColumnSort(ROW_LABEL_SORT_KEY)"
-                >
-                  <el-icon class="sort-trigger-icon"><Sort /></el-icon>
-                  <span class="sort-trigger-state">
-                    {{ sortDirectionForColumn(ROW_LABEL_SORT_KEY) === 'asc' ? '升序' : sortDirectionForColumn(ROW_LABEL_SORT_KEY) === 'desc' ? '降序' : '排序' }}
-                  </span>
-                </button>
+                  <button
+                    class="sort-trigger"
+                    :class="`is-${sortDirectionForColumn(ROW_LABEL_SORT_KEY)}`"
+                    type="button"
+                    :title="sortStateLabel(sortDirectionForColumn(ROW_LABEL_SORT_KEY))"
+                    @click.stop="toggleColumnSort(ROW_LABEL_SORT_KEY)"
+                  >
+                    <el-icon class="sort-trigger-icon">
+                      <component :is="sortIconForDirection(sortDirectionForColumn(ROW_LABEL_SORT_KEY))" />
+                    </el-icon>
+                    <span class="sort-trigger-state">
+                      {{ sortDirectionForColumn(ROW_LABEL_SORT_KEY) === 'asc' ? '升序' : sortDirectionForColumn(ROW_LABEL_SORT_KEY) === 'desc' ? '降序' : '排序' }}
+                    </span>
+                  </button>
               </div>
             </template>
           </el-table-column>
@@ -1099,18 +1111,20 @@ watch(
                     <span></span>
                   </span>
                   <span class="stat-column-header-label">{{ column.label }}</span>
-                  <button
-                    class="sort-trigger"
-                    :class="`is-${sortDirectionForColumn(column.key)}`"
-                    type="button"
-                    :title="sortStateLabel(sortDirectionForColumn(column.key))"
-                    @click.stop="toggleColumnSort(column.key)"
-                  >
-                    <el-icon class="sort-trigger-icon"><Sort /></el-icon>
-                    <span class="sort-trigger-state">
-                      {{ sortDirectionForColumn(column.key) === 'asc' ? '升序' : sortDirectionForColumn(column.key) === 'desc' ? '降序' : '排序' }}
-                    </span>
-                  </button>
+                    <button
+                      class="sort-trigger"
+                      :class="`is-${sortDirectionForColumn(column.key)}`"
+                      type="button"
+                      :title="sortStateLabel(sortDirectionForColumn(column.key))"
+                      @click.stop="toggleColumnSort(column.key)"
+                    >
+                      <el-icon class="sort-trigger-icon">
+                        <component :is="sortIconForDirection(sortDirectionForColumn(column.key))" />
+                      </el-icon>
+                      <span class="sort-trigger-state">
+                        {{ sortDirectionForColumn(column.key) === 'asc' ? '升序' : sortDirectionForColumn(column.key) === 'desc' ? '降序' : '排序' }}
+                      </span>
+                    </button>
                 </div>
               </template>
               <template #default="{ row }">
