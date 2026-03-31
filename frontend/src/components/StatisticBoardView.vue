@@ -298,14 +298,22 @@ const firstColumnWidth = computed(() => {
   return Math.min(220, Math.max(128, longestLabelLength * 18 + 42));
 });
 
+function visualTextUnits(text: string) {
+  return Array.from(text).reduce((total, character) => total + (/[\u0000-\u00ff]/.test(character) ? 1 : 2), 0);
+}
+
+function headerLabelMinimumWidth(label: string, reservePx: number) {
+  return Math.max(96, visualTextUnits(label) * 7 + reservePx);
+}
+
 const firstColumnMinWidth = computed(() => {
-  if (boardViewPrefs.value.widthStrategy === 'compact') {
-    return 108;
-  }
-  if (boardViewPrefs.value.widthStrategy === 'header') {
-    return 120;
-  }
-  return 132;
+  const baseWidth =
+    boardViewPrefs.value.widthStrategy === 'compact'
+      ? 108
+      : boardViewPrefs.value.widthStrategy === 'header'
+        ? 120
+        : 132;
+  return Math.max(baseWidth, headerLabelMinimumWidth(rowHeaderLabel.value, 92));
 });
 
 function initializeFilters(fields: StatisticFilterField[]) {
@@ -844,7 +852,7 @@ function columnWidth(column: StatisticColumnLeaf) {
 }
 
 function columnMinWidth(column: StatisticColumnLeaf) {
-  return columnWidth(column);
+  return Math.max(columnWidth(column), headerLabelMinimumWidth(column.label, 84));
 }
 
 function columnResizable(column: StatisticColumnLeaf) {
@@ -1058,7 +1066,7 @@ watch(
                   <span></span>
                   <span></span>
                 </span>
-                <span>{{ group.label }}</span>
+                <span class="stat-group-header-label">{{ group.label }}</span>
                 <span class="drag-handle" aria-hidden="true">
                   <span></span>
                   <span></span>
