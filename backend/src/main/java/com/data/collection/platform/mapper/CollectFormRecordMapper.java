@@ -30,7 +30,7 @@ public interface CollectFormRecordMapper extends BaseMapper<CollectFormRecord> {
       insert into collect_form_records(
         gitlab_base_url,
         project_id,
-        mr_iid,
+        request_iid,
         resource_type,
         resource_id,
         template_code,
@@ -49,7 +49,7 @@ public interface CollectFormRecordMapper extends BaseMapper<CollectFormRecord> {
       ) values (
         #{record.gitlabBaseUrl},
         #{record.projectId},
-        #{record.mrIid},
+        #{record.requestIid},
         #{record.resourceType},
         #{record.resourceId},
         #{record.templateCode},
@@ -68,7 +68,7 @@ public interface CollectFormRecordMapper extends BaseMapper<CollectFormRecord> {
       )
       on conflict (gitlab_base_url, project_id, resource_type, resource_id, template_code)
       do update set
-        mr_iid = excluded.mr_iid,
+        request_iid = excluded.request_iid,
         form_title = excluded.form_title,
         reviewer = excluded.reviewer,
         review_duration_minutes = excluded.review_duration_minutes,

@@ -23,15 +23,15 @@ function queryNumber(value: unknown) {
 }
 
 const context = computed(() => {
-  const mrIid = queryNumber(route.query.mrIid);
+  const requestIid = queryNumber(route.query.requestIid) ?? queryNumber(route.query.mrIid);
   const resourceType = queryText(route.query.resourceType) || 'merge_request';
-  const resourceId = queryText(route.query.resourceId) || (mrIid != null ? String(mrIid) : '');
+  const resourceId = queryText(route.query.resourceId) || (requestIid != null ? String(requestIid) : '');
   const templateCode = queryText(route.query.templateCode) || 'code_review';
 
   return {
     gitlabBaseUrl: queryText(route.query.gitlabBaseUrl),
     projectId: queryNumber(route.query.projectId),
-    mrIid,
+    requestIid,
     resourceType,
     resourceId,
     templateCode,
@@ -112,7 +112,7 @@ async function saveForm() {
     const record = await api.saveCollectForm({
       gitlabBaseUrl: context.value.gitlabBaseUrl,
       projectId: context.value.projectId!,
-      mrIid: context.value.mrIid,
+      requestIid: context.value.requestIid,
       resourceType: context.value.resourceType,
       resourceId: context.value.resourceId,
       templateCode: context.value.templateCode,
@@ -209,8 +209,8 @@ watch(
             <span class="external-context-value">{{ context.projectId ?? '-' }}</span>
           </div>
           <div class="external-context-item">
-            <span class="external-context-label">MR IID</span>
-            <span class="external-context-value">{{ context.mrIid ?? '-' }}</span>
+            <span class="external-context-label">请求类型 IID</span>
+            <span class="external-context-value">{{ context.requestIid ?? '-' }}</span>
           </div>
           <div class="external-context-item">
             <span class="external-context-label">资源类型</span>

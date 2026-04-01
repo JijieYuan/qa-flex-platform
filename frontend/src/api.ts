@@ -290,7 +290,7 @@ export interface CollectFormDetailResponse {
   id: number;
   gitlabBaseUrl: string;
   projectId: number;
-  mrIid?: number | null;
+  requestIid?: number | null;
   resourceType: string;
   resourceId: string;
   templateCode: string;
@@ -306,6 +306,13 @@ export interface CollectFormDetailResponse {
   deleted: boolean;
   createdAt?: string | null;
   updatedAt?: string | null;
+}
+
+export interface CollectFormNotificationPayloadResponse {
+  sourceAddress: string;
+  projectId: number;
+  requestIid: number;
+  resourceType: string;
 }
 
 
@@ -473,7 +480,7 @@ export const api = {
   saveCollectForm(payload: {
     gitlabBaseUrl: string;
     projectId: number;
-    mrIid?: number | null;
+    requestIid?: number | null;
     resourceType: string;
     resourceId: string;
     templateCode: string;
@@ -503,5 +510,21 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(payload),
     });
+  },
+  getCollectFormNotificationPayload(params: {
+    gitlabBaseUrl: string;
+    projectId: number;
+    requestIid: number;
+    resourceType: string;
+  }) {
+    const query = new URLSearchParams({
+      gitlabBaseUrl: params.gitlabBaseUrl,
+      projectId: String(params.projectId),
+      requestIid: String(params.requestIid),
+      resourceType: params.resourceType,
+    });
+    return request<CollectFormNotificationPayloadResponse>(
+      `/api/collect-forms/notification-payload?${query.toString()}`,
+    );
   },
 };

@@ -2,6 +2,7 @@ package com.data.collection.platform.controller;
 
 import com.data.collection.platform.common.response.ApiResponse;
 import com.data.collection.platform.entity.CollectFormDetailResponse;
+import com.data.collection.platform.entity.CollectFormNotificationPayloadResponse;
 import com.data.collection.platform.service.CollectFormService;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -34,6 +35,16 @@ public class CollectFormController {
         collectFormService.getDetail(gitlabBaseUrl, projectId, resourceType, resourceId, templateCode));
   }
 
+  @GetMapping("/notification-payload")
+  public ApiResponse<CollectFormNotificationPayloadResponse> notificationPayload(
+      @RequestParam @NotBlank String gitlabBaseUrl,
+      @RequestParam @NotNull @Positive Long projectId,
+      @RequestParam @NotNull @Positive Long requestIid,
+      @RequestParam @NotBlank String resourceType) {
+    return ApiResponse.success(
+        collectFormService.buildNotificationPayload(gitlabBaseUrl, projectId, requestIid, resourceType));
+  }
+
   @PostMapping("/save")
   public ApiResponse<CollectFormDetailResponse> save(@RequestBody SaveRequest request) {
     return ApiResponse.success(
@@ -41,7 +52,7 @@ public class CollectFormController {
         collectFormService.save(
             request.gitlabBaseUrl(),
             request.projectId(),
-            request.mrIid(),
+            request.requestIid(),
             request.resourceType(),
             request.resourceId(),
             request.templateCode(),
@@ -71,7 +82,7 @@ public class CollectFormController {
   public record SaveRequest(
       @NotBlank String gitlabBaseUrl,
       @NotNull @Positive Long projectId,
-      Long mrIid,
+      Long requestIid,
       @NotBlank String resourceType,
       @NotBlank String resourceId,
       @NotBlank String templateCode,

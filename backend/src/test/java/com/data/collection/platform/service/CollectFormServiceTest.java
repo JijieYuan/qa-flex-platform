@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.data.collection.platform.entity.CollectFormNotificationPayloadResponse;
 import com.data.collection.platform.entity.CollectFormRecord;
 import com.data.collection.platform.mapper.CollectFormRecordMapper;
 import org.junit.jupiter.api.Test;
@@ -30,7 +31,7 @@ class CollectFormServiceTest {
     saved.setId(7L);
     saved.setGitlabBaseUrl("http://172.22.10.233");
     saved.setProjectId(88L);
-    saved.setMrIid(12L);
+    saved.setRequestIid(12L);
     saved.setResourceType("merge_request");
     saved.setResourceId("12");
     saved.setTemplateCode("code_review");
@@ -72,13 +73,27 @@ class CollectFormServiceTest {
     CollectFormRecord record = captor.getValue();
     assertEquals("http://172.22.10.233", record.getGitlabBaseUrl());
     assertEquals(88L, record.getProjectId());
-    assertEquals(12L, record.getMrIid());
+    assertEquals(12L, record.getRequestIid());
     assertEquals("merge_request", record.getResourceType());
     assertEquals("12", record.getResourceId());
     assertEquals("code_review", record.getTemplateCode());
     assertEquals("王小欢", record.getReviewer());
     assertEquals(5, record.getReviewDurationMinutes());
     assertTrue(!record.isDeleted());
+  }
+
+  @Test
+  void notificationPayloadShouldOnlyContainRequiredCoreFields() {
+    CollectFormNotificationPayloadResponse payload = collectFormService.buildNotificationPayload(
+        "http://172.22.10.233",
+        88L,
+        12L,
+        "merge_request");
+
+    assertEquals("http://172.22.10.233", payload.sourceAddress());
+    assertEquals(88L, payload.projectId());
+    assertEquals(12L, payload.requestIid());
+    assertEquals("merge_request", payload.resourceType());
   }
 
   @Test

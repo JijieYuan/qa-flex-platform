@@ -95,7 +95,7 @@ public class DatabaseBrowserService {
               new DatabaseTableColumn("id", "ID", true),
               new DatabaseTableColumn("gitlab_base_url", "GitLab 来源地址", true),
               new DatabaseTableColumn("project_id", "Project ID", true),
-              new DatabaseTableColumn("mr_iid", "MR IID", true),
+              new DatabaseTableColumn("request_iid", "请求类型 IID", true),
               new DatabaseTableColumn("resource_type", "资源类型", true),
               new DatabaseTableColumn("resource_id", "资源编号", true),
               new DatabaseTableColumn("template_code", "模板编码", true),

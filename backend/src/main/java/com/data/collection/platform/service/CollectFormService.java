@@ -2,6 +2,7 @@ package com.data.collection.platform.service;
 
 import com.data.collection.platform.common.exception.BizException;
 import com.data.collection.platform.entity.CollectFormDetailResponse;
+import com.data.collection.platform.entity.CollectFormNotificationPayloadResponse;
 import com.data.collection.platform.entity.CollectFormRecord;
 import com.data.collection.platform.mapper.CollectFormRecordMapper;
 import org.springframework.stereotype.Service;
@@ -35,7 +36,7 @@ public class CollectFormService {
   public CollectFormDetailResponse save(
       String gitlabBaseUrl,
       Long projectId,
-      Long mrIid,
+      Long requestIid,
       String resourceType,
       String resourceId,
       String templateCode,
@@ -52,7 +53,7 @@ public class CollectFormService {
     CollectFormRecord record = new CollectFormRecord();
     record.setGitlabBaseUrl(gitlabBaseUrl.trim());
     record.setProjectId(projectId);
-    record.setMrIid(mrIid);
+    record.setRequestIid(requestIid);
     record.setResourceType(resourceType.trim());
     record.setResourceId(resourceId.trim());
     record.setTemplateCode(templateCode.trim());
@@ -89,6 +90,30 @@ public class CollectFormService {
             resourceId.trim(),
             templateCode.trim())
         > 0;
+  }
+
+  public CollectFormNotificationPayloadResponse buildNotificationPayload(
+      String gitlabBaseUrl,
+      Long projectId,
+      Long requestIid,
+      String resourceType) {
+    if (!StringUtils.hasText(gitlabBaseUrl)) {
+      throw new BizException("GitLab 来源地址不能为空");
+    }
+    if (projectId == null || projectId <= 0) {
+      throw new BizException("Project ID 无效");
+    }
+    if (requestIid == null || requestIid <= 0) {
+      throw new BizException("请求类型 IID 无效");
+    }
+    if (!StringUtils.hasText(resourceType)) {
+      throw new BizException("资源类型不能为空");
+    }
+    return new CollectFormNotificationPayloadResponse(
+        gitlabBaseUrl.trim(),
+        projectId,
+        requestIid,
+        resourceType.trim());
   }
 
   private void validateContext(

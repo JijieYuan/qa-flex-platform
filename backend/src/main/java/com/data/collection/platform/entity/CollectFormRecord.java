@@ -21,8 +21,8 @@ public class CollectFormRecord {
   @TableField("project_id")
   private Long projectId;
 
-  @TableField("mr_iid")
-  private Long mrIid;
+  @TableField("request_iid")
+  private Long requestIid;
 
   @TableField("resource_type")
   private String resourceType;

@@ -88,7 +88,7 @@ create table if not exists collect_form_records (
     id bigserial primary key,
     gitlab_base_url varchar(255) not null,
     project_id bigint not null,
-    mr_iid bigint,
+    request_iid bigint,
     resource_type varchar(64) not null,
     resource_id varchar(255) not null,
     template_code varchar(128) not null,

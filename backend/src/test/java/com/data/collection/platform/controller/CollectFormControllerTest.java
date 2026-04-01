@@ -8,6 +8,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.data.collection.platform.entity.CollectFormDetailResponse;
+import com.data.collection.platform.entity.CollectFormNotificationPayloadResponse;
 import com.data.collection.platform.service.CollectFormService;
 import java.time.LocalDateTime;
 import org.junit.jupiter.api.BeforeEach;
@@ -70,8 +71,35 @@ class CollectFormControllerTest {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.success").value(true))
         .andExpect(jsonPath("$.data.projectId").value(88))
+        .andExpect(jsonPath("$.data.requestIid").value(12))
         .andExpect(jsonPath("$.data.resourceId").value("12"))
         .andExpect(jsonPath("$.data.formTitle").value("代码走查表"));
+  }
+
+  @Test
+  void notificationPayloadShouldReturnFourCoreFields() throws Exception {
+    when(collectFormService.buildNotificationPayload(
+        eq("http://172.22.10.233"),
+        eq(88L),
+        eq(12L),
+        eq("merge_request")))
+        .thenReturn(new CollectFormNotificationPayloadResponse(
+            "http://172.22.10.233",
+            88L,
+            12L,
+            "merge_request"));
+
+    mockMvc.perform(get("/api/collect-forms/notification-payload")
+            .param("gitlabBaseUrl", "http://172.22.10.233")
+            .param("projectId", "88")
+            .param("requestIid", "12")
+            .param("resourceType", "merge_request"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.sourceAddress").value("http://172.22.10.233"))
+        .andExpect(jsonPath("$.data.projectId").value(88))
+        .andExpect(jsonPath("$.data.requestIid").value(12))
+        .andExpect(jsonPath("$.data.resourceType").value("merge_request"));
   }
 
   @Test
@@ -119,7 +147,7 @@ class CollectFormControllerTest {
                 {
                   "gitlabBaseUrl": "http://172.22.10.233",
                   "projectId": 88,
-                  "mrIid": 12,
+                  "requestIid": 12,
                   "resourceType": "merge_request",
                   "resourceId": "12",
                   "templateCode": "code_review",
@@ -137,6 +165,7 @@ class CollectFormControllerTest {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.success").value(true))
         .andExpect(jsonPath("$.data.templateCode").value("code_review"))
+        .andExpect(jsonPath("$.data.requestIid").value(12))
         .andExpect(jsonPath("$.data.reviewer").value("王小欢"));
   }
 }
