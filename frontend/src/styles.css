@@ -451,10 +451,11 @@ button {
   width: 100%;
 }
 
+.base-stat-table .el-table__header-wrapper,
 .stat-matrix-table .el-table__header-wrapper {
-  position: sticky;
-  top: 64px;
-  z-index: 8;
+  position: relative;
+  top: auto;
+  z-index: auto;
   overflow-x: hidden !important;
   overflow-y: hidden;
   background: #ffffff;
@@ -471,10 +472,11 @@ button {
   box-shadow: none !important;
 }
 
+.base-stat-table .el-table__fixed-header-wrapper,
 .stat-matrix-table .el-table__fixed-header-wrapper {
-  position: sticky;
-  top: 64px;
-  z-index: 9;
+  position: relative;
+  top: auto;
+  z-index: auto;
   background: #ffffff;
   border-bottom: 0 !important;
 }

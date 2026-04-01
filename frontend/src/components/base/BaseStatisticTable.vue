@@ -63,6 +63,7 @@ const props = withDefaults(
     pageSizeOptions: () => [20, 50, 100, 200],
   },
 );
+
 </script>
 
 <template>
@@ -78,7 +79,7 @@ const props = withDefaults(
       border
       stripe
       fit
-      class="stat-matrix-table"
+      class="base-stat-table stat-matrix-table"
       :class="props.uiHooks.tableClass"
       style="width: 100%"
     >
@@ -111,6 +112,12 @@ const props = withDefaults(
               </span>
             </button>
           </div>
+        </template>
+
+        <template #default="{ row }">
+          <span class="stat-row-label">
+            {{ row.rowLabel }}
+          </span>
         </template>
       </el-table-column>
 
