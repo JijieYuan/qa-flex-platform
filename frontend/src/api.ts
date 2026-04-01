@@ -286,6 +286,44 @@ export interface DatabaseTableRowsResponse {
   statusMessage?: string | null;
 }
 
+export interface ExternalFormContext {
+  gitlabBaseUrl: string;
+  projectId: number;
+  mrIid?: number | null;
+  resourceType: string;
+  resourceId: string;
+  templateCode: string;
+}
+
+export interface ExternalFormRecord extends ExternalFormContext {
+  found: boolean;
+  id?: number | null;
+  formTitle: string;
+  reviewer?: string | null;
+  reviewDurationMinutes: number;
+  specificationScore: number;
+  logicScore: number;
+  performanceScore: number;
+  designScore: number;
+  otherScore: number;
+  remark?: string | null;
+  deleted: boolean;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+}
+
+export interface ExternalFormSavePayload extends ExternalFormContext {
+  formTitle: string;
+  reviewer: string;
+  reviewDurationMinutes: number;
+  specificationScore: number;
+  logicScore: number;
+  performanceScore: number;
+  designScore: number;
+  otherScore: number;
+  remark?: string | null;
+}
+
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, {
     headers: { 'Content-Type': 'application/json' },
@@ -430,5 +468,28 @@ export const api = {
       ...(params.sortOrder ? { sortOrder: params.sortOrder } : {}),
     });
     return request<DatabaseTableRowsResponse>(`/api/database-browser/rows?${query.toString()}`);
+  },
+  getExternalFormDetail(params: ExternalFormContext) {
+    const query = new URLSearchParams({
+      gitlabBaseUrl: params.gitlabBaseUrl,
+      projectId: String(params.projectId),
+      resourceType: params.resourceType,
+      resourceId: params.resourceId,
+      templateCode: params.templateCode,
+      ...(params.mrIid != null ? { mrIid: String(params.mrIid) } : {}),
+    });
+    return request<ExternalFormRecord>(`/api/external-forms/detail?${query.toString()}`);
+  },
+  saveExternalForm(payload: ExternalFormSavePayload) {
+    return request<ExternalFormRecord>('/api/external-forms/save', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+  deleteExternalForm(context: ExternalFormContext) {
+    return request<ExternalFormRecord>('/api/external-forms/delete', {
+      method: 'POST',
+      body: JSON.stringify(context),
+    });
   },
 };

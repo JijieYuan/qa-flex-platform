@@ -135,3 +135,29 @@ create index if not exists idx_gitlab_sync_logs_config on gitlab_sync_logs(confi
 create index if not exists idx_gitlab_sync_tasks_config on gitlab_sync_tasks(config_id, created_at desc);
 create index if not exists idx_gitlab_sync_tasks_scope_status on gitlab_sync_tasks(scope_key, status, created_at desc);
 create index if not exists idx_gitlab_sync_tasks_dedupe on gitlab_sync_tasks(dedupe_key, created_at desc);
+
+create table if not exists external_form_records (
+    id bigserial primary key,
+    gitlab_base_url varchar(255) not null,
+    project_id bigint not null,
+    mr_iid bigint,
+    resource_type varchar(64) not null default 'merge_request',
+    resource_id varchar(128) not null,
+    template_code varchar(64) not null default 'code_review',
+    form_title varchar(128) not null default '代码走查表',
+    reviewer varchar(128),
+    review_duration_minutes integer not null default 1,
+    specification_score integer not null default 0,
+    logic_score integer not null default 0,
+    performance_score integer not null default 0,
+    design_score integer not null default 0,
+    other_score integer not null default 0,
+    remark text,
+    deleted boolean not null default false,
+    created_at timestamp not null default current_timestamp,
+    updated_at timestamp not null default current_timestamp,
+    unique (gitlab_base_url, project_id, resource_type, resource_id, template_code)
+);
+
+create index if not exists idx_external_form_records_lookup
+    on external_form_records(project_id, resource_type, resource_id, template_code);
