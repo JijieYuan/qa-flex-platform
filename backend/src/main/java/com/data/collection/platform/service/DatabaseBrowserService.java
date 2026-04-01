@@ -87,7 +87,30 @@ public class DatabaseBrowserService {
               new DatabaseTableColumn("record_key", "主键值", true),
               new DatabaseTableColumn("updated_at_source", "源更新时间", true),
               new DatabaseTableColumn("synced_at", "镜像时间", true)),
-          "id"));
+          "id"),
+      "collect_form_records", new TableDefinition(
+          "采集表单记录",
+          List.of("template_code", "resource_type", "resource_id", "reviewer", "remark"),
+          List.of(
+              new DatabaseTableColumn("id", "ID", true),
+              new DatabaseTableColumn("gitlab_base_url", "GitLab 来源地址", true),
+              new DatabaseTableColumn("project_id", "Project ID", true),
+              new DatabaseTableColumn("mr_iid", "MR IID", true),
+              new DatabaseTableColumn("resource_type", "资源类型", true),
+              new DatabaseTableColumn("resource_id", "资源编号", true),
+              new DatabaseTableColumn("template_code", "模板编码", true),
+              new DatabaseTableColumn("form_title", "表单标题", true),
+              new DatabaseTableColumn("reviewer", "走查人", true),
+              new DatabaseTableColumn("review_duration_minutes", "走查时间(分钟)", true),
+              new DatabaseTableColumn("specification_score", "规范", true),
+              new DatabaseTableColumn("logic_score", "逻辑", true),
+              new DatabaseTableColumn("performance_score", "性能", true),
+              new DatabaseTableColumn("design_score", "设计", true),
+              new DatabaseTableColumn("other_score", "其他", true),
+              new DatabaseTableColumn("deleted", "是否作废", true),
+              new DatabaseTableColumn("updated_at", "更新时间", true),
+              new DatabaseTableColumn("created_at", "创建时间", true)),
+          "updated_at"));
 
   private final JdbcTemplate jdbcTemplate;
   private final GitlabMirrorTableRegistryMapper registryMapper;

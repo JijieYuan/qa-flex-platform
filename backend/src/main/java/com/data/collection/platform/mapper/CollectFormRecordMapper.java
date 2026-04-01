@@ -1,15 +1,33 @@
 package com.data.collection.platform.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
-import com.data.collection.platform.entity.ExternalFormRecord;
+import com.data.collection.platform.entity.CollectFormRecord;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Param;
+import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 
-public interface ExternalFormRecordMapper extends BaseMapper<ExternalFormRecord> {
+public interface CollectFormRecordMapper extends BaseMapper<CollectFormRecord> {
+
+  @Select("""
+      select *
+        from collect_form_records
+       where gitlab_base_url = #{gitlabBaseUrl}
+         and project_id = #{projectId}
+         and resource_type = #{resourceType}
+         and resource_id = #{resourceId}
+         and template_code = #{templateCode}
+       limit 1
+      """)
+  CollectFormRecord selectByContext(
+      @Param("gitlabBaseUrl") String gitlabBaseUrl,
+      @Param("projectId") Long projectId,
+      @Param("resourceType") String resourceType,
+      @Param("resourceId") String resourceId,
+      @Param("templateCode") String templateCode);
 
   @Insert("""
-      insert into external_form_records (
+      insert into collect_form_records(
         gitlab_base_url,
         project_id,
         mr_iid,
@@ -44,7 +62,7 @@ public interface ExternalFormRecordMapper extends BaseMapper<ExternalFormRecord>
         #{record.designScore},
         #{record.otherScore},
         #{record.remark},
-        false,
+        #{record.deleted},
         current_timestamp,
         current_timestamp
       )
@@ -60,22 +78,22 @@ public interface ExternalFormRecordMapper extends BaseMapper<ExternalFormRecord>
         design_score = excluded.design_score,
         other_score = excluded.other_score,
         remark = excluded.remark,
-        deleted = false,
+        deleted = excluded.deleted,
         updated_at = current_timestamp
       """)
-  void upsert(@Param("record") ExternalFormRecord record);
+  void upsert(@Param("record") CollectFormRecord record);
 
   @Update("""
-      update external_form_records
-      set deleted = true,
-          updated_at = current_timestamp
-      where gitlab_base_url = #{gitlabBaseUrl}
-        and project_id = #{projectId}
-        and resource_type = #{resourceType}
-        and resource_id = #{resourceId}
-        and template_code = #{templateCode}
+      update collect_form_records
+         set deleted = true,
+             updated_at = current_timestamp
+       where gitlab_base_url = #{gitlabBaseUrl}
+         and project_id = #{projectId}
+         and resource_type = #{resourceType}
+         and resource_id = #{resourceId}
+         and template_code = #{templateCode}
       """)
-  int markDeleted(
+  int logicalDelete(
       @Param("gitlabBaseUrl") String gitlabBaseUrl,
       @Param("projectId") Long projectId,
       @Param("resourceType") String resourceType,

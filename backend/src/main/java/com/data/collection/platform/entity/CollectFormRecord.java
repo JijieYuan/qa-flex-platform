@@ -6,10 +6,12 @@ import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import java.time.LocalDateTime;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 
 @Data
-@TableName("external_form_records")
-public class ExternalFormRecord {
+@NoArgsConstructor
+@TableName("collect_form_records")
+public class CollectFormRecord {
   @TableId(type = IdType.AUTO)
   private Long id;
 
@@ -56,7 +58,7 @@ public class ExternalFormRecord {
 
   private String remark;
 
-  private Boolean deleted;
+  private boolean deleted;
 
   @TableField("created_at")
   private LocalDateTime createdAt;

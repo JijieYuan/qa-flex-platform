@@ -1,0 +1,142 @@
+package com.data.collection.platform.controller;
+
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import com.data.collection.platform.entity.CollectFormDetailResponse;
+import com.data.collection.platform.service.CollectFormService;
+import java.time.LocalDateTime;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.MediaType;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+
+@ExtendWith(MockitoExtension.class)
+class CollectFormControllerTest {
+
+  @Mock
+  private CollectFormService collectFormService;
+
+  private MockMvc mockMvc;
+
+  @BeforeEach
+  void setUp() {
+    mockMvc = MockMvcBuilders.standaloneSetup(new CollectFormController(collectFormService)).build();
+  }
+
+  @Test
+  void detailShouldReturnPlatformRecord() throws Exception {
+    when(collectFormService.getDetail(
+        eq("http://172.22.10.233"),
+        eq(88L),
+        eq("merge_request"),
+        eq("12"),
+        eq("code_review")))
+        .thenReturn(new CollectFormDetailResponse(
+            7L,
+            "http://172.22.10.233",
+            88L,
+            12L,
+            "merge_request",
+            "12",
+            "code_review",
+            "代码走查表",
+            "王小欢",
+            5,
+            1,
+            2,
+            3,
+            4,
+            5,
+            "备注",
+            false,
+            LocalDateTime.now(),
+            LocalDateTime.now()));
+
+    mockMvc.perform(get("/api/collect-forms/detail")
+            .param("gitlabBaseUrl", "http://172.22.10.233")
+            .param("projectId", "88")
+            .param("resourceType", "merge_request")
+            .param("resourceId", "12")
+            .param("templateCode", "code_review"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.projectId").value(88))
+        .andExpect(jsonPath("$.data.resourceId").value("12"))
+        .andExpect(jsonPath("$.data.formTitle").value("代码走查表"));
+  }
+
+  @Test
+  void saveShouldReturnSavedRecordPayload() throws Exception {
+    when(collectFormService.save(
+        eq("http://172.22.10.233"),
+        eq(88L),
+        eq(12L),
+        eq("merge_request"),
+        eq("12"),
+        eq("code_review"),
+        eq("代码走查表"),
+        eq("王小欢"),
+        eq(5),
+        eq(1),
+        eq(2),
+        eq(3),
+        eq(4),
+        eq(5),
+        eq("备注")))
+        .thenReturn(new CollectFormDetailResponse(
+            7L,
+            "http://172.22.10.233",
+            88L,
+            12L,
+            "merge_request",
+            "12",
+            "code_review",
+            "代码走查表",
+            "王小欢",
+            5,
+            1,
+            2,
+            3,
+            4,
+            5,
+            "备注",
+            false,
+            LocalDateTime.now(),
+            LocalDateTime.now()));
+
+    mockMvc.perform(post("/api/collect-forms/save")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("""
+                {
+                  "gitlabBaseUrl": "http://172.22.10.233",
+                  "projectId": 88,
+                  "mrIid": 12,
+                  "resourceType": "merge_request",
+                  "resourceId": "12",
+                  "templateCode": "code_review",
+                  "formTitle": "代码走查表",
+                  "reviewer": "王小欢",
+                  "reviewDurationMinutes": 5,
+                  "specificationScore": 1,
+                  "logicScore": 2,
+                  "performanceScore": 3,
+                  "designScore": 4,
+                  "otherScore": 5,
+                  "remark": "备注"
+                }
+                """))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.templateCode").value("code_review"))
+        .andExpect(jsonPath("$.data.reviewer").value("王小欢"));
+  }
+}

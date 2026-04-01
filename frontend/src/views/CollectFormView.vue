@@ -1,20 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue';
-import { ElMessage, ElMessageBox } from 'element-plus';
+import { ElMessage } from 'element-plus';
+import { computed, reactive, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
-import { api, type ExternalFormContext, type ExternalFormRecord, type ExternalFormSavePayload } from '../api';
-
-type FormModel = {
-  formTitle: string;
-  reviewer: string;
-  reviewDurationMinutes: number;
-  specificationScore: number;
-  logicScore: number;
-  performanceScore: number;
-  designScore: number;
-  otherScore: number;
-  remark: string;
-};
+import { api, type CollectFormDetailResponse } from '../api';
 
 const route = useRoute();
 
@@ -34,7 +22,7 @@ function queryNumber(value: unknown) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-const context = computed<ExternalFormContext>(() => {
+const context = computed(() => {
   const mrIid = queryNumber(route.query.mrIid);
   const resourceType = queryText(route.query.resourceType) || 'merge_request';
   const resourceId = queryText(route.query.resourceId) || (mrIid != null ? String(mrIid) : '');
@@ -42,7 +30,7 @@ const context = computed<ExternalFormContext>(() => {
 
   return {
     gitlabBaseUrl: queryText(route.query.gitlabBaseUrl),
-    projectId: queryNumber(route.query.projectId) ?? 0,
+    projectId: queryNumber(route.query.projectId),
     mrIid,
     resourceType,
     resourceId,
@@ -50,184 +38,141 @@ const context = computed<ExternalFormContext>(() => {
   };
 });
 
-const formModel = reactive<FormModel>({
+const formModel = reactive({
   formTitle: '代码走查表',
   reviewer: '',
   reviewDurationMinutes: 1,
-  specificationScore: 0,
-  logicScore: 0,
-  performanceScore: 0,
-  designScore: 0,
-  otherScore: 0,
+  specification: 0,
+  logic: 0,
+  performance: 0,
+  design: 0,
+  other: 0,
   remark: '',
 });
 
-const initialSnapshot = ref<FormModel | null>(null);
-const recordState = ref<ExternalFormRecord | null>(null);
 const loading = ref(false);
 const saving = ref(false);
 const deleting = ref(false);
+const lastLoadedRecord = ref<CollectFormDetailResponse | null>(null);
+const hasSavedRecord = computed(() => Boolean(lastLoadedRecord.value && !lastLoadedRecord.value.deleted));
+const contextReady = computed(
+  () =>
+    Boolean(context.value.gitlabBaseUrl) &&
+    Boolean(context.value.projectId) &&
+    Boolean(context.value.resourceType) &&
+    Boolean(context.value.resourceId) &&
+    Boolean(context.value.templateCode),
+);
 
-const pageTitle = computed(() => (context.value.templateCode === 'code_review' ? '代码走查表' : '通用采集表'));
-const contextReady = computed(() => Boolean(context.value.gitlabBaseUrl && context.value.projectId && context.value.resourceType && context.value.resourceId && context.value.templateCode));
-const hasSavedRecord = computed(() => Boolean(recordState.value?.found && !recordState.value?.deleted));
-
-function applyRecord(record: ExternalFormRecord) {
-  recordState.value = record;
-  formModel.formTitle = record.formTitle || pageTitle.value;
-  formModel.reviewer = record.reviewer ?? '';
-  formModel.reviewDurationMinutes = record.reviewDurationMinutes ?? 1;
-  formModel.specificationScore = record.specificationScore ?? 0;
-  formModel.logicScore = record.logicScore ?? 0;
-  formModel.performanceScore = record.performanceScore ?? 0;
-  formModel.designScore = record.designScore ?? 0;
-  formModel.otherScore = record.otherScore ?? 0;
-  formModel.remark = record.remark ?? '';
-  initialSnapshot.value = snapshot();
+function applyRecord(record: CollectFormDetailResponse | null) {
+  formModel.formTitle = record?.formTitle || (context.value.templateCode === 'code_review' ? '代码走查表' : '通用采集表');
+  formModel.reviewer = record?.reviewer || '';
+  formModel.reviewDurationMinutes = record?.reviewDurationMinutes ?? 1;
+  formModel.specification = record?.specificationScore ?? 0;
+  formModel.logic = record?.logicScore ?? 0;
+  formModel.performance = record?.performanceScore ?? 0;
+  formModel.design = record?.designScore ?? 0;
+  formModel.other = record?.otherScore ?? 0;
+  formModel.remark = record?.remark || '';
 }
 
-function snapshot(): FormModel {
-  return {
-    formTitle: formModel.formTitle,
-    reviewer: formModel.reviewer,
-    reviewDurationMinutes: formModel.reviewDurationMinutes,
-    specificationScore: formModel.specificationScore,
-    logicScore: formModel.logicScore,
-    performanceScore: formModel.performanceScore,
-    designScore: formModel.designScore,
-    otherScore: formModel.otherScore,
-    remark: formModel.remark,
-  };
-}
-
-function restoreInitial() {
-  if (!initialSnapshot.value) {
-    applyRecord({
-      found: false,
+async function loadRecord() {
+  if (!contextReady.value) {
+    lastLoadedRecord.value = null;
+    applyRecord(null);
+    return;
+  }
+  loading.value = true;
+  try {
+    const record = await api.getCollectFormDetail({
       gitlabBaseUrl: context.value.gitlabBaseUrl,
-      projectId: context.value.projectId,
-      mrIid: context.value.mrIid,
+      projectId: context.value.projectId!,
       resourceType: context.value.resourceType,
       resourceId: context.value.resourceId,
       templateCode: context.value.templateCode,
-      formTitle: pageTitle.value,
-      reviewDurationMinutes: 1,
-      specificationScore: 0,
-      logicScore: 0,
-      performanceScore: 0,
-      designScore: 0,
-      otherScore: 0,
-      deleted: false,
     });
-    return;
-  }
-  Object.assign(formModel, initialSnapshot.value);
-}
-
-async function loadDetail() {
-  if (!contextReady.value) {
-    return;
-  }
-
-  loading.value = true;
-  try {
-    const record = await api.getExternalFormDetail(context.value);
+    lastLoadedRecord.value = record;
     applyRecord(record);
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '表单上下文加载失败');
+    lastLoadedRecord.value = null;
+    applyRecord(null);
+    ElMessage.error(error instanceof Error ? error.message : '表单记录加载失败');
   } finally {
     loading.value = false;
   }
 }
 
-function validateBeforeSave() {
-  if (!contextReady.value) {
-    throw new Error('缺少必要的链接参数，请确认 gitlabBaseUrl、projectId 和资源编号是否完整。');
-  }
-  if (!formModel.reviewer.trim()) {
-    throw new Error('请先填写走查人。');
-  }
-}
-
 async function saveForm() {
-  try {
-    validateBeforeSave();
-  } catch (error) {
-    ElMessage.warning(error instanceof Error ? error.message : '表单校验失败');
+  if (!contextReady.value) {
+    ElMessage.warning('缺少必要的链接上下文参数');
     return;
   }
-
-  const payload: ExternalFormSavePayload = {
-    ...context.value,
-    formTitle: formModel.formTitle.trim() || pageTitle.value,
-    reviewer: formModel.reviewer.trim(),
-    reviewDurationMinutes: formModel.reviewDurationMinutes,
-    specificationScore: formModel.specificationScore,
-    logicScore: formModel.logicScore,
-    performanceScore: formModel.performanceScore,
-    designScore: formModel.designScore,
-    otherScore: formModel.otherScore,
-    remark: formModel.remark.trim() || null,
-  };
-
   saving.value = true;
   try {
-    const record = await api.saveExternalForm(payload);
+    const record = await api.saveCollectForm({
+      gitlabBaseUrl: context.value.gitlabBaseUrl,
+      projectId: context.value.projectId!,
+      mrIid: context.value.mrIid,
+      resourceType: context.value.resourceType,
+      resourceId: context.value.resourceId,
+      templateCode: context.value.templateCode,
+      formTitle: formModel.formTitle,
+      reviewer: formModel.reviewer,
+      reviewDurationMinutes: formModel.reviewDurationMinutes,
+      specificationScore: formModel.specification,
+      logicScore: formModel.logic,
+      performanceScore: formModel.performance,
+      designScore: formModel.design,
+      otherScore: formModel.other,
+      remark: formModel.remark,
+    });
+    lastLoadedRecord.value = record;
     applyRecord(record);
-    ElMessage.success('表单已保存到数据采集平台数据库');
+    ElMessage.success('表单已保存到平台正式数据表');
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '保存失败');
+    ElMessage.error(error instanceof Error ? error.message : '表单保存失败');
   } finally {
     saving.value = false;
   }
 }
 
 async function deleteForm() {
-  if (!hasSavedRecord.value) {
-    ElMessage.info('当前还没有已保存记录，无需删除。');
+  if (!contextReady.value) {
+    ElMessage.warning('缺少必要的链接上下文参数');
     return;
   }
-
-  try {
-    await ElMessageBox.confirm('此操作会将当前表单记录标记为删除状态，是否继续？', '删除确认', {
-      confirmButtonText: '删除',
-      cancelButtonText: '取消',
-      type: 'warning',
-    });
-  } catch {
-    return;
-  }
-
   deleting.value = true;
   try {
-    const record = await api.deleteExternalForm(context.value);
-    applyRecord(record);
-    ElMessage.success('表单记录已删除');
+    const deleted = await api.deleteCollectForm({
+      gitlabBaseUrl: context.value.gitlabBaseUrl,
+      projectId: context.value.projectId!,
+      resourceType: context.value.resourceType,
+      resourceId: context.value.resourceId,
+      templateCode: context.value.templateCode,
+    });
+    if (deleted) {
+      await loadRecord();
+    }
+    ElMessage.success('表单记录已作废');
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '删除失败');
+    ElMessage.error(error instanceof Error ? error.message : '表单删除失败');
   } finally {
     deleting.value = false;
   }
 }
 
+function resetForm() {
+  applyRecord(lastLoadedRecord.value);
+  ElMessage.info(hasSavedRecord.value ? '已恢复到最新保存版本' : '已恢复到空白模板');
+}
+
 watch(
-  () => context.value.templateCode,
-  (templateCode) => {
-    formModel.formTitle = templateCode === 'code_review' ? '代码走查表' : '通用采集表';
+  () => `${context.value.gitlabBaseUrl}|${context.value.projectId}|${context.value.resourceType}|${context.value.resourceId}|${context.value.templateCode}`,
+  () => {
+    void loadRecord();
   },
   { immediate: true },
 );
-
-watch(
-  () => JSON.stringify(context.value),
-  () => {
-    void loadDetail();
-  },
-);
-
-onMounted(() => {
-  void loadDetail();
-});
 </script>
 
 <template>
@@ -236,15 +181,16 @@ onMounted(() => {
       <div class="external-form-hero">
         <div>
           <div class="external-form-eyebrow">独立表单链接入口</div>
-          <h1 class="external-form-title">{{ pageTitle }}</h1>
+          <h1 class="external-form-title">{{ formModel.formTitle }}</h1>
           <p class="external-form-desc">
-            当前页面会直接读取链接里的 GitLab 上下文参数，并将填写结果保存到数据采集平台数据库。
+            当前页面通过独立链接直接打开，填写结果会保存到平台正式数据表，并可在数据库查看模块中直接浏览。
           </p>
         </div>
+
         <div class="external-form-hero-meta">
           <el-tag type="primary" effect="plain">{{ context.templateCode }}</el-tag>
           <el-tag v-if="hasSavedRecord" type="success" effect="plain">已保存</el-tag>
-          <el-tag v-else type="info" effect="plain">待填写</el-tag>
+          <el-tag v-else type="info" effect="plain">未保存</el-tag>
         </div>
       </div>
 
@@ -260,7 +206,7 @@ onMounted(() => {
           </div>
           <div class="external-context-item">
             <span class="external-context-label">Project ID</span>
-            <span class="external-context-value">{{ context.projectId || '-' }}</span>
+            <span class="external-context-value">{{ context.projectId ?? '-' }}</span>
           </div>
           <div class="external-context-item">
             <span class="external-context-label">MR IID</span>
@@ -274,17 +220,23 @@ onMounted(() => {
             <span class="external-context-label">资源编号</span>
             <span class="external-context-value">{{ context.resourceId || '-' }}</span>
           </div>
+          <div class="external-context-item">
+            <span class="external-context-label">最近保存时间</span>
+            <span class="external-context-value">{{ lastLoadedRecord?.updatedAt || '-' }}</span>
+          </div>
         </div>
       </el-card>
 
-      <el-card class="external-form-card" shadow="never" v-loading="loading">
+      <el-card v-loading="loading" class="external-form-card" shadow="never">
         <template #header>
           <div class="external-form-card-header">
             <div class="external-form-card-title">模板内容</div>
             <div class="external-form-actions">
-              <el-button @click="restoreInitial">重置</el-button>
-              <el-button type="danger" plain :loading="deleting" @click="deleteForm">删除</el-button>
-              <el-button type="primary" :loading="saving" @click="saveForm">保存</el-button>
+              <el-button @click="resetForm">重置</el-button>
+              <el-button :disabled="!hasSavedRecord" :loading="deleting" type="danger" plain @click="deleteForm">
+                作废
+              </el-button>
+              <el-button :loading="saving" type="primary" @click="saveForm">保存</el-button>
             </div>
           </div>
         </template>
@@ -306,19 +258,19 @@ onMounted(() => {
 
           <div class="external-score-grid">
             <el-form-item label="规范">
-              <el-input-number v-model="formModel.specificationScore" :min="0" :step="1" controls-position="right" />
+              <el-input-number v-model="formModel.specification" :min="0" :step="1" controls-position="right" />
             </el-form-item>
             <el-form-item label="逻辑">
-              <el-input-number v-model="formModel.logicScore" :min="0" :step="1" controls-position="right" />
+              <el-input-number v-model="formModel.logic" :min="0" :step="1" controls-position="right" />
             </el-form-item>
             <el-form-item label="性能">
-              <el-input-number v-model="formModel.performanceScore" :min="0" :step="1" controls-position="right" />
+              <el-input-number v-model="formModel.performance" :min="0" :step="1" controls-position="right" />
             </el-form-item>
             <el-form-item label="设计">
-              <el-input-number v-model="formModel.designScore" :min="0" :step="1" controls-position="right" />
+              <el-input-number v-model="formModel.design" :min="0" :step="1" controls-position="right" />
             </el-form-item>
             <el-form-item label="其他">
-              <el-input-number v-model="formModel.otherScore" :min="0" :step="1" controls-position="right" />
+              <el-input-number v-model="formModel.other" :min="0" :step="1" controls-position="right" />
             </el-form-item>
           </div>
 
@@ -327,7 +279,7 @@ onMounted(() => {
           </el-form-item>
 
           <div class="external-form-footnote">
-            当前页已支持按链接上下文查询、保存和删除表单记录。后续如果需要，还可以继续接入 GitLab 评论发布链路。
+            当前表单保存后会写入平台正式业务表 <code>collect_form_records</code>，并在数据库查看模块中默认可见。
           </div>
         </el-form>
       </el-card>

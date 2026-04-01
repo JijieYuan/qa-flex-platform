@@ -84,6 +84,29 @@ create table if not exists gitlab_mirror_records (
     unique (config_id, table_name, record_key)
 );
 
+create table if not exists collect_form_records (
+    id bigserial primary key,
+    gitlab_base_url varchar(255) not null,
+    project_id bigint not null,
+    mr_iid bigint,
+    resource_type varchar(64) not null,
+    resource_id varchar(255) not null,
+    template_code varchar(128) not null,
+    form_title varchar(255) not null default '采集表单',
+    reviewer varchar(128),
+    review_duration_minutes integer not null default 0,
+    specification_score integer not null default 0,
+    logic_score integer not null default 0,
+    performance_score integer not null default 0,
+    design_score integer not null default 0,
+    other_score integer not null default 0,
+    remark text,
+    deleted boolean not null default false,
+    created_at timestamp not null default current_timestamp,
+    updated_at timestamp not null default current_timestamp,
+    unique (gitlab_base_url, project_id, resource_type, resource_id, template_code)
+);
+
 create table if not exists sys_table_registry (
     id bigserial primary key,
     config_id bigint not null references gitlab_sync_configs(id) on delete cascade,
@@ -129,35 +152,10 @@ alter table gitlab_sync_tasks add column if not exists updated_at timestamp not 
 alter table sys_table_registry add column if not exists preview_enabled boolean not null default true;
 
 create index if not exists idx_gitlab_mirror_records_table on gitlab_mirror_records(config_id, table_name);
+create index if not exists idx_collect_form_records_context on collect_form_records(project_id, resource_type, resource_id, template_code);
 create index if not exists idx_sys_table_registry_config on sys_table_registry(config_id, source_table_name);
 create index if not exists idx_sys_table_registry_preview on sys_table_registry(config_id, preview_enabled, source_table_name);
 create index if not exists idx_gitlab_sync_logs_config on gitlab_sync_logs(config_id, started_at desc);
 create index if not exists idx_gitlab_sync_tasks_config on gitlab_sync_tasks(config_id, created_at desc);
 create index if not exists idx_gitlab_sync_tasks_scope_status on gitlab_sync_tasks(scope_key, status, created_at desc);
 create index if not exists idx_gitlab_sync_tasks_dedupe on gitlab_sync_tasks(dedupe_key, created_at desc);
-
-create table if not exists external_form_records (
-    id bigserial primary key,
-    gitlab_base_url varchar(255) not null,
-    project_id bigint not null,
-    mr_iid bigint,
-    resource_type varchar(64) not null default 'merge_request',
-    resource_id varchar(128) not null,
-    template_code varchar(64) not null default 'code_review',
-    form_title varchar(128) not null default '代码走查表',
-    reviewer varchar(128),
-    review_duration_minutes integer not null default 1,
-    specification_score integer not null default 0,
-    logic_score integer not null default 0,
-    performance_score integer not null default 0,
-    design_score integer not null default 0,
-    other_score integer not null default 0,
-    remark text,
-    deleted boolean not null default false,
-    created_at timestamp not null default current_timestamp,
-    updated_at timestamp not null default current_timestamp,
-    unique (gitlab_base_url, project_id, resource_type, resource_id, template_code)
-);
-
-create index if not exists idx_external_form_records_lookup
-    on external_form_records(project_id, resource_type, resource_id, template_code);
