@@ -136,12 +136,11 @@ const props = withDefaults(
               <span></span>
               <span></span>
               <span></span>
+              <span></span>
+              <span></span>
+              <span></span>
             </span>
             <span class="stat-group-header-label">{{ group.label }}</span>
-            <span class="drag-handle" aria-hidden="true">
-              <span></span>
-              <span></span>
-            </span>
           </div>
         </template>
 
@@ -166,6 +165,9 @@ const props = withDefaults(
               @dragend="clearDragState"
             >
               <span class="drag-handle subtle" aria-hidden="true">
+                <span></span>
+                <span></span>
+                <span></span>
                 <span></span>
                 <span></span>
                 <span></span>
