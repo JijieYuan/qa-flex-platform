@@ -12,7 +12,7 @@ const activeModule = computed(
   () => moduleByKey.get((route.meta.moduleKey as never) ?? 'quality-board') ?? modules[0],
 );
 const activePageKey = computed(() => String(route.meta.pageKey ?? activeModule.value.pages[0]?.key ?? ''));
-const pageTitle = computed(() => String(route.meta.title ?? activeModule.value.pages[0]?.label ?? '数据采集平台'));
+const isStandalonePage = computed(() => Boolean(route.meta.standalone));
 
 function openModule(moduleKey: string) {
   const targetModule = moduleByKey.get(moduleKey as never);
@@ -28,7 +28,15 @@ function openPage(path: string) {
 </script>
 
 <template>
-  <div class="app-shell">
+  <div v-if="isStandalonePage" class="standalone-app-shell">
+    <main class="standalone-app-main">
+      <RouterView v-slot="{ Component }">
+        <component :is="Component" />
+      </RouterView>
+    </main>
+  </div>
+
+  <div v-else class="app-shell">
     <header class="shell-header">
       <div class="brand-wrap">
         <div class="brand-mark">数</div>

@@ -7,6 +7,7 @@ import MirrorSettingsView from './views/MirrorSettingsView.vue';
 import DatabaseBrowserView from './components/DatabaseBrowserView.vue';
 import ModulePlaceholderView from './views/ModulePlaceholderView.vue';
 import NotFoundView from './views/NotFoundView.vue';
+import CollectFormView from './views/CollectFormView.vue';
 
 declare module 'vue-router' {
   interface RouteMeta {
@@ -14,6 +15,7 @@ declare module 'vue-router' {
     pageKey: PageKey;
     title: string;
     description: string;
+    standalone?: boolean;
     allowedQueryKeys?: string[];
     allowedQueryPrefixes?: string[];
     persistedQueryKeys?: string[];
@@ -24,6 +26,19 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/',
     redirect: '/quality-board/home',
+  },
+  {
+    path: '/external/code-review-form',
+    component: CollectFormView,
+    meta: {
+      moduleKey: 'code-review',
+      pageKey: 'code-review-home',
+      title: '代码走查表',
+      description: '通过独立链接打开的代码走查模板页。',
+      standalone: true,
+      allowedQueryKeys: ['gitlabBaseUrl', 'projectId', 'mrIid', 'resourceType', 'resourceId', 'templateCode'],
+      persistedQueryKeys: [],
+    },
   },
   {
     path: '/quality-board/home',

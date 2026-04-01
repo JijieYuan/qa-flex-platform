@@ -40,6 +40,15 @@ button {
   min-height: 100vh;
 }
 
+.standalone-app-shell {
+  min-height: 100vh;
+  background: linear-gradient(180deg, #f6f8fb 0%, #eef3f8 100%);
+}
+
+.standalone-app-main {
+  min-height: 100vh;
+}
+
 .app-shell {
   min-height: 100vh;
   display: flex;
@@ -1059,6 +1068,124 @@ button {
   background: rgba(255, 255, 255, 0.8);
   border: 1px dashed #d9d9d9;
 }
+
+.external-form-shell {
+  min-height: 100vh;
+  padding: 32px 20px;
+}
+
+.external-form-page {
+  width: min(980px, 100%);
+  margin: 0 auto;
+  display: grid;
+  gap: 16px;
+}
+
+.external-form-hero {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px 22px;
+  border: 1px solid #e5eaf1;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.external-form-eyebrow {
+  color: rgba(0, 0, 0, 0.45);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.external-form-title {
+  margin: 8px 0 0;
+  font-size: 26px;
+  line-height: 1.2;
+  color: rgba(0, 0, 0, 0.88);
+}
+
+.external-form-desc {
+  margin: 10px 0 0;
+  max-width: 720px;
+  color: rgba(0, 0, 0, 0.45);
+  line-height: 1.7;
+}
+
+.external-form-card {
+  border-radius: 14px !important;
+  border: 1px solid #e5eaf1 !important;
+  background: rgba(255, 255, 255, 0.96) !important;
+  box-shadow: none !important;
+}
+
+.external-form-card > .el-card__header {
+  padding: 16px 20px 12px !important;
+  border-bottom: 1px solid #f0f0f0 !important;
+}
+
+.external-form-card > .el-card__body {
+  padding: 18px 20px 20px !important;
+}
+
+.external-form-card-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: rgba(0, 0, 0, 0.88);
+}
+
+.external-context-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.external-context-item {
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+  border: 1px solid #f0f0f0;
+  border-radius: 8px;
+  background: #fafafa;
+}
+
+.external-context-label {
+  color: rgba(0, 0, 0, 0.45);
+  font-size: 12px;
+}
+
+.external-context-value {
+  color: rgba(0, 0, 0, 0.88);
+  font-size: 14px;
+  font-weight: 600;
+  word-break: break-all;
+}
+
+.external-form-layout .el-form-item {
+  margin-bottom: 16px;
+}
+
+.external-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.external-score-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.external-form-footnote {
+  margin-top: 4px;
+  color: rgba(0, 0, 0, 0.45);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
 
 .el-button--primary {
   background: #1677ff !important;
