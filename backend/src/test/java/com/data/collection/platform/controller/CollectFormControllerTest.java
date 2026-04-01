@@ -168,4 +168,63 @@ class CollectFormControllerTest {
         .andExpect(jsonPath("$.data.requestIid").value(12))
         .andExpect(jsonPath("$.data.reviewer").value("王小欢"));
   }
+
+  @Test
+  void updateRecordShouldReturnUpdatedPayload() throws Exception {
+    when(collectFormService.updateRecord(
+        eq(7L),
+        eq("代码走查表-改"),
+        eq("李测试"),
+        eq(8),
+        eq(2),
+        eq(3),
+        eq(4),
+        eq(5),
+        eq(6),
+        eq("数据库查看修改"),
+        eq(true)))
+        .thenReturn(new CollectFormDetailResponse(
+            7L,
+            "http://172.22.10.233",
+            88L,
+            12L,
+            "merge_request",
+            "12",
+            "code_review",
+            "代码走查表-改",
+            "李测试",
+            8,
+            2,
+            3,
+            4,
+            5,
+            6,
+            "数据库查看修改",
+            true,
+            LocalDateTime.now(),
+            LocalDateTime.now()));
+
+    mockMvc.perform(post("/api/collect-forms/update-record")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("""
+                {
+                  "id": 7,
+                  "formTitle": "代码走查表-改",
+                  "reviewer": "李测试",
+                  "reviewDurationMinutes": 8,
+                  "specificationScore": 2,
+                  "logicScore": 3,
+                  "performanceScore": 4,
+                  "designScore": 5,
+                  "otherScore": 6,
+                  "remark": "数据库查看修改",
+                  "deleted": true
+                }
+                """))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.id").value(7))
+        .andExpect(jsonPath("$.data.formTitle").value("代码走查表-改"))
+        .andExpect(jsonPath("$.data.deleted").value(true));
+  }
 }

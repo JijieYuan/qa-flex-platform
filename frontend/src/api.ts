@@ -499,6 +499,24 @@ export const api = {
       body: JSON.stringify(payload),
     });
   },
+  updateCollectFormRecord(payload: {
+    id: number;
+    formTitle: string;
+    reviewer: string;
+    reviewDurationMinutes: number;
+    specificationScore: number;
+    logicScore: number;
+    performanceScore: number;
+    designScore: number;
+    otherScore: number;
+    remark: string;
+    deleted: boolean;
+  }) {
+    return request<CollectFormDetailResponse>('/api/collect-forms/update-record', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
   deleteCollectForm(payload: {
     gitlabBaseUrl: string;
     projectId: number;

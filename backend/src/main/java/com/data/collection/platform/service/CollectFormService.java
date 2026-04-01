@@ -5,6 +5,7 @@ import com.data.collection.platform.entity.CollectFormDetailResponse;
 import com.data.collection.platform.entity.CollectFormNotificationPayloadResponse;
 import com.data.collection.platform.entity.CollectFormRecord;
 import com.data.collection.platform.mapper.CollectFormRecordMapper;
+import java.time.LocalDateTime;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -90,6 +91,45 @@ public class CollectFormService {
             resourceId.trim(),
             templateCode.trim())
         > 0;
+  }
+
+  public CollectFormDetailResponse updateRecord(
+      Long id,
+      String formTitle,
+      String reviewer,
+      Integer reviewDurationMinutes,
+      Integer specificationScore,
+      Integer logicScore,
+      Integer performanceScore,
+      Integer designScore,
+      Integer otherScore,
+      String remark,
+      boolean deleted) {
+    if (id == null || id <= 0) {
+      throw new BizException("记录 ID 无效");
+    }
+    CollectFormRecord existing = collectFormRecordMapper.selectById(id);
+    if (existing == null) {
+      throw new BizException("表单记录不存在");
+    }
+
+    CollectFormRecord update = new CollectFormRecord();
+    update.setId(id);
+    update.setFormTitle(StringUtils.hasText(formTitle) ? formTitle.trim() : defaultTitle(existing.getTemplateCode()));
+    update.setReviewer(StringUtils.hasText(reviewer) ? reviewer.trim() : "");
+    update.setReviewDurationMinutes(normalizeScore(reviewDurationMinutes));
+    update.setSpecificationScore(normalizeScore(specificationScore));
+    update.setLogicScore(normalizeScore(logicScore));
+    update.setPerformanceScore(normalizeScore(performanceScore));
+    update.setDesignScore(normalizeScore(designScore));
+    update.setOtherScore(normalizeScore(otherScore));
+    update.setRemark(StringUtils.hasText(remark) ? remark.trim() : "");
+    update.setDeleted(deleted);
+    update.setUpdatedAt(LocalDateTime.now());
+
+    collectFormRecordMapper.updateById(update);
+    CollectFormRecord latest = collectFormRecordMapper.selectById(id);
+    return latest == null ? null : CollectFormDetailResponse.from(latest);
   }
 
   public CollectFormNotificationPayloadResponse buildNotificationPayload(

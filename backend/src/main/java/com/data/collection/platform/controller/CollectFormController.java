@@ -79,6 +79,24 @@ public class CollectFormController {
             request.templateCode()));
   }
 
+  @PostMapping("/update-record")
+  public ApiResponse<CollectFormDetailResponse> updateRecord(@RequestBody UpdateRecordRequest request) {
+    return ApiResponse.success(
+        "表单记录已更新",
+        collectFormService.updateRecord(
+            request.id(),
+            request.formTitle(),
+            request.reviewer(),
+            request.reviewDurationMinutes(),
+            request.specificationScore(),
+            request.logicScore(),
+            request.performanceScore(),
+            request.designScore(),
+            request.otherScore(),
+            request.remark(),
+            request.deleted()));
+  }
+
   public record SaveRequest(
       @NotBlank String gitlabBaseUrl,
       @NotNull @Positive Long projectId,
@@ -102,4 +120,17 @@ public class CollectFormController {
       @NotBlank String resourceType,
       @NotBlank String resourceId,
       @NotBlank String templateCode) {}
+
+  public record UpdateRecordRequest(
+      @NotNull @Positive Long id,
+      String formTitle,
+      String reviewer,
+      Integer reviewDurationMinutes,
+      Integer specificationScore,
+      Integer logicScore,
+      Integer performanceScore,
+      Integer designScore,
+      Integer otherScore,
+      String remark,
+      boolean deleted) {}
 }

@@ -3,6 +3,7 @@ package com.data.collection.platform.service;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -94,6 +95,58 @@ class CollectFormServiceTest {
     assertEquals(88L, payload.projectId());
     assertEquals(12L, payload.requestIid());
     assertEquals("merge_request", payload.resourceType());
+  }
+
+  @Test
+  void updateRecordShouldUpdateEditableFieldsOnly() {
+    CollectFormRecord existing = new CollectFormRecord();
+    existing.setId(7L);
+    existing.setGitlabBaseUrl("http://172.22.10.233");
+    existing.setProjectId(88L);
+    existing.setRequestIid(12L);
+    existing.setResourceType("merge_request");
+    existing.setResourceId("12");
+    existing.setTemplateCode("code_review");
+    existing.setFormTitle("代码走查表");
+
+    CollectFormRecord latest = new CollectFormRecord();
+    latest.setId(7L);
+    latest.setGitlabBaseUrl("http://172.22.10.233");
+    latest.setProjectId(88L);
+    latest.setRequestIid(12L);
+    latest.setResourceType("merge_request");
+    latest.setResourceId("12");
+    latest.setTemplateCode("code_review");
+    latest.setFormTitle("代码走查表-改");
+    latest.setReviewer("李测试");
+    latest.setDeleted(true);
+
+    when(collectFormRecordMapper.selectById(7L))
+        .thenReturn(existing)
+        .thenReturn(latest);
+
+    collectFormService.updateRecord(
+        7L,
+        "代码走查表-改",
+        "李测试",
+        8,
+        2,
+        3,
+        4,
+        5,
+        6,
+        "数据库查看修改",
+        true);
+
+    ArgumentCaptor<CollectFormRecord> captor = ArgumentCaptor.forClass(CollectFormRecord.class);
+    verify(collectFormRecordMapper).updateById(captor.capture());
+    verify(collectFormRecordMapper, times(2)).selectById(7L);
+    CollectFormRecord update = captor.getValue();
+    assertEquals(7L, update.getId());
+    assertEquals("代码走查表-改", update.getFormTitle());
+    assertEquals("李测试", update.getReviewer());
+    assertEquals(8, update.getReviewDurationMinutes());
+    assertTrue(update.isDeleted());
   }
 
   @Test
