@@ -19,5 +19,6 @@ export interface RecordTableColumn {
   minWidth?: number;
   fixed?: 'left' | 'right';
   align?: 'left' | 'center' | 'right';
+  headerAlign?: 'left' | 'center' | 'right';
   showOverflowTooltip?: boolean;
 }

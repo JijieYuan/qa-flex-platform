@@ -165,6 +165,7 @@ function handleReset() {
         :min-width="column.minWidth"
         :fixed="column.fixed"
         :align="column.align ?? 'left'"
+        :header-align="column.headerAlign ?? 'center'"
         :show-overflow-tooltip="column.showOverflowTooltip ?? true"
       >
         <template #default="{ row }">
