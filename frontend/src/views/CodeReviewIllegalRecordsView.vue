@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import BaseRecordTable from '../components/base/BaseRecordTable.vue';
 import { useRouteTableState } from '../composables/useRouteTableState';
 import type { RecordTableColumn } from '../types/record-table';
@@ -13,7 +13,14 @@ const { route, page, pageSize, sortBy, sortOrder, patchQuery } = useRouteTableSt
   },
 });
 
+const advancedVisible = ref(false);
 const repositoryName = computed(() => String(route.query.repositoryName ?? ''));
+const mergedAtRange = computed<[string, string] | []>(() => {
+  const start = String(route.query.mergedAtStart ?? '');
+  const end = String(route.query.mergedAtEnd ?? '');
+  return start && end ? [start, end] : [];
+});
+const keyword = computed(() => String(route.query.keyword ?? ''));
 const projectName = computed(() => String(route.query.projectName ?? ''));
 const requestType = computed(() => String(route.query.requestType ?? ''));
 const targetBranch = computed(() => String(route.query.targetBranch ?? ''));
@@ -78,12 +85,24 @@ async function handleFilterChange(patch: Record<string, string>) {
   });
 }
 
+async function handleDateRangeChange(range: string[] | null) {
+  const [start, end] = Array.isArray(range) ? range : [];
+  await patchQuery({
+    page: 1,
+    mergedAtStart: start || null,
+    mergedAtEnd: end || null,
+  });
+}
+
 async function handleReset() {
   await patchQuery({
     page: 1,
     sortBy: 'mergedAt',
     sortOrder: 'desc',
+    keyword: null,
     repositoryName: null,
+    mergedAtStart: null,
+    mergedAtEnd: null,
     projectName: null,
     requestType: null,
     targetBranch: null,
@@ -119,44 +138,102 @@ async function handleSortChange(payload: { prop: string; order: 'ascending' | 'd
     page: 1,
   });
 }
+
+const activeFilterTags = computed(() => {
+  const tags: Array<{ key: string; label: string; value: string }> = [];
+  if (repositoryName.value) tags.push({ key: 'repositoryName', label: '代码库', value: repositoryName.value });
+  if (mergedAtRange.value.length === 2) {
+    tags.push({ key: 'mergedAtRange', label: '合并时间', value: `${mergedAtRange.value[0]} ~ ${mergedAtRange.value[1]}` });
+  }
+  if (illegalType.value) tags.push({ key: 'illegalType', label: '非法类型', value: illegalType.value });
+  if (keyword.value) tags.push({ key: 'keyword', label: '关键字', value: keyword.value });
+  if (requestType.value) tags.push({ key: 'requestType', label: '请求类型', value: requestType.value });
+  if (mergeRequestIid.value) tags.push({ key: 'mergeRequestIid', label: '合并请求编号', value: mergeRequestIid.value });
+  if (owner.value) tags.push({ key: 'owner', label: '被挂责任人', value: owner.value });
+  if (targetBranch.value) tags.push({ key: 'targetBranch', label: '目标分支', value: targetBranch.value });
+  if (mergedBy.value) tags.push({ key: 'mergedBy', label: '合并人', value: mergedBy.value });
+  if (moduleName.value) tags.push({ key: 'moduleName', label: '模块名称', value: moduleName.value });
+  if (projectName.value) tags.push({ key: 'projectName', label: '项目名称', value: projectName.value });
+  return tags;
+});
+
+async function clearFilterTag(key: string) {
+  if (key === 'mergedAtRange') {
+    await patchQuery({
+      page: 1,
+      mergedAtStart: null,
+      mergedAtEnd: null,
+    });
+    return;
+  }
+  await patchQuery({
+    page: 1,
+    [key]: null,
+  });
+}
 </script>
 
 <template>
   <section class="record-page-shell">
-    <BaseRecordTable
-      :columns="columns"
-      :rows="rows"
-      :loading="false"
-      :page="page"
-      :page-size="pageSize"
-      :total="total"
-      empty-description="当前尚未接入真实非法记录数据，先保留真实表头和空表结构。"
-      :show-search="false"
-      @reset="handleReset"
-      @refresh="handleRefresh"
-      @size-change="handleSizeChange"
-      @current-change="handleCurrentChange"
-      @sort-change="handleSortChange"
-    >
-      <template #toolbar-prefix>
-        <div class="record-page-filters">
-          <el-select
-            :model-value="repositoryName"
-            class="record-filter-select"
-            placeholder="代码库"
-            @change="handleFilterChange({ repositoryName: String($event ?? '') })"
-          >
-            <el-option
-              v-for="option in repositoryNameOptions"
-              :key="option.value"
-              :label="option.label"
-              :value="option.value"
-            />
-          </el-select>
+    <el-card shadow="never" class="record-filter-card">
+      <div class="record-filter-primary">
+        <el-select
+          :model-value="repositoryName"
+          class="record-filter-main-select"
+          placeholder="代码库"
+          @change="handleFilterChange({ repositoryName: String($event ?? '') })"
+        >
+          <el-option
+            v-for="option in repositoryNameOptions"
+            :key="option.value"
+            :label="option.label"
+            :value="option.value"
+          />
+        </el-select>
 
+        <el-date-picker
+          :model-value="mergedAtRange"
+          class="record-filter-main-date"
+          type="daterange"
+          range-separator="至"
+          start-placeholder="开始日期"
+          end-placeholder="结束日期"
+          value-format="YYYY-MM-DD"
+          @change="handleDateRangeChange"
+        />
+
+        <el-select
+          :model-value="illegalType"
+          class="record-filter-main-select"
+          placeholder="非法类型"
+          @change="handleFilterChange({ illegalType: String($event ?? '') })"
+        >
+          <el-option v-for="option in illegalTypeOptions" :key="option.value" :label="option.label" :value="option.value" />
+        </el-select>
+
+        <el-input
+          :model-value="keyword"
+          class="record-filter-main-keyword"
+          placeholder="搜索合并请求内容、责任人或项目"
+          clearable
+          @change="handleFilterChange({ keyword: String($event ?? '') })"
+          @clear="handleFilterChange({ keyword: '' })"
+        />
+
+        <div class="record-filter-primary-actions">
+          <el-button @click="advancedVisible = !advancedVisible">
+            {{ advancedVisible ? '收起高级筛选' : '高级筛选' }}
+          </el-button>
+          <el-button @click="handleReset">重置</el-button>
+          <el-button type="primary" @click="handleRefresh">查询</el-button>
+        </div>
+      </div>
+
+      <el-collapse-transition>
+        <div v-show="advancedVisible" class="record-filter-advanced">
           <el-select
             :model-value="requestType"
-            class="record-filter-select record-filter-select-wide"
+            class="record-filter-select"
             placeholder="请求类型"
             @change="handleFilterChange({ requestType: String($event ?? '') })"
           >
@@ -209,15 +286,6 @@ async function handleSortChange(payload: { prop: string; order: 'ascending' | 'd
           </el-select>
 
           <el-select
-            :model-value="illegalType"
-            class="record-filter-select"
-            placeholder="非法类型"
-            @change="handleFilterChange({ illegalType: String($event ?? '') })"
-          >
-            <el-option v-for="option in illegalTypeOptions" :key="option.value" :label="option.label" :value="option.value" />
-          </el-select>
-
-          <el-select
             :model-value="projectName"
             class="record-filter-select"
             placeholder="项目名称"
@@ -226,8 +294,35 @@ async function handleSortChange(payload: { prop: string; order: 'ascending' | 'd
             <el-option v-for="option in projectNameOptions" :key="option.value" :label="option.label" :value="option.value" />
           </el-select>
         </div>
-      </template>
+      </el-collapse-transition>
+    </el-card>
 
+    <div v-if="activeFilterTags.length" class="record-filter-tags">
+      <span class="record-filter-tags-label">已选条件</span>
+      <el-tag
+        v-for="tag in activeFilterTags"
+        :key="tag.key"
+        closable
+        effect="plain"
+        @close="clearFilterTag(tag.key)"
+      >
+        {{ tag.label }}：{{ tag.value }}
+      </el-tag>
+    </div>
+
+    <BaseRecordTable
+      :columns="columns"
+      :rows="rows"
+      :loading="false"
+      :page="page"
+      :page-size="pageSize"
+      :total="total"
+      empty-description="当前尚未接入真实非法记录数据，先保留真实表头和空表结构。"
+      :show-search="false"
+      @size-change="handleSizeChange"
+      @current-change="handleCurrentChange"
+      @sort-change="handleSortChange"
+    >
       <template #toolbar-actions>
         <div class="record-page-summary">
           <span class="record-page-summary-label">当前排序</span>
@@ -244,12 +339,58 @@ async function handleSortChange(payload: { prop: string; order: 'ascending' | 'd
   gap: 12px;
 }
 
-.record-page-filters {
+.record-filter-card {
+  border-radius: 12px;
+}
+
+.record-filter-primary {
   display: flex;
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
-  flex: 1 1 auto;
+}
+
+.record-filter-primary-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  flex-wrap: wrap;
+}
+
+.record-filter-advanced {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.record-filter-main-select {
+  width: 180px;
+}
+
+.record-filter-main-date {
+  width: 280px;
+}
+
+.record-filter-main-keyword {
+  width: 260px;
+}
+
+.record-filter-tags {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 0 2px;
+}
+
+.record-filter-tags-label {
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.45);
 }
 
 .record-filter-select,
