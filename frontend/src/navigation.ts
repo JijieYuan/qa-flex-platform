@@ -66,12 +66,12 @@ export const modules: ShellModule[] = [
     label: '评审数据',
     icon: Document,
     title: '评审数据',
-    description: '预留后续统计分析页面。',
+    description: '预留后续评审数据管理与统计分析页面。',
     pages: [
       {
         key: 'review-data-home',
         label: '评审数据',
-        description: '当前模块暂未接入统计表。',
+        description: '当前模块暂未接入正式业务页面。',
         path: '/review-data/home',
       },
     ],
@@ -86,7 +86,7 @@ export const modules: ShellModule[] = [
       {
         key: 'code-review-illegal-records',
         label: '代码走查非法记录',
-        description: '展示代码走查场景下的非法记录明细列表，并预留后续接入 GitLab 明细、标签和外部指标。',
+        description: '展示代码走查场景下的非法记录明细列表，并预留后续接入镜像字段和外部指标。',
         path: '/code-review/illegal-records',
       },
     ],
@@ -101,7 +101,7 @@ export const modules: ShellModule[] = [
       {
         key: 'integration-test-home',
         label: '集成测试',
-        description: '当前模块暂未接入统计表。',
+        description: '当前模块暂未接入正式业务页面。',
         path: '/integration-test/home',
       },
     ],
@@ -131,7 +131,7 @@ export const modules: ShellModule[] = [
       {
         key: 'customer-issues-home',
         label: '客户问题',
-        description: '当前模块暂未接入统计表。',
+        description: '当前模块暂未接入正式业务页面。',
         path: '/customer-issues/home',
       },
     ],
@@ -141,7 +141,7 @@ export const modules: ShellModule[] = [
     label: '系统设置',
     icon: Setting,
     title: '系统设置',
-    description: '维护 GitLab 数据镜像、数据库查看与系统模块配置。',
+    description: '维护 GitLab 数据镜像、数据库查看与系统配置。',
     pages: [
       {
         key: 'mirror-settings',
@@ -158,7 +158,7 @@ export const modules: ShellModule[] = [
       {
         key: 'module-management',
         label: '模块管理',
-        description: '预留模块和菜单管理能力。',
+        description: '预留模块与菜单配置能力。',
         path: '/system-settings/module-management',
       },
     ],
