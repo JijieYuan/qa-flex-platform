@@ -76,14 +76,6 @@ async function handleSortChange(payload: { prop: string; order: 'ascending' | 'd
 
 <template>
   <section class="record-page-shell">
-    <el-card shadow="never" class="record-page-intro">
-      <div class="record-page-intro-title">代码走查非法记录</div>
-      <div class="record-page-intro-desc">
-        当前本地库还没有这张业务表和对应明细数据，所以这一版先只落真实表头和空表结构，
-        不接假数据、不做 mock。后续接入真实镜像字段、非法判定规则和外部指标时，直接复用这套记录表抽象即可。
-      </div>
-    </el-card>
-
     <BaseRecordTable
       :columns="columns"
       :rows="rows"
@@ -115,22 +107,6 @@ async function handleSortChange(payload: { prop: string; order: 'ascending' | 'd
 .record-page-shell {
   display: grid;
   gap: 12px;
-}
-
-.record-page-intro {
-  border-radius: 12px;
-}
-
-.record-page-intro-title {
-  font-size: 16px;
-  font-weight: 700;
-  color: rgba(0, 0, 0, 0.88);
-}
-
-.record-page-intro-desc {
-  margin-top: 8px;
-  color: rgba(0, 0, 0, 0.6);
-  line-height: 1.7;
 }
 
 .record-page-summary {
