@@ -157,8 +157,8 @@ function getFilterValue(key: string) {
 </script>
 
 <template>
-  <div class="record-table-card">
-    <el-card v-if="hasPrimaryFilters || hasAdvancedFilters || showSearch" shadow="never" class="record-filter-card">
+  <div class="record-table-workspace">
+    <section v-if="hasPrimaryFilters || hasAdvancedFilters || showSearch" class="record-filter-panel">
       <div class="record-filter-primary">
         <template v-for="filter in primaryFilters" :key="filter.key">
           <el-input
@@ -257,20 +257,21 @@ function getFilterValue(key: string) {
           </template>
         </div>
       </el-collapse-transition>
-    </el-card>
+    </section>
 
-    <div v-if="hasActiveFilterTags" class="record-filter-tags">
+    <section v-if="hasActiveFilterTags" class="record-filter-tags">
       <span class="record-filter-tags-label">已选条件</span>
       <el-tag
         v-for="tag in activeFilterTags"
         :key="tag.key"
         closable
         effect="plain"
+        class="record-filter-tag"
         @close="emit('clear-filter', tag.key)"
       >
         {{ tag.label }}：{{ tag.value }}
       </el-tag>
-    </div>
+    </section>
 
     <div class="record-table-toolbar">
       <div class="record-table-toolbar-main">
@@ -283,86 +284,88 @@ function getFilterValue(key: string) {
       </div>
     </div>
 
-    <el-table
-      v-loading="loading"
-      :data="rows"
-      border
-      stripe
-      class="record-table"
-      @sort-change="emit('sort-change', $event)"
-    >
-      <el-table-column
-        v-for="column in columns"
-        :key="column.key"
-        :prop="column.key"
-        :label="column.label"
-        :sortable="column.sortable ? 'custom' : false"
-        :width="column.width"
-        :min-width="column.minWidth"
-        :fixed="column.fixed"
-        :align="column.align ?? 'left'"
-        :header-align="column.headerAlign ?? 'center'"
-        :show-overflow-tooltip="column.showOverflowTooltip ?? true"
+    <div class="record-table-frame">
+      <el-table
+        v-loading="loading"
+        :data="rows"
+        border
+        stripe
+        class="record-table"
+        @sort-change="emit('sort-change', $event)"
       >
-        <template #default="{ row }">
-          <slot
-            v-if="$slots[`cell-${column.key}`]"
-            :name="`cell-${column.key}`"
-            :row="row"
-            :value="row[column.key]"
-          />
-          <template v-else-if="column.type === 'tags'">
-            <div class="record-table-tags">
-              <el-tag
-                v-for="tag in normalizeTagList(row[column.key])"
-                :key="`${column.key}-${tag.label}`"
-                size="small"
-                :type="tag.type ?? 'info'"
-                effect="plain"
-              >
-                {{ tag.label }}
-              </el-tag>
-              <span v-if="!normalizeTagList(row[column.key]).length" class="record-table-empty">-</span>
-            </div>
-          </template>
-          <template v-else-if="column.type === 'tag'">
-            <template v-if="normalizeTagList(row[column.key])[0]">
-              <el-tag
-                size="small"
-                :type="normalizeTagList(row[column.key])[0].type ?? 'info'"
-                effect="plain"
-              >
-                {{ normalizeTagList(row[column.key])[0].label }}
-              </el-tag>
+        <el-table-column
+          v-for="column in columns"
+          :key="column.key"
+          :prop="column.key"
+          :label="column.label"
+          :sortable="column.sortable ? 'custom' : false"
+          :width="column.width"
+          :min-width="column.minWidth"
+          :fixed="column.fixed"
+          :align="column.align ?? 'left'"
+          :header-align="column.headerAlign ?? 'center'"
+          :show-overflow-tooltip="column.showOverflowTooltip ?? true"
+        >
+          <template #default="{ row }">
+            <slot
+              v-if="$slots[`cell-${column.key}`]"
+              :name="`cell-${column.key}`"
+              :row="row"
+              :value="row[column.key]"
+            />
+            <template v-else-if="column.type === 'tags'">
+              <div class="record-table-tags">
+                <el-tag
+                  v-for="tag in normalizeTagList(row[column.key])"
+                  :key="`${column.key}-${tag.label}`"
+                  size="small"
+                  :type="tag.type ?? 'info'"
+                  effect="plain"
+                >
+                  {{ tag.label }}
+                </el-tag>
+                <span v-if="!normalizeTagList(row[column.key]).length" class="record-table-empty">-</span>
+              </div>
             </template>
-            <span v-else class="record-table-empty">-</span>
+            <template v-else-if="column.type === 'tag'">
+              <template v-if="normalizeTagList(row[column.key])[0]">
+                <el-tag
+                  size="small"
+                  :type="normalizeTagList(row[column.key])[0].type ?? 'info'"
+                  effect="plain"
+                >
+                  {{ normalizeTagList(row[column.key])[0].label }}
+                </el-tag>
+              </template>
+              <span v-else class="record-table-empty">-</span>
+            </template>
+            <template v-else-if="column.type === 'link'">
+              <a
+                v-if="normalizeLink(row[column.key])"
+                class="record-table-link"
+                :href="normalizeLink(row[column.key])!.href"
+                target="_blank"
+                rel="noreferrer"
+              >
+                {{ normalizeLink(row[column.key])!.label }}
+              </a>
+              <span v-else class="record-table-empty">-</span>
+            </template>
+            <span v-else class="record-table-text">{{ formatCellValue(row[column.key]) }}</span>
           </template>
-          <template v-else-if="column.type === 'link'">
-            <a
-              v-if="normalizeLink(row[column.key])"
-              class="record-table-link"
-              :href="normalizeLink(row[column.key])!.href"
-              target="_blank"
-              rel="noreferrer"
-            >
-              {{ normalizeLink(row[column.key])!.label }}
-            </a>
-            <span v-else class="record-table-empty">-</span>
+        </el-table-column>
+
+        <el-table-column v-if="hasRowActions" label="操作" width="120" fixed="right">
+          <template #default="{ row }">
+            <slot name="row-actions" :row="row" />
           </template>
-          <span v-else class="record-table-text">{{ formatCellValue(row[column.key]) }}</span>
-        </template>
-      </el-table-column>
+        </el-table-column>
 
-      <el-table-column v-if="hasRowActions" label="操作" width="120" fixed="right">
-        <template #default="{ row }">
-          <slot name="row-actions" :row="row" />
+        <template #empty>
+          <el-empty :description="emptyDescription" />
         </template>
-      </el-table-column>
-
-      <template #empty>
-        <el-empty :description="emptyDescription" />
-      </template>
-    </el-table>
+      </el-table>
+    </div>
 
     <div class="record-table-pagination">
       <el-pagination
@@ -380,18 +383,29 @@ function getFilterValue(key: string) {
 </template>
 
 <style scoped>
-.record-table-card {
+.record-table-workspace {
   display: grid;
-  gap: 12px;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 16px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.98));
+  box-shadow:
+    0 1px 2px rgba(15, 23, 42, 0.04),
+    0 12px 28px rgba(15, 23, 42, 0.04);
 }
 
-.record-filter-card {
-  border-radius: 12px;
+.record-filter-panel {
+  display: grid;
+  gap: 10px;
+  padding: 4px 2px 10px;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.06);
 }
 
 .record-filter-primary {
   display: flex;
-  align-items: center;
+  align-items: stretch;
   gap: 8px;
   flex-wrap: wrap;
 }
@@ -411,7 +425,10 @@ function getFilterValue(key: string) {
   flex-wrap: wrap;
   margin-top: 12px;
   padding-top: 12px;
-  border-top: 1px solid rgba(0, 0, 0, 0.06);
+  border-top: 1px dashed rgba(15, 23, 42, 0.08);
+  background: rgba(248, 250, 252, 0.88);
+  border-radius: 12px;
+  padding: 12px;
 }
 
 .record-filter-main-date {
@@ -433,12 +450,18 @@ function getFilterValue(key: string) {
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
-  padding: 0 2px;
+  min-height: 28px;
+  padding: 0 2px 4px;
 }
 
 .record-filter-tags-label {
   font-size: 12px;
-  color: rgba(0, 0, 0, 0.45);
+  color: rgba(15, 23, 42, 0.5);
+  font-weight: 600;
+}
+
+.record-filter-tag {
+  border-radius: 999px;
 }
 
 .record-table-toolbar {
@@ -447,6 +470,7 @@ function getFilterValue(key: string) {
   justify-content: space-between;
   gap: 12px;
   flex-wrap: wrap;
+  min-height: 36px;
 }
 
 .record-table-toolbar-main {
@@ -464,6 +488,13 @@ function getFilterValue(key: string) {
   flex-wrap: wrap;
 }
 
+.record-table-frame {
+  overflow: hidden;
+  border-radius: 12px;
+  border: 1px solid rgba(15, 23, 42, 0.06);
+  background: #fff;
+}
+
 .record-table {
   width: 100%;
 }
@@ -471,6 +502,7 @@ function getFilterValue(key: string) {
 .record-table-pagination {
   display: flex;
   justify-content: flex-end;
+  padding-top: 2px;
 }
 
 .record-table-tags {
@@ -495,5 +527,35 @@ function getFilterValue(key: string) {
 
 .record-table-empty {
   color: rgba(0, 0, 0, 0.45);
+}
+
+:deep(.el-input__wrapper),
+:deep(.el-select__wrapper),
+:deep(.el-date-editor.el-input__wrapper) {
+  min-height: 38px;
+  border-radius: 10px;
+  box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.08) inset;
+}
+
+:deep(.el-input__wrapper:hover),
+:deep(.el-select__wrapper:hover),
+:deep(.el-date-editor.el-input__wrapper:hover) {
+  box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.3) inset;
+}
+
+:deep(.el-table th.el-table__cell) {
+  background: linear-gradient(180deg, #f8fafc, #f1f5f9);
+}
+
+:deep(.el-table .cell) {
+  font-size: 13px;
+}
+
+:deep(.el-empty) {
+  padding: 48px 0 56px;
+}
+
+:deep(.el-empty__description p) {
+  color: rgba(15, 23, 42, 0.5);
 }
 </style>
