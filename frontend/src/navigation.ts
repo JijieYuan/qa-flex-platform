@@ -21,6 +21,7 @@ export type PageKey =
   | 'quality-board-home'
   | 'review-data-home'
   | 'code-review-home'
+  | 'code-review-illegal-records'
   | 'integration-test-home'
   | 'question-metrics-home'
   | 'customer-issues-home'
@@ -80,13 +81,13 @@ export const modules: ShellModule[] = [
     label: '代码走查',
     icon: Operation,
     title: '代码走查',
-    description: '预留后续统计分析页面。',
+    description: '承载代码走查相关的记录类页面与独立表单入口。',
     pages: [
       {
-        key: 'code-review-home',
-        label: '代码走查',
-        description: '当前模块暂未接入统计表。',
-        path: '/code-review/home',
+        key: 'code-review-illegal-records',
+        label: '代码走查非法记录',
+        description: '展示代码走查场景下的非法记录明细列表，并预留后续接入 GitLab 明细、标签和外部指标。',
+        path: '/code-review/illegal-records',
       },
     ],
   },

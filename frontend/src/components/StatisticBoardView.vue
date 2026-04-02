@@ -55,7 +55,7 @@ const props = withDefaults(
   },
 );
 
-const route = useRoute();
+const route = useRouter();
 const router = useRouter();
 
 function parsePositiveInteger(rawValue: unknown, fallback: number) {

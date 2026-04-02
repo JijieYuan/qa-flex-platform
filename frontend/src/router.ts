@@ -8,6 +8,7 @@ import DatabaseBrowserView from './components/DatabaseBrowserView.vue';
 import ModulePlaceholderView from './views/ModulePlaceholderView.vue';
 import NotFoundView from './views/NotFoundView.vue';
 import CollectFormView from './views/CollectFormView.vue';
+import CodeReviewIllegalRecordsView from './views/CodeReviewIllegalRecordsView.vue';
 
 declare module 'vue-router' {
   interface RouteMeta {
@@ -32,9 +33,9 @@ const routes: RouteRecordRaw[] = [
     component: CollectFormView,
     meta: {
       moduleKey: 'code-review',
-      pageKey: 'code-review-home',
+      pageKey: 'code-review-illegal-records',
       title: '代码走查表',
-      description: '通过独立链接打开的代码走查模板页。',
+      description: '通过独立链接打开的代码走查表单页。',
       standalone: true,
       allowedQueryKeys: ['gitlabBaseUrl', 'projectId', 'requestIid', 'mrIid', 'resourceType', 'resourceId', 'templateCode'],
       persistedQueryKeys: [],
@@ -66,12 +67,17 @@ const routes: RouteRecordRaw[] = [
   },
   {
     path: '/code-review/home',
-    component: ModulePlaceholderView,
+    redirect: '/code-review/illegal-records',
+  },
+  {
+    path: '/code-review/illegal-records',
+    component: CodeReviewIllegalRecordsView,
     meta: {
       moduleKey: 'code-review',
-      pageKey: 'code-review-home',
-      title: pageByKey.get('code-review-home')!.label,
-      description: pageByKey.get('code-review-home')!.description,
+      pageKey: 'code-review-illegal-records',
+      title: pageByKey.get('code-review-illegal-records')!.label,
+      description: pageByKey.get('code-review-illegal-records')!.description,
+      allowedQueryKeys: ['keyword', 'page', 'pageSize', 'sortBy', 'sortOrder', 'projectId'],
       persistedQueryKeys: ['projectId'],
     },
   },
