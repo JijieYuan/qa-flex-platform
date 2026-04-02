@@ -10,6 +10,32 @@ export interface RecordTableLinkValue {
   href: string;
 }
 
+export interface RecordTableFilterOption {
+  label: string;
+  value: string;
+}
+
+export type RecordTableFilterType = 'input' | 'select' | 'daterange';
+
+export interface RecordTableFilterField {
+  key: string;
+  label: string;
+  type: RecordTableFilterType;
+  placeholder?: string;
+  width?: number;
+  advanced?: boolean;
+  clearable?: boolean;
+  options?: RecordTableFilterOption[];
+  startPlaceholder?: string;
+  endPlaceholder?: string;
+}
+
+export interface RecordTableActiveFilterTag {
+  key: string;
+  label: string;
+  value: string;
+}
+
 export interface RecordTableColumn {
   key: string;
   label: string;

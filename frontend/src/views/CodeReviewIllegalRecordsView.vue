@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue';
 import BaseRecordTable from '../components/base/BaseRecordTable.vue';
 import { useRouteTableState } from '../composables/useRouteTableState';
-import type { RecordTableColumn } from '../types/record-table';
+import type { RecordTableActiveFilterTag, RecordTableColumn, RecordTableFilterField } from '../types/record-table';
 
 const { route, page, pageSize, sortBy, sortOrder, patchQuery } = useRouteTableState({
   defaults: {
@@ -14,21 +14,114 @@ const { route, page, pageSize, sortBy, sortOrder, patchQuery } = useRouteTableSt
 });
 
 const advancedVisible = ref(false);
-const repositoryName = computed(() => String(route.query.repositoryName ?? ''));
-const mergedAtRange = computed<[string, string] | []>(() => {
+
+const filterValues = computed<Record<string, unknown>>(() => {
   const start = String(route.query.mergedAtStart ?? '');
   const end = String(route.query.mergedAtEnd ?? '');
-  return start && end ? [start, end] : [];
+  return {
+    repositoryName: String(route.query.repositoryName ?? ''),
+    mergedAtRange: start && end ? [start, end] : [],
+    illegalType: String(route.query.illegalType ?? ''),
+    keyword: String(route.query.keyword ?? ''),
+    requestType: String(route.query.requestType ?? ''),
+    mergeRequestIid: String(route.query.mergeRequestIid ?? ''),
+    owner: String(route.query.owner ?? ''),
+    targetBranch: String(route.query.targetBranch ?? ''),
+    mergedBy: String(route.query.mergedBy ?? ''),
+    moduleName: String(route.query.moduleName ?? ''),
+    projectName: String(route.query.projectName ?? ''),
+  };
 });
-const keyword = computed(() => String(route.query.keyword ?? ''));
-const projectName = computed(() => String(route.query.projectName ?? ''));
-const requestType = computed(() => String(route.query.requestType ?? ''));
-const targetBranch = computed(() => String(route.query.targetBranch ?? ''));
-const mergedBy = computed(() => String(route.query.mergedBy ?? ''));
-const moduleName = computed(() => String(route.query.moduleName ?? ''));
-const illegalType = computed(() => String(route.query.illegalType ?? ''));
-const mergeRequestIid = computed(() => String(route.query.mergeRequestIid ?? ''));
-const owner = computed(() => String(route.query.owner ?? ''));
+
+const primaryFilters = computed<RecordTableFilterField[]>(() => [
+  {
+    key: 'repositoryName',
+    label: '代码库',
+    type: 'select',
+    width: 180,
+    options: [{ label: '全部代码库', value: '' }],
+  },
+  {
+    key: 'mergedAtRange',
+    label: '合并时间',
+    type: 'daterange',
+    width: 280,
+    startPlaceholder: '开始日期',
+    endPlaceholder: '结束日期',
+  },
+  {
+    key: 'illegalType',
+    label: '非法类型',
+    type: 'select',
+    width: 180,
+    options: [{ label: '全部非法类型', value: '' }],
+  },
+  {
+    key: 'keyword',
+    label: '关键字',
+    type: 'input',
+    width: 260,
+    placeholder: '搜索合并请求内容、责任人或项目',
+  },
+]);
+
+const advancedFilters = computed<RecordTableFilterField[]>(() => [
+  {
+    key: 'requestType',
+    label: '请求类型',
+    type: 'select',
+    options: [
+      { label: '全部请求类型', value: '' },
+      { label: '合并请求', value: 'merge_request' },
+      { label: '议题', value: 'issue' },
+    ],
+  },
+  { key: 'mergeRequestIid', label: '合并请求编号', type: 'input', placeholder: '合并请求编号' },
+  { key: 'owner', label: '被挂责任人', type: 'input', placeholder: '被挂责任人' },
+  {
+    key: 'targetBranch',
+    label: '目标分支',
+    type: 'select',
+    options: [{ label: '全部目标分支', value: '' }],
+  },
+  {
+    key: 'mergedBy',
+    label: '合并人',
+    type: 'select',
+    options: [{ label: '全部合并人', value: '' }],
+  },
+  {
+    key: 'moduleName',
+    label: '模块名称',
+    type: 'select',
+    options: [{ label: '全部模块名称', value: '' }],
+  },
+  {
+    key: 'projectName',
+    label: '项目名称',
+    type: 'select',
+    options: [{ label: '全部项目名称', value: '' }],
+  },
+]);
+
+const activeFilterTags = computed<RecordTableActiveFilterTag[]>(() => {
+  const values = filterValues.value;
+  const tags: RecordTableActiveFilterTag[] = [];
+  if (values.repositoryName) tags.push({ key: 'repositoryName', label: '代码库', value: String(values.repositoryName) });
+  if (Array.isArray(values.mergedAtRange) && values.mergedAtRange.length === 2) {
+    tags.push({ key: 'mergedAtRange', label: '合并时间', value: `${values.mergedAtRange[0]} ~ ${values.mergedAtRange[1]}` });
+  }
+  if (values.illegalType) tags.push({ key: 'illegalType', label: '非法类型', value: String(values.illegalType) });
+  if (values.keyword) tags.push({ key: 'keyword', label: '关键字', value: String(values.keyword) });
+  if (values.requestType) tags.push({ key: 'requestType', label: '请求类型', value: String(values.requestType) });
+  if (values.mergeRequestIid) tags.push({ key: 'mergeRequestIid', label: '合并请求编号', value: String(values.mergeRequestIid) });
+  if (values.owner) tags.push({ key: 'owner', label: '被挂责任人', value: String(values.owner) });
+  if (values.targetBranch) tags.push({ key: 'targetBranch', label: '目标分支', value: String(values.targetBranch) });
+  if (values.mergedBy) tags.push({ key: 'mergedBy', label: '合并人', value: String(values.mergedBy) });
+  if (values.moduleName) tags.push({ key: 'moduleName', label: '模块名称', value: String(values.moduleName) });
+  if (values.projectName) tags.push({ key: 'projectName', label: '项目名称', value: String(values.projectName) });
+  return tags;
+});
 
 const columns = computed<RecordTableColumn[]>(() => [
   { key: 'mergeRequestIid', label: '合并请求编号', type: 'number', sortable: true, width: 128, fixed: 'left' },
@@ -48,49 +141,20 @@ const columns = computed<RecordTableColumn[]>(() => [
 const rows = computed<Record<string, unknown>[]>(() => []);
 const total = computed(() => 0);
 
-const repositoryNameOptions = [
-  { label: '全部代码库', value: '' },
-] as const;
+async function handleFilterChange(payload: { key: string; value: string | string[] | null }) {
+  if (payload.key === 'mergedAtRange') {
+    const [start, end] = Array.isArray(payload.value) ? payload.value : [];
+    await patchQuery({
+      page: 1,
+      mergedAtStart: start || null,
+      mergedAtEnd: end || null,
+    });
+    return;
+  }
 
-const requestTypeOptions = [
-  { label: '全部请求类型', value: '' },
-  { label: '合并请求', value: 'merge_request' },
-  { label: '议题', value: 'issue' },
-] as const;
-
-const targetBranchOptions = [
-  { label: '全部目标分支', value: '' },
-] as const;
-
-const mergedByOptions = [
-  { label: '全部合并人', value: '' },
-] as const;
-
-const moduleNameOptions = [
-  { label: '全部模块名', value: '' },
-] as const;
-
-const illegalTypeOptions = [
-  { label: '全部非法类型', value: '' },
-] as const;
-
-const projectNameOptions = [
-  { label: '全部项目名称', value: '' },
-] as const;
-
-async function handleFilterChange(patch: Record<string, string>) {
   await patchQuery({
     page: 1,
-    ...patch,
-  });
-}
-
-async function handleDateRangeChange(range: string[] | null) {
-  const [start, end] = Array.isArray(range) ? range : [];
-  await patchQuery({
-    page: 1,
-    mergedAtStart: start || null,
-    mergedAtEnd: end || null,
+    [payload.key]: Array.isArray(payload.value) ? payload.value[0] ?? null : payload.value,
   });
 }
 
@@ -118,6 +182,10 @@ async function handleRefresh() {
   await patchQuery({});
 }
 
+async function handleQuery() {
+  await patchQuery({ page: 1 });
+}
+
 async function handleSizeChange(nextSize: number) {
   await patchQuery({
     pageSize: nextSize,
@@ -139,25 +207,7 @@ async function handleSortChange(payload: { prop: string; order: 'ascending' | 'd
   });
 }
 
-const activeFilterTags = computed(() => {
-  const tags: Array<{ key: string; label: string; value: string }> = [];
-  if (repositoryName.value) tags.push({ key: 'repositoryName', label: '代码库', value: repositoryName.value });
-  if (mergedAtRange.value.length === 2) {
-    tags.push({ key: 'mergedAtRange', label: '合并时间', value: `${mergedAtRange.value[0]} ~ ${mergedAtRange.value[1]}` });
-  }
-  if (illegalType.value) tags.push({ key: 'illegalType', label: '非法类型', value: illegalType.value });
-  if (keyword.value) tags.push({ key: 'keyword', label: '关键字', value: keyword.value });
-  if (requestType.value) tags.push({ key: 'requestType', label: '请求类型', value: requestType.value });
-  if (mergeRequestIid.value) tags.push({ key: 'mergeRequestIid', label: '合并请求编号', value: mergeRequestIid.value });
-  if (owner.value) tags.push({ key: 'owner', label: '被挂责任人', value: owner.value });
-  if (targetBranch.value) tags.push({ key: 'targetBranch', label: '目标分支', value: targetBranch.value });
-  if (mergedBy.value) tags.push({ key: 'mergedBy', label: '合并人', value: mergedBy.value });
-  if (moduleName.value) tags.push({ key: 'moduleName', label: '模块名称', value: moduleName.value });
-  if (projectName.value) tags.push({ key: 'projectName', label: '项目名称', value: projectName.value });
-  return tags;
-});
-
-async function clearFilterTag(key: string) {
+async function handleClearFilter(key: string) {
   if (key === 'mergedAtRange') {
     await patchQuery({
       page: 1,
@@ -166,6 +216,7 @@ async function clearFilterTag(key: string) {
     });
     return;
   }
+
   await patchQuery({
     page: 1,
     [key]: null,
@@ -175,141 +226,6 @@ async function clearFilterTag(key: string) {
 
 <template>
   <section class="record-page-shell">
-    <el-card shadow="never" class="record-filter-card">
-      <div class="record-filter-primary">
-        <el-select
-          :model-value="repositoryName"
-          class="record-filter-main-select"
-          placeholder="代码库"
-          @change="handleFilterChange({ repositoryName: String($event ?? '') })"
-        >
-          <el-option
-            v-for="option in repositoryNameOptions"
-            :key="option.value"
-            :label="option.label"
-            :value="option.value"
-          />
-        </el-select>
-
-        <el-date-picker
-          :model-value="mergedAtRange"
-          class="record-filter-main-date"
-          type="daterange"
-          range-separator="至"
-          start-placeholder="开始日期"
-          end-placeholder="结束日期"
-          value-format="YYYY-MM-DD"
-          @change="handleDateRangeChange"
-        />
-
-        <el-select
-          :model-value="illegalType"
-          class="record-filter-main-select"
-          placeholder="非法类型"
-          @change="handleFilterChange({ illegalType: String($event ?? '') })"
-        >
-          <el-option v-for="option in illegalTypeOptions" :key="option.value" :label="option.label" :value="option.value" />
-        </el-select>
-
-        <el-input
-          :model-value="keyword"
-          class="record-filter-main-keyword"
-          placeholder="搜索合并请求内容、责任人或项目"
-          clearable
-          @change="handleFilterChange({ keyword: String($event ?? '') })"
-          @clear="handleFilterChange({ keyword: '' })"
-        />
-
-        <div class="record-filter-primary-actions">
-          <el-button @click="advancedVisible = !advancedVisible">
-            {{ advancedVisible ? '收起高级筛选' : '高级筛选' }}
-          </el-button>
-          <el-button @click="handleReset">重置</el-button>
-          <el-button type="primary" @click="handleRefresh">查询</el-button>
-        </div>
-      </div>
-
-      <el-collapse-transition>
-        <div v-show="advancedVisible" class="record-filter-advanced">
-          <el-select
-            :model-value="requestType"
-            class="record-filter-select"
-            placeholder="请求类型"
-            @change="handleFilterChange({ requestType: String($event ?? '') })"
-          >
-            <el-option v-for="option in requestTypeOptions" :key="option.value" :label="option.label" :value="option.value" />
-          </el-select>
-
-          <el-input
-            :model-value="mergeRequestIid"
-            class="record-filter-input"
-            placeholder="合并请求编号"
-            clearable
-            @change="handleFilterChange({ mergeRequestIid: String($event ?? '') })"
-            @clear="handleFilterChange({ mergeRequestIid: '' })"
-          />
-
-          <el-input
-            :model-value="owner"
-            class="record-filter-input"
-            placeholder="被挂责任人"
-            clearable
-            @change="handleFilterChange({ owner: String($event ?? '') })"
-            @clear="handleFilterChange({ owner: '' })"
-          />
-
-          <el-select
-            :model-value="targetBranch"
-            class="record-filter-select"
-            placeholder="目标分支"
-            @change="handleFilterChange({ targetBranch: String($event ?? '') })"
-          >
-            <el-option v-for="option in targetBranchOptions" :key="option.value" :label="option.label" :value="option.value" />
-          </el-select>
-
-          <el-select
-            :model-value="mergedBy"
-            class="record-filter-select"
-            placeholder="合并人"
-            @change="handleFilterChange({ mergedBy: String($event ?? '') })"
-          >
-            <el-option v-for="option in mergedByOptions" :key="option.value" :label="option.label" :value="option.value" />
-          </el-select>
-
-          <el-select
-            :model-value="moduleName"
-            class="record-filter-select"
-            placeholder="模块名称"
-            @change="handleFilterChange({ moduleName: String($event ?? '') })"
-          >
-            <el-option v-for="option in moduleNameOptions" :key="option.value" :label="option.label" :value="option.value" />
-          </el-select>
-
-          <el-select
-            :model-value="projectName"
-            class="record-filter-select"
-            placeholder="项目名称"
-            @change="handleFilterChange({ projectName: String($event ?? '') })"
-          >
-            <el-option v-for="option in projectNameOptions" :key="option.value" :label="option.label" :value="option.value" />
-          </el-select>
-        </div>
-      </el-collapse-transition>
-    </el-card>
-
-    <div v-if="activeFilterTags.length" class="record-filter-tags">
-      <span class="record-filter-tags-label">已选条件</span>
-      <el-tag
-        v-for="tag in activeFilterTags"
-        :key="tag.key"
-        closable
-        effect="plain"
-        @close="clearFilterTag(tag.key)"
-      >
-        {{ tag.label }}：{{ tag.value }}
-      </el-tag>
-    </div>
-
     <BaseRecordTable
       :columns="columns"
       :rows="rows"
@@ -317,8 +233,19 @@ async function clearFilterTag(key: string) {
       :page="page"
       :page-size="pageSize"
       :total="total"
+      :primary-filters="primaryFilters"
+      :advanced-filters="advancedFilters"
+      :filter-values="filterValues"
+      :active-filter-tags="activeFilterTags"
+      :advanced-visible="advancedVisible"
       empty-description="当前尚未接入真实非法记录数据，先保留真实表头和空表结构。"
       :show-search="false"
+      @filter-change="handleFilterChange"
+      @reset="handleReset"
+      @refresh="handleRefresh"
+      @query="handleQuery"
+      @clear-filter="handleClearFilter"
+      @update:advanced-visible="advancedVisible = $event"
       @size-change="handleSizeChange"
       @current-change="handleCurrentChange"
       @sort-change="handleSortChange"
@@ -337,69 +264,6 @@ async function clearFilterTag(key: string) {
 .record-page-shell {
   display: grid;
   gap: 12px;
-}
-
-.record-filter-card {
-  border-radius: 12px;
-}
-
-.record-filter-primary {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.record-filter-primary-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-left: auto;
-  flex-wrap: wrap;
-}
-
-.record-filter-advanced {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  margin-top: 12px;
-  padding-top: 12px;
-  border-top: 1px solid rgba(0, 0, 0, 0.06);
-}
-
-.record-filter-main-select {
-  width: 180px;
-}
-
-.record-filter-main-date {
-  width: 280px;
-}
-
-.record-filter-main-keyword {
-  width: 260px;
-}
-
-.record-filter-tags {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  padding: 0 2px;
-}
-
-.record-filter-tags-label {
-  font-size: 12px;
-  color: rgba(0, 0, 0, 0.45);
-}
-
-.record-filter-select,
-.record-filter-input {
-  width: 168px;
-}
-
-.record-filter-select-wide {
-  width: 180px;
 }
 
 .record-page-summary {

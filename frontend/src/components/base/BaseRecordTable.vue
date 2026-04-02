@@ -1,7 +1,13 @@
 <script setup lang="ts">
-import { Refresh, Search } from '@element-plus/icons-vue';
 import { computed, ref, useSlots, watch } from 'vue';
-import type { RecordTableColumn, RecordTableLinkValue, RecordTableTagValue } from '../../types/record-table';
+import { Refresh, Search } from '@element-plus/icons-vue';
+import type {
+  RecordTableActiveFilterTag,
+  RecordTableColumn,
+  RecordTableFilterField,
+  RecordTableLinkValue,
+  RecordTableTagValue,
+} from '../../types/record-table';
 
 const props = withDefaults(
   defineProps<{
@@ -17,6 +23,12 @@ const props = withDefaults(
     emptyDescription?: string;
     showSearch?: boolean;
     showRefresh?: boolean;
+    primaryFilters?: RecordTableFilterField[];
+    advancedFilters?: RecordTableFilterField[];
+    filterValues?: Record<string, unknown>;
+    activeFilterTags?: RecordTableActiveFilterTag[];
+    advancedVisible?: boolean;
+    queryButtonText?: string;
   }>(),
   {
     loading: false,
@@ -26,6 +38,12 @@ const props = withDefaults(
     emptyDescription: '当前暂无可展示记录',
     showSearch: true,
     showRefresh: true,
+    primaryFilters: () => [],
+    advancedFilters: () => [],
+    filterValues: () => ({}),
+    activeFilterTags: () => [],
+    advancedVisible: false,
+    queryButtonText: '查询',
   },
 );
 
@@ -36,6 +54,10 @@ const emit = defineEmits<{
   (event: 'size-change', size: number): void;
   (event: 'current-change', page: number): void;
   (event: 'sort-change', payload: { prop: string; order: 'ascending' | 'descending' | null }): void;
+  (event: 'filter-change', payload: { key: string; value: string | string[] | null }): void;
+  (event: 'query'): void;
+  (event: 'clear-filter', key: string): void;
+  (event: 'update:advancedVisible', value: boolean): void;
 }>();
 
 const keywordDraft = ref(props.keyword);
@@ -49,6 +71,9 @@ watch(
 
 const slots = useSlots();
 const hasRowActions = computed(() => Boolean(slots['row-actions']));
+const hasPrimaryFilters = computed(() => props.primaryFilters.length > 0);
+const hasAdvancedFilters = computed(() => props.advancedFilters.length > 0);
+const hasActiveFilterTags = computed(() => props.activeFilterTags.length > 0);
 
 function normalizeTagList(value: unknown): RecordTableTagValue[] {
   if (!Array.isArray(value)) {
@@ -117,15 +142,68 @@ function handleReset() {
   keywordDraft.value = '';
   emit('reset');
 }
+
+function handleFilterChange(key: string, value: string | string[] | null) {
+  emit('filter-change', { key, value });
+}
+
+function toggleAdvancedVisible() {
+  emit('update:advancedVisible', !props.advancedVisible);
+}
+
+function getFilterValue(key: string) {
+  return props.filterValues[key];
+}
 </script>
 
 <template>
   <div class="record-table-card">
-    <div class="record-table-toolbar">
-      <div class="record-table-toolbar-main">
-        <slot name="toolbar-prefix" />
+    <el-card v-if="hasPrimaryFilters || hasAdvancedFilters || showSearch" shadow="never" class="record-filter-card">
+      <div class="record-filter-primary">
+        <template v-for="filter in primaryFilters" :key="filter.key">
+          <el-input
+            v-if="filter.type === 'input'"
+            :model-value="String(getFilterValue(filter.key) ?? '')"
+            :class="['record-filter-input', { 'record-filter-main-keyword': filter.key === 'keyword' }]"
+            :style="{ width: `${filter.width ?? (filter.key === 'keyword' ? 260 : 168)}px` }"
+            :placeholder="filter.placeholder || filter.label"
+            :clearable="filter.clearable ?? true"
+            @change="handleFilterChange(filter.key, String($event ?? ''))"
+            @clear="handleFilterChange(filter.key, '')"
+          />
+
+          <el-select
+            v-else-if="filter.type === 'select'"
+            :model-value="String(getFilterValue(filter.key) ?? '')"
+            class="record-filter-select"
+            :style="{ width: `${filter.width ?? 180}px` }"
+            :placeholder="filter.placeholder || filter.label"
+            @change="handleFilterChange(filter.key, String($event ?? ''))"
+          >
+            <el-option
+              v-for="option in filter.options ?? []"
+              :key="option.value"
+              :label="option.label"
+              :value="option.value"
+            />
+          </el-select>
+
+          <el-date-picker
+            v-else-if="filter.type === 'daterange'"
+            :model-value="(getFilterValue(filter.key) as string[]) ?? []"
+            class="record-filter-main-date"
+            :style="{ width: `${filter.width ?? 280}px` }"
+            type="daterange"
+            range-separator="至"
+            :start-placeholder="filter.startPlaceholder || '开始日期'"
+            :end-placeholder="filter.endPlaceholder || '结束日期'"
+            value-format="YYYY-MM-DD"
+            @change="handleFilterChange(filter.key, Array.isArray($event) ? $event : null)"
+          />
+        </template>
+
         <el-input
-          v-if="showSearch"
+          v-if="showSearch && !primaryFilters.some((item) => item.key === 'keyword')"
           v-model="keywordDraft"
           class="record-table-search"
           :placeholder="searchPlaceholder"
@@ -137,12 +215,70 @@ function handleReset() {
             <el-icon><Search /></el-icon>
           </template>
         </el-input>
+
+        <div class="record-filter-primary-actions">
+          <el-button v-if="hasAdvancedFilters" @click="toggleAdvancedVisible">
+            {{ advancedVisible ? '收起高级筛选' : '高级筛选' }}
+          </el-button>
+          <el-button @click="handleReset">重置</el-button>
+          <el-button type="primary" @click="emit('query')">{{ queryButtonText }}</el-button>
+        </div>
+      </div>
+
+      <el-collapse-transition>
+        <div v-show="advancedVisible && hasAdvancedFilters" class="record-filter-advanced">
+          <template v-for="filter in advancedFilters" :key="filter.key">
+            <el-input
+              v-if="filter.type === 'input'"
+              :model-value="String(getFilterValue(filter.key) ?? '')"
+              class="record-filter-input"
+              :style="{ width: `${filter.width ?? 168}px` }"
+              :placeholder="filter.placeholder || filter.label"
+              :clearable="filter.clearable ?? true"
+              @change="handleFilterChange(filter.key, String($event ?? ''))"
+              @clear="handleFilterChange(filter.key, '')"
+            />
+
+            <el-select
+              v-else-if="filter.type === 'select'"
+              :model-value="String(getFilterValue(filter.key) ?? '')"
+              class="record-filter-select"
+              :style="{ width: `${filter.width ?? 168}px` }"
+              :placeholder="filter.placeholder || filter.label"
+              @change="handleFilterChange(filter.key, String($event ?? ''))"
+            >
+              <el-option
+                v-for="option in filter.options ?? []"
+                :key="option.value"
+                :label="option.label"
+                :value="option.value"
+              />
+            </el-select>
+          </template>
+        </div>
+      </el-collapse-transition>
+    </el-card>
+
+    <div v-if="hasActiveFilterTags" class="record-filter-tags">
+      <span class="record-filter-tags-label">已选条件</span>
+      <el-tag
+        v-for="tag in activeFilterTags"
+        :key="tag.key"
+        closable
+        effect="plain"
+        @close="emit('clear-filter', tag.key)"
+      >
+        {{ tag.label }}：{{ tag.value }}
+      </el-tag>
+    </div>
+
+    <div class="record-table-toolbar">
+      <div class="record-table-toolbar-main">
+        <slot name="toolbar-prefix" />
       </div>
 
       <div class="record-table-toolbar-actions">
         <slot name="toolbar-actions" />
-        <el-button v-if="showSearch" type="primary" @click="handleSearch">搜索</el-button>
-        <el-button v-if="showSearch" @click="handleReset">重置</el-button>
         <el-button v-if="showRefresh" :icon="Refresh" @click="emit('refresh')">刷新</el-button>
       </div>
     </div>
@@ -249,6 +385,62 @@ function handleReset() {
   gap: 12px;
 }
 
+.record-filter-card {
+  border-radius: 12px;
+}
+
+.record-filter-primary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.record-filter-primary-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  flex-wrap: wrap;
+}
+
+.record-filter-advanced {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.record-filter-main-date {
+  width: 280px;
+}
+
+.record-filter-main-keyword {
+  width: 260px;
+}
+
+.record-filter-select,
+.record-filter-input,
+.record-table-search {
+  width: 168px;
+}
+
+.record-filter-tags {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 0 2px;
+}
+
+.record-filter-tags-label {
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.45);
+}
+
 .record-table-toolbar {
   display: flex;
   align-items: center;
@@ -263,10 +455,6 @@ function handleReset() {
   gap: 12px;
   flex: 1 1 560px;
   flex-wrap: wrap;
-}
-
-.record-table-search {
-  width: 320px;
 }
 
 .record-table-toolbar-actions {
