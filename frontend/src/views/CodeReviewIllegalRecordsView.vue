@@ -4,15 +4,23 @@ import BaseRecordTable from '../components/base/BaseRecordTable.vue';
 import { useRouteTableState } from '../composables/useRouteTableState';
 import type { RecordTableColumn } from '../types/record-table';
 
-const { page, pageSize, sortBy, sortOrder, keyword, patchQuery } = useRouteTableState({
+const { route, page, pageSize, sortBy, sortOrder, patchQuery } = useRouteTableState({
   defaults: {
     page: 1,
     pageSize: 20,
     sortBy: 'mergedAt',
     sortOrder: 'desc',
-    keyword: '',
   },
 });
+
+const projectName = computed(() => String(route.query.projectName ?? ''));
+const requestType = computed(() => String(route.query.requestType ?? ''));
+const targetBranch = computed(() => String(route.query.targetBranch ?? ''));
+const mergedBy = computed(() => String(route.query.mergedBy ?? ''));
+const moduleName = computed(() => String(route.query.moduleName ?? ''));
+const illegalType = computed(() => String(route.query.illegalType ?? ''));
+const mergeRequestIid = computed(() => String(route.query.mergeRequestIid ?? ''));
+const owner = computed(() => String(route.query.owner ?? ''));
 
 const columns = computed<RecordTableColumn[]>(() => [
   { key: 'mergeRequestIid', label: '合并请求编号', type: 'number', sortable: true, width: 128, fixed: 'left' },
@@ -32,19 +40,52 @@ const columns = computed<RecordTableColumn[]>(() => [
 const rows = computed<Record<string, unknown>[]>(() => []);
 const total = computed(() => 0);
 
-async function handleSearch(nextKeyword: string) {
+const requestTypeOptions = [
+  { label: '全部请求类型', value: '' },
+  { label: '合并请求', value: 'merge_request' },
+  { label: '议题', value: 'issue' },
+] as const;
+
+const targetBranchOptions = [
+  { label: '全部目标分支', value: '' },
+] as const;
+
+const mergedByOptions = [
+  { label: '全部合并人', value: '' },
+] as const;
+
+const moduleNameOptions = [
+  { label: '全部模块名', value: '' },
+] as const;
+
+const illegalTypeOptions = [
+  { label: '全部非法类型', value: '' },
+] as const;
+
+const projectNameOptions = [
+  { label: '全部项目名称', value: '' },
+] as const;
+
+async function handleFilterChange(patch: Record<string, string>) {
   await patchQuery({
-    keyword: nextKeyword,
     page: 1,
+    ...patch,
   });
 }
 
 async function handleReset() {
   await patchQuery({
-    keyword: '',
     page: 1,
     sortBy: 'mergedAt',
     sortOrder: 'desc',
+    projectName: null,
+    requestType: null,
+    targetBranch: null,
+    mergedBy: null,
+    moduleName: null,
+    illegalType: null,
+    mergeRequestIid: null,
+    owner: null,
   });
 }
 
@@ -80,13 +121,11 @@ async function handleSortChange(payload: { prop: string; order: 'ascending' | 'd
       :columns="columns"
       :rows="rows"
       :loading="false"
-      :keyword="keyword"
       :page="page"
       :page-size="pageSize"
       :total="total"
-      search-placeholder="请输入合并请求编号、内容、责任人、项目或非法类型"
       empty-description="当前尚未接入真实非法记录数据，先保留真实表头和空表结构。"
-      @search="handleSearch"
+      :show-search="false"
       @reset="handleReset"
       @refresh="handleRefresh"
       @size-change="handleSizeChange"
@@ -94,6 +133,82 @@ async function handleSortChange(payload: { prop: string; order: 'ascending' | 'd
       @sort-change="handleSortChange"
     >
       <template #toolbar-prefix>
+        <div class="record-page-filters">
+          <el-select
+            :model-value="requestType"
+            class="record-filter-select record-filter-select-wide"
+            placeholder="请求类型"
+            @change="handleFilterChange({ requestType: String($event ?? '') })"
+          >
+            <el-option v-for="option in requestTypeOptions" :key="option.value" :label="option.label" :value="option.value" />
+          </el-select>
+
+          <el-input
+            :model-value="mergeRequestIid"
+            class="record-filter-input"
+            placeholder="合并请求编号"
+            clearable
+            @change="handleFilterChange({ mergeRequestIid: String($event ?? '') })"
+            @clear="handleFilterChange({ mergeRequestIid: '' })"
+          />
+
+          <el-input
+            :model-value="owner"
+            class="record-filter-input"
+            placeholder="被挂责任人"
+            clearable
+            @change="handleFilterChange({ owner: String($event ?? '') })"
+            @clear="handleFilterChange({ owner: '' })"
+          />
+
+          <el-select
+            :model-value="targetBranch"
+            class="record-filter-select"
+            placeholder="目标分支"
+            @change="handleFilterChange({ targetBranch: String($event ?? '') })"
+          >
+            <el-option v-for="option in targetBranchOptions" :key="option.value" :label="option.label" :value="option.value" />
+          </el-select>
+
+          <el-select
+            :model-value="mergedBy"
+            class="record-filter-select"
+            placeholder="合并人"
+            @change="handleFilterChange({ mergedBy: String($event ?? '') })"
+          >
+            <el-option v-for="option in mergedByOptions" :key="option.value" :label="option.label" :value="option.value" />
+          </el-select>
+
+          <el-select
+            :model-value="moduleName"
+            class="record-filter-select"
+            placeholder="模块名称"
+            @change="handleFilterChange({ moduleName: String($event ?? '') })"
+          >
+            <el-option v-for="option in moduleNameOptions" :key="option.value" :label="option.label" :value="option.value" />
+          </el-select>
+
+          <el-select
+            :model-value="illegalType"
+            class="record-filter-select"
+            placeholder="非法类型"
+            @change="handleFilterChange({ illegalType: String($event ?? '') })"
+          >
+            <el-option v-for="option in illegalTypeOptions" :key="option.value" :label="option.label" :value="option.value" />
+          </el-select>
+
+          <el-select
+            :model-value="projectName"
+            class="record-filter-select"
+            placeholder="项目名称"
+            @change="handleFilterChange({ projectName: String($event ?? '') })"
+          >
+            <el-option v-for="option in projectNameOptions" :key="option.value" :label="option.label" :value="option.value" />
+          </el-select>
+        </div>
+      </template>
+
+      <template #toolbar-actions>
         <div class="record-page-summary">
           <span class="record-page-summary-label">当前排序</span>
           <el-tag effect="plain">{{ sortBy || 'mergedAt' }} / {{ sortOrder || 'desc' }}</el-tag>
@@ -107,6 +222,23 @@ async function handleSortChange(payload: { prop: string; order: 'ascending' | 'd
 .record-page-shell {
   display: grid;
   gap: 12px;
+}
+
+.record-page-filters {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  flex: 1 1 auto;
+}
+
+.record-filter-select,
+.record-filter-input {
+  width: 168px;
+}
+
+.record-filter-select-wide {
+  width: 180px;
 }
 
 .record-page-summary {
