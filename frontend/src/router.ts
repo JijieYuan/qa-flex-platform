@@ -83,6 +83,7 @@ const routes: RouteRecordRaw[] = [
         'sortBy',
         'sortOrder',
         'projectId',
+        'repositoryName',
         'projectName',
         'requestType',
         'targetBranch',

@@ -13,6 +13,7 @@ const { route, page, pageSize, sortBy, sortOrder, patchQuery } = useRouteTableSt
   },
 });
 
+const repositoryName = computed(() => String(route.query.repositoryName ?? ''));
 const projectName = computed(() => String(route.query.projectName ?? ''));
 const requestType = computed(() => String(route.query.requestType ?? ''));
 const targetBranch = computed(() => String(route.query.targetBranch ?? ''));
@@ -39,6 +40,10 @@ const columns = computed<RecordTableColumn[]>(() => [
 
 const rows = computed<Record<string, unknown>[]>(() => []);
 const total = computed(() => 0);
+
+const repositoryNameOptions = [
+  { label: '全部代码库', value: '' },
+] as const;
 
 const requestTypeOptions = [
   { label: '全部请求类型', value: '' },
@@ -78,6 +83,7 @@ async function handleReset() {
     page: 1,
     sortBy: 'mergedAt',
     sortOrder: 'desc',
+    repositoryName: null,
     projectName: null,
     requestType: null,
     targetBranch: null,
@@ -134,6 +140,20 @@ async function handleSortChange(payload: { prop: string; order: 'ascending' | 'd
     >
       <template #toolbar-prefix>
         <div class="record-page-filters">
+          <el-select
+            :model-value="repositoryName"
+            class="record-filter-select"
+            placeholder="代码库"
+            @change="handleFilterChange({ repositoryName: String($event ?? '') })"
+          >
+            <el-option
+              v-for="option in repositoryNameOptions"
+              :key="option.value"
+              :label="option.label"
+              :value="option.value"
+            />
+          </el-select>
+
           <el-select
             :model-value="requestType"
             class="record-filter-select record-filter-select-wide"
