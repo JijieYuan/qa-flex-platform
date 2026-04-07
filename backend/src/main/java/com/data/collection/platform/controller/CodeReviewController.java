@@ -3,8 +3,10 @@ package com.data.collection.platform.controller;
 import com.data.collection.platform.common.response.ApiResponse;
 import com.data.collection.platform.entity.CodeReviewIllegalRecordFilterOptionsResponse;
 import com.data.collection.platform.entity.CodeReviewIllegalRecordListResponse;
+import com.data.collection.platform.entity.RealtimeWorkspaceStatusResponse;
 import com.data.collection.platform.service.CodeReviewIllegalRecordService;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -63,5 +65,15 @@ public class CodeReviewController {
   public ApiResponse<CodeReviewIllegalRecordFilterOptionsResponse> getIllegalRecordFilterOptions(
       @RequestParam(required = false) Long projectId) {
     return ApiResponse.success(codeReviewIllegalRecordService.getFilterOptions(projectId));
+  }
+
+  @GetMapping("/illegal-records/status")
+  public ApiResponse<RealtimeWorkspaceStatusResponse> getIllegalRecordRealtimeStatus() {
+    return ApiResponse.success(codeReviewIllegalRecordService.getRealtimeStatus());
+  }
+
+  @PostMapping("/illegal-records/refresh")
+  public ApiResponse<RealtimeWorkspaceStatusResponse> refreshIllegalRecords() {
+    return ApiResponse.success("已开始刷新最新数据", codeReviewIllegalRecordService.requestRealtimeRefresh());
   }
 }

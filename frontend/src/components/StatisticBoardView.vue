@@ -1,11 +1,13 @@
 ﻿<script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue';
 import { ArrowDown, ArrowUp, Download, RefreshRight, Search, Sort } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
 import { useRoute, useRouter } from 'vue-router';
 import BaseStatisticTable from './base/BaseStatisticTable.vue';
+import RealtimeDataShell from './realtime/RealtimeDataShell.vue';
 import {
   api,
+  type RealtimeWorkspaceStatusResponse,
   type StatisticBoardResponse,
   type StatisticCellData,
   type StatisticColumnGroup,
@@ -57,6 +59,11 @@ const props = withDefaults(
 
 const route = useRoute();
 const router = useRouter();
+const realtimeEnabled = computed(() => props.boardKey === 'system-test-defect-summary');
+const realtimeStatus = ref<RealtimeWorkspaceStatusResponse | null>(null);
+const realtimeRefreshing = ref(false);
+let realtimePollTimer: number | null = null;
+let silentRealtimeRefreshTriggered = false;
 
 function parsePositiveInteger(rawValue: unknown, fallback: number) {
   const parsed = Number.parseInt(String(rawValue ?? ''), 10);
@@ -371,6 +378,13 @@ async function loadBoard(showError = true) {
   }
 }
 
+async function loadRealtimeStatus() {
+  if (!realtimeEnabled.value) {
+    return;
+  }
+  realtimeStatus.value = await api.getStatisticBoardRealtimeStatus(props.boardKey);
+}
+
 async function exportBoard() {
   try {
     const csv = await api.exportStatisticBoard(props.boardKey, {
@@ -648,6 +662,10 @@ async function applyFiltersToRoute() {
 }
 
 async function refreshBoard() {
+  if (realtimeEnabled.value) {
+    await triggerRealtimeRefresh(false);
+    return;
+  }
   loading.value = true;
   try {
     await loadBoard();
@@ -657,6 +675,57 @@ async function refreshBoard() {
   } finally {
     loading.value = false;
   }
+}
+
+async function triggerRealtimeRefresh(silent: boolean) {
+  if (!realtimeEnabled.value) {
+    return;
+  }
+  try {
+    realtimeRefreshing.value = true;
+    realtimeStatus.value = await api.refreshStatisticBoardRealtime(props.boardKey);
+    if (!silent) {
+      ElMessage.success('已开始刷新最新数据');
+    }
+    startRealtimePolling(silent);
+  } catch (error) {
+    realtimeRefreshing.value = false;
+    ElMessage.error((error as Error).message);
+  }
+}
+
+function clearRealtimePolling() {
+  if (realtimePollTimer != null) {
+    window.clearTimeout(realtimePollTimer);
+    realtimePollTimer = null;
+  }
+}
+
+function startRealtimePolling(silent: boolean) {
+  clearRealtimePolling();
+  const poll = async () => {
+    try {
+      await loadRealtimeStatus();
+      if (realtimeStatus.value?.refreshing) {
+        realtimePollTimer = window.setTimeout(poll, 1500);
+        return;
+      }
+      realtimeRefreshing.value = false;
+      await loadBoard(false);
+      if (detailVisible.value) {
+        await loadDetail();
+      }
+      if (!silent) {
+        ElMessage.success(realtimeStatus.value?.status === 'FAILED' ? '刷新失败，已保留当前结果' : '已刷新为最新数据');
+      }
+    } catch (error) {
+      realtimeRefreshing.value = false;
+      if (!silent) {
+        ElMessage.error((error as Error).message);
+      }
+    }
+  };
+  realtimePollTimer = window.setTimeout(poll, 1200);
 }
 
 function removeFilterCondition(conditionId: string) {
@@ -878,6 +947,11 @@ watch(
         try {
           syncTablePaginationFromRoute();
           await loadBoard(false);
+          await loadRealtimeStatus();
+          if (realtimeEnabled.value && !silentRealtimeRefreshTriggered) {
+            silentRealtimeRefreshTriggered = true;
+            void triggerRealtimeRefresh(true);
+          }
           detailVisible.value = routeDetailVisible();
       if (detailVisible.value) {
         activeRow.value = board.value?.rows.find((row) => row.rowKey === String(route.query.detailRowKey ?? '')) ?? null;
@@ -896,11 +970,24 @@ watch(
   },
   { immediate: true, deep: true },
 );
+
+onBeforeUnmount(() => {
+  clearRealtimePolling();
+});
 </script>
 
 <template>
   <div class="stat-board" :class="props.uiHooks.rootClass">
-    <el-card shadow="never" class="stat-board-card" :class="props.uiHooks.cardClass" v-loading="loading">
+    <RealtimeDataShell
+      :title="realtimeEnabled ? '' : ''"
+      :description="''"
+      :status="realtimeStatus"
+      :refreshing="realtimeRefreshing"
+      :show-refresh="realtimeEnabled"
+      compact
+      @refresh="refreshBoard"
+    >
+      <el-card shadow="never" class="stat-board-card" :class="props.uiHooks.cardClass" v-loading="loading">
       <div class="stat-board-query-shell">
         <div class="stat-board-toolbar" :class="props.uiHooks.toolbarClass">
           <div class="stat-board-toolbar-main" :class="props.uiHooks.toolbarMainClass">
@@ -938,7 +1025,7 @@ watch(
             <span v-if="board?.definition.title" class="stat-board-meta-text">{{ board.definition.title }}</span>
             <el-button type="primary" :icon="Search" @click="applyFiltersToRoute">查询</el-button>
             <el-button @click="resetFilters">重置</el-button>
-            <el-button :icon="RefreshRight" @click="refreshBoard">刷新</el-button>
+            <el-button v-if="!realtimeEnabled" :icon="RefreshRight" @click="refreshBoard">刷新</el-button>
             <el-button plain :icon="Download" @click="exportBoard">导出</el-button>
             <el-dropdown trigger="click" @command="handleSettingsCommand">
               <el-button class="view-settings-trigger">
@@ -1022,7 +1109,8 @@ watch(
         :is-column-selected="isColumnSelected"
         :toggle-column-selection="toggleColumnSelection"
       />
-    </el-card>
+      </el-card>
+    </RealtimeDataShell>
 
     <el-dialog
       :model-value="detailVisible"
