@@ -20,13 +20,26 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 @Service
+@Slf4j
 public class CodeReviewIllegalRecordService {
+
+  private static final List<String> REALTIME_REFRESH_TABLES = List.of(
+      "merge_requests",
+      "merge_request_metrics",
+      "merge_request_reviewers",
+      "merge_request_assignees",
+      "label_links",
+      "labels",
+      "projects",
+      "namespaces",
+      "users");
 
   private static final String BASE_SQL = """
       with reviewer_names as (
@@ -102,12 +115,15 @@ public class CodeReviewIllegalRecordService {
       """;
 
   private final JdbcTemplate jdbcTemplate;
+  private final GitlabMirrorSyncService gitlabMirrorSyncService;
   private final String defaultGitlabBaseUrl;
 
   public CodeReviewIllegalRecordService(
       JdbcTemplate jdbcTemplate,
+      GitlabMirrorSyncService gitlabMirrorSyncService,
       @Value("${gitlab-mirror.web-base-url:http://172.22.10.233}") String defaultGitlabBaseUrl) {
     this.jdbcTemplate = jdbcTemplate;
+    this.gitlabMirrorSyncService = gitlabMirrorSyncService;
     this.defaultGitlabBaseUrl = defaultGitlabBaseUrl;
   }
 
@@ -129,6 +145,8 @@ public class CodeReviewIllegalRecordService {
       int size,
       String sortField,
       String sortOrder) {
+    refreshMirrorForRealtimeView();
+
     int safePage = page <= 0 ? 1 : page;
     int safeSize = size <= 0 ? 20 : Math.min(size, 100);
     String safeSortField = normalizeSortField(sortField);
@@ -162,6 +180,8 @@ public class CodeReviewIllegalRecordService {
   }
 
   public CodeReviewIllegalRecordFilterOptionsResponse getFilterOptions(Long projectId) {
+    refreshMirrorForRealtimeView();
+
     List<IllegalRecordView> rows = loadSources().stream()
         .map(this::toView)
         .filter(row -> matchesProjectId(row, projectId))
@@ -175,6 +195,14 @@ public class CodeReviewIllegalRecordService {
         toOptions(rows, IllegalRecordView::mergedBy),
         toOptions(rows, IllegalRecordView::moduleName),
         toOptions(rows, IllegalRecordView::projectName));
+  }
+
+  private void refreshMirrorForRealtimeView() {
+    try {
+      gitlabMirrorSyncService.refreshTablesOnDemand(REALTIME_REFRESH_TABLES, "code-review-illegal-records");
+    } catch (Exception e) {
+      log.warn("On-demand mirror refresh for code review illegal records failed, fallback to current mirror snapshot", e);
+    }
   }
 
   private List<IllegalRecordSource> loadSources() {

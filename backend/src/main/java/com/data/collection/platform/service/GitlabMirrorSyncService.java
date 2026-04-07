@@ -16,8 +16,10 @@ import com.data.collection.platform.entity.TableWhitelistOption;
 import com.data.collection.platform.mapper.GitlabMirrorRecordMapper;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import lombok.extern.slf4j.Slf4j;
@@ -110,6 +112,67 @@ public class GitlabMirrorSyncService {
 
   public SyncTaskSubmissionResult startCompensationSync() {
     return submitTask(SyncType.COMPENSATION, SyncTriggerType.SCHEDULE, "Scheduled compensation sync");
+  }
+
+  public int refreshTablesOnDemand(List<String> sourceTableNames, String reason) {
+    if (sourceTableNames == null || sourceTableNames.isEmpty()) {
+      return 0;
+    }
+
+    GitlabSyncConfig config = configService.getConfig();
+    if (config.getId() == null || !config.isEnabled()) {
+      return 0;
+    }
+    if (hasActiveTask(config.getId())) {
+      try (GitlabSyncLogContext.Scope context =
+               GitlabSyncLogContext.openConfig(config, "ON_DEMAND_REFRESH");
+           GitlabSyncLogContext.Scope action = GitlabSyncLogContext.action("SKIPPED")) {
+        log.info("Skipped on-demand refresh because another sync task is active, reason={}", reason);
+      }
+      return 0;
+    }
+
+    Set<String> targetTables = new LinkedHashSet<>(sourceTableNames);
+    List<TableWhitelistOption> tables = whitelistService.resolveOptions(config).stream()
+        .filter(option -> targetTables.contains(option.tableName()))
+        .toList();
+    if (tables.isEmpty()) {
+      return 0;
+    }
+
+    int recordCount = 0;
+    try (GitlabSyncLogContext.Scope context =
+             GitlabSyncLogContext.openConfig(config, "ON_DEMAND_REFRESH");
+         GitlabSyncLogContext.Scope action = GitlabSyncLogContext.action("EXECUTING")) {
+      log.info("Starting on-demand mirror refresh, reason={}, tables={}", reason, targetTables);
+      externalDbService.testConnection(config);
+      for (TableWhitelistOption table : tables) {
+        try {
+          GitlabMirrorSchemaService.PreparedMirrorTable preparedMirrorTable =
+              mirrorSchemaService.getPreparedMirrorTableForSync(config, table);
+          mirrorSchemaService.markTableSyncing(config.getId(), table.tableName());
+          LocalDateTime since = resolveOnDemandSince(config, preparedMirrorTable.registry(), table);
+          List<Map<String, Object>> rows =
+              externalDbService.incrementalScan(config, table, since);
+          recordCount = writeMirrorRows(
+              null,
+              reason,
+              config,
+              table,
+              preparedMirrorTable.mirrorSchema(),
+              rows,
+              recordCount,
+              null);
+          mirrorSchemaService.markTableIdle(config.getId(), table.tableName(), LocalDateTime.now());
+        } catch (Exception e) {
+          mirrorSchemaService.markTableError(config.getId(), table.tableName());
+          throw e;
+        }
+      }
+      configService.updateSyncTime(config.getId(), false);
+      log.info("Finished on-demand mirror refresh, reason={}, syncedRecords={}", reason, recordCount);
+      return recordCount;
+    }
   }
 
   public GitlabSyncTask requestCancel(Long configId) {
@@ -374,6 +437,23 @@ public class GitlabMirrorSyncService {
       case COMPENSATION -> "WINDOW_COMPENSATION";
       case INCREMENTAL, WEBHOOK -> "INCREMENTAL";
     };
+  }
+
+  private LocalDateTime resolveOnDemandSince(
+      GitlabSyncConfig config,
+      com.data.collection.platform.entity.GitlabMirrorTableRegistry registry,
+      TableWhitelistOption table) {
+    if (table.updatedAtColumn() == null || table.updatedAtColumn().isBlank()) {
+      return null;
+    }
+
+    LocalDateTime baseline = registry != null && registry.getLastSyncTime() != null
+        ? registry.getLastSyncTime()
+        : config.getLastIncrementalSyncAt();
+    if (baseline == null) {
+      baseline = LocalDateTime.now().minusHours(24);
+    }
+    return baseline.minusMinutes(5);
   }
 
   private void checkCancelled(Long taskId) {
