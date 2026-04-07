@@ -3,8 +3,10 @@ package com.data.collection.platform.controller;
 import com.data.collection.platform.common.response.ApiResponse;
 import com.data.collection.platform.entity.RealtimeWorkspaceStatusResponse;
 import com.data.collection.platform.entity.statistics.StatisticBoardResponse;
+import com.data.collection.platform.entity.statistics.StatisticBoardRuleExplanationResponse;
 import com.data.collection.platform.entity.statistics.StatisticDetailRequest;
 import com.data.collection.platform.entity.statistics.StatisticDetailResponse;
+import com.data.collection.platform.service.statistics.RuleExplainableStatisticBoardSupport;
 import com.data.collection.platform.service.RealtimeWorkspaceService;
 import com.data.collection.platform.service.statistics.RealtimeStatisticBoardSupport;
 import com.data.collection.platform.service.statistics.StatisticBoardRegistry;
@@ -54,6 +56,27 @@ public class StatisticBoardController {
     return ApiResponse.success(
         registry.getRequired(boardKey).loadDetail(
             new StatisticDetailRequest(boardKey, rowKey, columnKey, page, size, sortField, sortOrder, filters)));
+  }
+
+  @GetMapping("/{boardKey}/rule-explanation")
+  public ApiResponse<StatisticBoardRuleExplanationResponse> getRuleExplanation(
+      @PathVariable @NotBlank String boardKey,
+      @RequestParam Map<String, String> filters) {
+    var service = registry.getRequired(boardKey);
+    if (service instanceof RuleExplainableStatisticBoardSupport ruleExplainable) {
+      return ApiResponse.success(ruleExplainable.getRuleExplanation(filters));
+    }
+    return ApiResponse.success(
+        new StatisticBoardRuleExplanationResponse(
+            boardKey,
+            false,
+            null,
+            null,
+            null,
+            null,
+            java.util.List.of(),
+            java.util.List.of(),
+            "当前统计表暂不支持规则说明"));
   }
 
   @GetMapping("/{boardKey}/export")

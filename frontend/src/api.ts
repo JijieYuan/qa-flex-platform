@@ -222,6 +222,40 @@ export interface StatisticBoardMeta {
   drilldownColumnCount: number;
 }
 
+export interface StatisticRuleFlowStepSample {
+  label: string;
+  detail: string;
+}
+
+export interface StatisticRuleFlowStep {
+  key: string;
+  title: string;
+  description: string;
+  inputCount: number;
+  outputCount: number;
+  samples: StatisticRuleFlowStepSample[];
+}
+
+export interface StatisticRuleMetricDefinition {
+  key: string;
+  label: string;
+  definition: string;
+  formula: string;
+  note?: string | null;
+}
+
+export interface StatisticBoardRuleExplanationResponse {
+  boardKey: string;
+  supported: boolean;
+  title?: string | null;
+  version?: string | null;
+  scopeDescription?: string | null;
+  summary?: string | null;
+  flowSteps: StatisticRuleFlowStep[];
+  metricDefinitions: StatisticRuleMetricDefinition[];
+  unsupportedReason?: string | null;
+}
+
 export interface StatisticCellData {
   columnKey: string;
   numericValue: number;
@@ -481,6 +515,19 @@ export const api = {
       query.set('filterGroup', JSON.stringify(params.filterGroup));
     }
     return request<StatisticDetailResponse>(`/api/statistic-boards/${boardKey}/details?${query.toString()}`);
+  },
+  getStatisticBoardRuleExplanation(
+    boardKey: string,
+    params?: { filters?: Record<string, string>; filterGroup?: StatisticFilterGroup | null },
+  ) {
+    const searchParams = new URLSearchParams(params?.filters ?? {});
+    if (params?.filterGroup && params.filterGroup.conditions.length) {
+      searchParams.set('filterGroup', JSON.stringify(params.filterGroup));
+    }
+    const queryString = searchParams.toString();
+    return request<StatisticBoardRuleExplanationResponse>(
+      `/api/statistic-boards/${boardKey}/rule-explanation${queryString ? `?${queryString}` : ''}`,
+    );
   },
   async exportStatisticBoard(boardKey: string, params?: { filters?: Record<string, string>; filterGroup?: StatisticFilterGroup | null }) {
     const searchParams = new URLSearchParams(params?.filters ?? {});

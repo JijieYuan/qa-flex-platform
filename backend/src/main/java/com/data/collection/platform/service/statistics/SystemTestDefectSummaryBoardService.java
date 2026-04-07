@@ -3,6 +3,7 @@ package com.data.collection.platform.service.statistics;
 import com.data.collection.platform.common.JsonUtils;
 import com.data.collection.platform.entity.statistics.StatisticBoardDefinition;
 import com.data.collection.platform.entity.statistics.StatisticBoardMeta;
+import com.data.collection.platform.entity.statistics.StatisticBoardRuleExplanationResponse;
 import com.data.collection.platform.entity.statistics.StatisticBoardResponse;
 import com.data.collection.platform.entity.statistics.StatisticCellData;
 import com.data.collection.platform.entity.statistics.StatisticColumnGroup;
@@ -13,6 +14,9 @@ import com.data.collection.platform.entity.statistics.StatisticDetailResponse;
 import com.data.collection.platform.entity.statistics.StatisticFilterField;
 import com.data.collection.platform.entity.statistics.StatisticFilterGroup;
 import com.data.collection.platform.entity.statistics.StatisticRowData;
+import com.data.collection.platform.entity.statistics.StatisticRuleFlowStep;
+import com.data.collection.platform.entity.statistics.StatisticRuleFlowStepSample;
+import com.data.collection.platform.entity.statistics.StatisticRuleMetricDefinition;
 import com.data.collection.platform.service.GitlabMirrorSyncService;
 import com.data.collection.platform.entity.RealtimeWorkspaceStatusResponse;
 import com.data.collection.platform.service.RealtimeWorkspaceService;
@@ -39,8 +43,9 @@ import org.springframework.util.StringUtils;
 @Service
 @Slf4j
 public class SystemTestDefectSummaryBoardService extends AbstractStatisticBoardService
-    implements RealtimeStatisticBoardSupport {
+    implements RealtimeStatisticBoardSupport, RuleExplainableStatisticBoardSupport {
   private static final String BOARD_KEY = "system-test-defect-summary";
+  private static final String RULE_VERSION = "system-test-defect-summary@2026-04-07-v1";
   private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
   private static final List<String> REALTIME_REFRESH_TABLES = List.of(
       "issues",
@@ -48,6 +53,8 @@ public class SystemTestDefectSummaryBoardService extends AbstractStatisticBoardS
       "users",
       "label_links",
       "labels");
+  private static final List<String> EXCLUDED_LABEL_TOKENS = List.of("功能屏蔽", "已拒绝", "建议");
+  private static final List<String> CLOSED_EXCLUDED_LABEL_TOKENS = List.of("申请否决", "需求如此");
   private static final String BASE_SQL = """
       with issue_labels as (
         select ll.target_id as issue_id,
@@ -170,7 +177,7 @@ public class SystemTestDefectSummaryBoardService extends AbstractStatisticBoardS
   @Override
   protected StatisticBoardResponse doLoadBoard(Map<String, String> filters, StatisticFilterGroup filterGroup) {
     long startedAt = System.currentTimeMillis();
-    List<IssueSource> sources = loadSources(filters);
+    List<IssueSource> sources = loadBoardScopedSources(filters);
     Map<Long, AggregateBucket> buckets = new LinkedHashMap<>();
     long totalIssueCount = sources.size();
     for (IssueSource issue : sources) {
@@ -196,7 +203,7 @@ public class SystemTestDefectSummaryBoardService extends AbstractStatisticBoardS
 
   @Override
   protected StatisticDetailResponse doLoadDetail(StatisticDetailRequest request, StatisticFilterGroup filterGroup) {
-    List<IssueSource> sources = loadSources(request.filters()).stream()
+    List<IssueSource> sources = loadBoardScopedSources(request.filters()).stream()
         .filter(source -> Objects.equals(String.valueOf(source.projectId()), request.rowKey()))
         .filter(matchesMetric(request.columnKey()))
         .sorted(buildDetailComparator(request.sortField(), request.sortOrder()))
@@ -250,6 +257,112 @@ public class SystemTestDefectSummaryBoardService extends AbstractStatisticBoardS
 
   public RealtimeWorkspaceStatusResponse requestRealtimeRefresh() {
     return realtimeWorkspaceService.requestRefresh(BOARD_KEY, this::refreshMirrorForRealtimeView);
+  }
+
+  @Override
+  public StatisticBoardRuleExplanationResponse getRuleExplanation(Map<String, String> filters) {
+    RuleFlowSnapshot flowSnapshot = buildRuleFlowSnapshot(loadSources(filters));
+    return new StatisticBoardRuleExplanationResponse(
+        BOARD_KEY,
+        true,
+        "系统测试缺陷汇总规则说明",
+        RULE_VERSION,
+        "当前一期基于本地 GitLab Issue 镜像数据执行统计；支持按项目筛选，并在统计前执行标签排除规则。",
+        "统计口径、Flow 步骤和指标说明全部来自当前后端实现，目的是让使用者看到“原始数据 -> 过滤后 -> 指标汇总”的真实过程。",
+        flowSnapshot.flowSteps(),
+        buildMetricDefinitions(),
+        null);
+  }
+
+  private List<IssueSource> loadBoardScopedSources(Map<String, String> filters) {
+    return buildRuleFlowSnapshot(loadSources(filters)).finalSources();
+  }
+
+  private RuleFlowSnapshot buildRuleFlowSnapshot(List<IssueSource> loadedSources) {
+    List<IssueSource> initial = loadedSources == null ? List.of() : List.copyOf(loadedSources);
+    List<StatisticRuleFlowStep> steps = new ArrayList<>();
+
+    steps.add(
+        new StatisticRuleFlowStep(
+            "source-load",
+            "加载镜像议题",
+            "从本地 GitLab Issue 镜像中读取当前查询范围内的原始议题记录。",
+            initial.size(),
+            initial.size(),
+            sampleIssues(initial)));
+
+    List<IssueSource> afterLabelExclusion =
+        initial.stream()
+            .filter(issue -> !issue.hasAnyLabel(EXCLUDED_LABEL_TOKENS))
+            .toList();
+    steps.add(
+        new StatisticRuleFlowStep(
+            "exclude-basic-labels",
+            "排除基础无效标签",
+            "排除携带“功能屏蔽”“已拒绝”“建议”标签的议题。",
+            initial.size(),
+            afterLabelExclusion.size(),
+            sampleIssues(afterLabelExclusion)));
+
+    List<IssueSource> finalSources =
+        afterLabelExclusion.stream()
+            .filter(issue -> !(issue.isClosed() && issue.hasAnyLabel(CLOSED_EXCLUDED_LABEL_TOKENS)))
+            .toList();
+    steps.add(
+        new StatisticRuleFlowStep(
+            "exclude-closed-veto-and-as-designed",
+            "排除关闭且无需继续统计的议题",
+            "排除关闭状态下携带“申请否决”或“需求如此”标签的议题。",
+            afterLabelExclusion.size(),
+            finalSources.size(),
+            sampleIssues(finalSources)));
+
+    return new RuleFlowSnapshot(finalSources, steps);
+  }
+
+  private List<StatisticRuleFlowStepSample> sampleIssues(List<IssueSource> issues) {
+    return issues.stream()
+        .limit(3)
+        .map(
+            issue ->
+                new StatisticRuleFlowStepSample(
+                    "#" + issue.iid() + " " + issue.projectName(),
+                    issue.title() + (issue.labels().isEmpty() ? "" : " | 标签: " + String.join(", ", issue.labels()))))
+        .toList();
+  }
+
+  private List<StatisticRuleMetricDefinition> buildMetricDefinitions() {
+    return List.of(
+        new StatisticRuleMetricDefinition(
+            "level1",
+            "一级缺陷",
+            "按照标题或标签中的回退、挂机、一级等关键词识别一级缺陷。",
+            "一级缺陷数量 = 回退数量 + 挂机数量 + 其他一级数量",
+            "当前实现仍基于关键词归类。"),
+        new StatisticRuleMetricDefinition(
+            "level2",
+            "二级缺陷",
+            "按照标题或标签中的二级、level2、l2 等关键词识别。",
+            "二级修复率 = 二级已修复数量 / 二级总数量",
+            "当分母为 0 时返回 0.00%。"),
+        new StatisticRuleMetricDefinition(
+            "level3",
+            "三级缺陷",
+            "按照标题或标签中的三级、level3、l3 等关键词识别。",
+            "三级修复率 = 三级已修复数量 / 三级总数量",
+            "当分母为 0 时返回 0.00%。"),
+        new StatisticRuleMetricDefinition(
+            "priority",
+            "优先级统计",
+            "按照标题或标签中出现的 P1/P2/P3 关键词识别优先级。",
+            "Pn 修复率 = Pn 已关闭数量 / Pn 总数量",
+            "优先级与严重级别相互独立。"),
+        new StatisticRuleMetricDefinition(
+            "summary",
+            "综合汇总",
+            "展示模块总缺陷数、缺陷占比、关闭率和未关闭数量。",
+            "缺陷占比 = 当前项目缺陷数 / 当前统计结果中的全部缺陷数",
+            "当前实现按项目维度汇总。"));
   }
 
   private IssueSource mapIssue(ResultSet rs, int rowNum) throws SQLException {
@@ -452,6 +565,15 @@ public class SystemTestDefectSummaryBoardService extends AbstractStatisticBoardS
       return matchesLabelOrTitle("(^|[^a-z0-9])" + safePriority + "([^a-z0-9]|$)");
     }
 
+    boolean hasAnyLabel(List<String> candidates) {
+      return candidates.stream().anyMatch(this::hasLabel);
+    }
+
+    boolean hasLabel(String candidate) {
+      String safeCandidate = candidate.toLowerCase(Locale.ROOT);
+      return labels.stream().anyMatch(label -> label.contains(safeCandidate));
+    }
+
     boolean isLevel1() {
       return isLevel1Back() || isLevel1Hang() || isLevel1Other();
     }
@@ -490,5 +612,10 @@ public class SystemTestDefectSummaryBoardService extends AbstractStatisticBoardS
       String haystack = (title + "|" + String.join("|", labels)).toLowerCase(Locale.ROOT);
       return haystack.matches(".*" + regex + ".*");
     }
+  }
+
+  private record RuleFlowSnapshot(
+      List<IssueSource> finalSources,
+      List<StatisticRuleFlowStep> flowSteps) {
   }
 }

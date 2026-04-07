@@ -3,6 +3,7 @@ package com.data.collection.platform.controller;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.data.collection.platform.entity.statistics.StatisticBoardRuleExplanationResponse;
 import com.data.collection.platform.entity.statistics.StatisticBoardResponse;
 import com.data.collection.platform.entity.statistics.StatisticDetailResponse;
 import java.time.LocalDateTime;
@@ -78,6 +79,33 @@ class StatisticBoardControllerTest {
     assertThat(response.rows()).allSatisfy(row -> assertThat(row.rowLabel()).isNotBlank());
     assertThat(response.meta().rowCount()).isEqualTo(response.rows().size());
     assertThat(response.meta().columnCount()).isEqualTo(21);
+  }
+
+  @Test
+  void shouldLoadSystemTestDefectSummaryRuleExplanation() {
+    StatisticBoardRuleExplanationResponse response =
+        controller.getRuleExplanation("system-test-defect-summary", Map.of()).getData();
+
+    assertThat(response).isNotNull();
+    assertThat(response.boardKey()).isEqualTo("system-test-defect-summary");
+    assertThat(response.supported()).isTrue();
+    assertThat(response.version()).isNotBlank();
+    assertThat(response.scopeDescription()).isNotBlank();
+    assertThat(response.flowSteps()).isNotEmpty();
+    assertThat(response.metricDefinitions()).isNotEmpty();
+  }
+
+  @Test
+  void shouldReturnUnsupportedRuleExplanationForMirrorTableOverviewBoard() {
+    StatisticBoardRuleExplanationResponse response =
+        controller.getRuleExplanation("mirror-table-overview", Map.of()).getData();
+
+    assertThat(response).isNotNull();
+    assertThat(response.boardKey()).isEqualTo("mirror-table-overview");
+    assertThat(response.supported()).isFalse();
+    assertThat(response.unsupportedReason()).isNotBlank();
+    assertThat(response.flowSteps()).isEmpty();
+    assertThat(response.metricDefinitions()).isEmpty();
   }
 
   @Test

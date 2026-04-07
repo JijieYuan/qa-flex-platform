@@ -1,12 +1,13 @@
 ﻿<script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue';
-import { ArrowDown, ArrowUp, Download, RefreshRight, Search, Sort } from '@element-plus/icons-vue';
+import { ArrowDown, ArrowUp, Download, InfoFilled, RefreshRight, Search, Sort } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
 import { useRoute, useRouter } from 'vue-router';
 import BaseStatisticTable from './base/BaseStatisticTable.vue';
 import SyncMetaBadge from './realtime/SyncMetaBadge.vue';
 import {
   api,
+  type StatisticBoardRuleExplanationResponse,
   type RealtimeWorkspaceStatusResponse,
   type StatisticBoardResponse,
   type StatisticCellData,
@@ -156,12 +157,15 @@ async function replaceRouteQuery(patch: Record<string, string | number | null | 
 const loading = ref(false);
 const detailLoading = ref(false);
 const board = ref<StatisticBoardResponse | null>(null);
+const ruleExplanationLoading = ref(false);
 const errorMessage = ref('');
 const filterDraft = reactive<StatisticFilterDraftGroup>(createEmptyFilterGroup());
 const detailVisible = ref(false);
+const ruleExplanationVisible = ref(false);
 const activeRow = ref<StatisticRowData | null>(null);
 const activeCell = ref<StatisticCellData | null>(null);
 const detail = ref<StatisticDetailResponse | null>(null);
+const ruleExplanation = ref<StatisticBoardRuleExplanationResponse | null>(null);
 const boardViewPrefs = ref<StatisticBoardViewPrefs>({
   visibleColumnKeys: [],
   groupOrder: [],
@@ -385,6 +389,19 @@ async function loadRealtimeStatus() {
     syncStatus.value = await api.getStatisticBoardRealtimeStatus(props.boardKey);
   } catch {
     syncStatus.value = null;
+  }
+}
+
+async function loadRuleExplanation() {
+  ruleExplanationLoading.value = true;
+  try {
+    ruleExplanation.value = await api.getStatisticBoardRuleExplanation(props.boardKey, {
+      filterGroup: buildFilterPayload(),
+    });
+  } catch {
+    ruleExplanation.value = null;
+  } finally {
+    ruleExplanationLoading.value = false;
   }
 }
 
@@ -668,12 +685,25 @@ async function refreshBoard() {
   loading.value = true;
   try {
     await loadBoard();
+    await loadRuleExplanation();
     if (detailVisible.value) {
       await loadDetail();
     }
   } finally {
     loading.value = false;
   }
+}
+
+function openRuleExplanation() {
+  if (!ruleExplanation.value?.supported) {
+    ElMessage.warning(ruleExplanation.value?.unsupportedReason || '当前统计表暂不支持规则说明');
+    return;
+  }
+  ruleExplanationVisible.value = true;
+}
+
+function handleRuleExplanationVisibleChange(visible: boolean) {
+  ruleExplanationVisible.value = visible;
 }
 
 function removeFilterCondition(conditionId: string) {
@@ -896,6 +926,7 @@ watch(
       syncTablePaginationFromRoute();
       await loadBoard(false);
       await loadRealtimeStatus();
+      await loadRuleExplanation();
       detailVisible.value = routeDetailVisible();
       if (detailVisible.value) {
         activeRow.value = board.value?.rows.find((row) => row.rowKey === String(route.query.detailRowKey ?? '')) ?? null;
@@ -958,6 +989,15 @@ watch(
             <el-button type="primary" :icon="Search" @click="applyFiltersToRoute">查询</el-button>
             <el-button @click="resetFilters">重置</el-button>
             <el-button :icon="RefreshRight" @click="refreshBoard">刷新</el-button>
+            <el-button
+              v-if="ruleExplanation?.supported"
+              plain
+              :icon="InfoFilled"
+              :loading="ruleExplanationLoading"
+              @click="openRuleExplanation"
+            >
+              规则说明
+            </el-button>
             <el-button plain :icon="Download" @click="exportBoard">导出</el-button>
             <el-dropdown trigger="click" @command="handleSettingsCommand">
               <el-button class="view-settings-trigger">
@@ -1042,6 +1082,78 @@ watch(
         :toggle-column-selection="toggleColumnSelection"
       />
       </el-card>
+
+    <el-drawer
+      :model-value="ruleExplanationVisible"
+      :title="ruleExplanation?.title || '规则说明'"
+      size="44%"
+      append-to-body
+      @update:model-value="handleRuleExplanationVisibleChange"
+    >
+      <div v-loading="ruleExplanationLoading" class="rule-explanation-panel">
+        <el-empty
+          v-if="!ruleExplanation?.supported"
+          :description="ruleExplanation?.unsupportedReason || '当前统计表暂不支持规则说明。'"
+        />
+
+        <template v-else>
+          <el-alert
+            v-if="ruleExplanation?.summary"
+            :title="ruleExplanation.summary"
+            type="info"
+            :closable="false"
+            show-icon
+          />
+
+          <el-descriptions border :column="1" class="rule-explanation-meta">
+            <el-descriptions-item label="规则版本">{{ ruleExplanation?.version || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="统计范围">{{ ruleExplanation?.scopeDescription || '-' }}</el-descriptions-item>
+          </el-descriptions>
+
+          <div class="rule-explanation-section">
+            <div class="rule-explanation-section-title">Flow 过滤过程</div>
+            <el-timeline>
+              <el-timeline-item
+                v-for="step in ruleExplanation?.flowSteps || []"
+                :key="step.key"
+                placement="top"
+              >
+                <div class="rule-flow-step">
+                  <div class="rule-flow-step-title">{{ step.title }}</div>
+                  <div class="rule-flow-step-description">{{ step.description }}</div>
+                  <div class="rule-flow-step-metrics">
+                    <el-tag effect="plain">输入 {{ step.inputCount }}</el-tag>
+                    <el-tag effect="plain" type="success">输出 {{ step.outputCount }}</el-tag>
+                    <el-tag effect="plain" type="warning">过滤 {{ Math.max(step.inputCount - step.outputCount, 0) }}</el-tag>
+                  </div>
+                  <div v-if="step.samples.length" class="rule-flow-step-samples">
+                    <el-card
+                      v-for="sample in step.samples"
+                      :key="`${step.key}-${sample.label}-${sample.detail}`"
+                      shadow="never"
+                      class="rule-flow-sample-card"
+                    >
+                      <div class="rule-flow-sample-label">{{ sample.label }}</div>
+                      <div class="rule-flow-sample-detail">{{ sample.detail }}</div>
+                    </el-card>
+                  </div>
+                </div>
+              </el-timeline-item>
+            </el-timeline>
+          </div>
+
+          <div class="rule-explanation-section">
+            <div class="rule-explanation-section-title">指标口径</div>
+            <el-table :data="ruleExplanation?.metricDefinitions || []" border stripe>
+              <el-table-column prop="label" label="指标" min-width="140" />
+              <el-table-column prop="definition" label="定义" min-width="220" show-overflow-tooltip />
+              <el-table-column prop="formula" label="计算方式" min-width="220" show-overflow-tooltip />
+              <el-table-column prop="note" label="说明" min-width="180" show-overflow-tooltip />
+            </el-table>
+          </div>
+        </template>
+      </div>
+    </el-drawer>
 
     <el-dialog
       :model-value="detailVisible"
