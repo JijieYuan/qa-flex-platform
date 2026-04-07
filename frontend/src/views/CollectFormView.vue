@@ -22,21 +22,11 @@ function queryNumber(value: unknown) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-const context = computed(() => {
-  const requestIid = queryNumber(route.query.requestIid) ?? queryNumber(route.query.mrIid);
-  const resourceType = queryText(route.query.resourceType) || 'merge_request';
-  const resourceId = queryText(route.query.resourceId) || (requestIid != null ? String(requestIid) : '');
-  const templateCode = queryText(route.query.templateCode) || 'code_review';
-
-  return {
-    gitlabBaseUrl: queryText(route.query.gitlabBaseUrl),
-    projectId: queryNumber(route.query.projectId),
-    requestIid,
-    resourceType,
-    resourceId,
-    templateCode,
-  };
-});
+const context = computed(() => ({
+  gitlabBaseUrl: queryText(route.query.gitlabBaseUrl),
+  projectId: queryNumber(route.query.projectId),
+  mrIid: queryNumber(route.query.mrIid),
+}));
 
 const formModel = reactive({
   formTitle: '代码走查表',
@@ -54,18 +44,14 @@ const loading = ref(false);
 const saving = ref(false);
 const deleting = ref(false);
 const lastLoadedRecord = ref<CollectFormDetailResponse | null>(null);
+
 const hasSavedRecord = computed(() => Boolean(lastLoadedRecord.value && !lastLoadedRecord.value.deleted));
 const contextReady = computed(
-  () =>
-    Boolean(context.value.gitlabBaseUrl) &&
-    Boolean(context.value.projectId) &&
-    Boolean(context.value.resourceType) &&
-    Boolean(context.value.resourceId) &&
-    Boolean(context.value.templateCode),
+  () => Boolean(context.value.gitlabBaseUrl) && Boolean(context.value.projectId) && Boolean(context.value.mrIid),
 );
 
 function applyRecord(record: CollectFormDetailResponse | null) {
-  formModel.formTitle = record?.formTitle || (context.value.templateCode === 'code_review' ? '代码走查表' : '通用采集表');
+  formModel.formTitle = record?.formTitle || '代码走查表';
   formModel.reviewer = record?.reviewer || '';
   formModel.reviewDurationMinutes = record?.reviewDurationMinutes ?? 1;
   formModel.specification = record?.specificationScore ?? 0;
@@ -87,9 +73,9 @@ async function loadRecord() {
     const record = await api.getCollectFormDetail({
       gitlabBaseUrl: context.value.gitlabBaseUrl,
       projectId: context.value.projectId!,
-      resourceType: context.value.resourceType,
-      resourceId: context.value.resourceId,
-      templateCode: context.value.templateCode,
+      resourceType: 'merge_request',
+      resourceId: String(context.value.mrIid),
+      templateCode: 'code_review',
     });
     lastLoadedRecord.value = record;
     applyRecord(record);
@@ -112,10 +98,10 @@ async function saveForm() {
     const record = await api.saveCollectForm({
       gitlabBaseUrl: context.value.gitlabBaseUrl,
       projectId: context.value.projectId!,
-      requestIid: context.value.requestIid,
-      resourceType: context.value.resourceType,
-      resourceId: context.value.resourceId,
-      templateCode: context.value.templateCode,
+      requestIid: context.value.mrIid,
+      resourceType: 'merge_request',
+      resourceId: String(context.value.mrIid),
+      templateCode: 'code_review',
       formTitle: formModel.formTitle,
       reviewer: formModel.reviewer,
       reviewDurationMinutes: formModel.reviewDurationMinutes,
@@ -146,9 +132,9 @@ async function deleteForm() {
     const deleted = await api.deleteCollectForm({
       gitlabBaseUrl: context.value.gitlabBaseUrl,
       projectId: context.value.projectId!,
-      resourceType: context.value.resourceType,
-      resourceId: context.value.resourceId,
-      templateCode: context.value.templateCode,
+      resourceType: 'merge_request',
+      resourceId: String(context.value.mrIid),
+      templateCode: 'code_review',
     });
     if (deleted) {
       await loadRecord();
@@ -167,7 +153,7 @@ function resetForm() {
 }
 
 watch(
-  () => `${context.value.gitlabBaseUrl}|${context.value.projectId}|${context.value.resourceType}|${context.value.resourceId}|${context.value.templateCode}`,
+  () => `${context.value.gitlabBaseUrl}|${context.value.projectId}|${context.value.mrIid}`,
   () => {
     void loadRecord();
   },
@@ -188,7 +174,7 @@ watch(
         </div>
 
         <div class="external-form-hero-meta">
-          <el-tag type="primary" effect="plain">{{ context.templateCode }}</el-tag>
+          <el-tag type="primary" effect="plain">code_review</el-tag>
           <el-tag v-if="hasSavedRecord" type="success" effect="plain">已保存</el-tag>
           <el-tag v-else type="info" effect="plain">未保存</el-tag>
         </div>
@@ -209,16 +195,8 @@ watch(
             <span class="external-context-value">{{ context.projectId ?? '-' }}</span>
           </div>
           <div class="external-context-item">
-            <span class="external-context-label">请求类型 IID</span>
-            <span class="external-context-value">{{ context.requestIid ?? '-' }}</span>
-          </div>
-          <div class="external-context-item">
-            <span class="external-context-label">资源类型</span>
-            <span class="external-context-value">{{ context.resourceType || '-' }}</span>
-          </div>
-          <div class="external-context-item">
-            <span class="external-context-label">资源编号</span>
-            <span class="external-context-value">{{ context.resourceId || '-' }}</span>
+            <span class="external-context-label">Merge Request IID</span>
+            <span class="external-context-value">{{ context.mrIid ?? '-' }}</span>
           </div>
           <div class="external-context-item">
             <span class="external-context-label">最近保存时间</span>

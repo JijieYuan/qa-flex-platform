@@ -37,7 +37,7 @@ const routes: RouteRecordRaw[] = [
       title: '代码走查表',
       description: '通过独立链接打开的代码走查表单页。',
       standalone: true,
-      allowedQueryKeys: ['gitlabBaseUrl', 'projectId', 'requestIid', 'mrIid', 'resourceType', 'resourceId', 'templateCode'],
+      allowedQueryKeys: ['gitlabBaseUrl', 'projectId', 'mrIid'],
       persistedQueryKeys: [],
     },
   },
