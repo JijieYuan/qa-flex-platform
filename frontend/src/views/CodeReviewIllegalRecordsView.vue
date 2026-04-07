@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { ElMessage } from 'element-plus';
+import { InfoFilled } from '@element-plus/icons-vue';
 import BaseRecordTable from '../components/base/BaseRecordTable.vue';
 import SyncMetaBadge from '../components/realtime/SyncMetaBadge.vue';
 import {
@@ -8,6 +9,7 @@ import {
   type CodeReviewIllegalRecordFilterOptionsResponse,
   type CodeReviewIllegalRecordRowResponse,
   type RealtimeWorkspaceStatusResponse,
+  type StatisticBoardRuleExplanationResponse,
 } from '../api';
 import { useRouteTableState } from '../composables/useRouteTableState';
 import type { RecordTableActiveFilterTag, RecordTableColumn, RecordTableFilterField } from '../types/record-table';
@@ -34,8 +36,11 @@ const advancedVisible = ref(false);
 const rows = ref<CodeReviewIllegalRecordRowResponse[]>([]);
 const total = ref(0);
 const detailVisible = ref(false);
+const ruleExplanationVisible = ref(false);
+const ruleExplanationLoading = ref(false);
 const selectedRow = ref<CodeReviewIllegalRecordRowResponse | null>(null);
 const syncStatus = ref<RealtimeWorkspaceStatusResponse | null>(null);
+const ruleExplanation = ref<StatisticBoardRuleExplanationResponse | null>(null);
 
 const filterOptions = ref<CodeReviewIllegalRecordFilterOptionsResponse>({
   requestTypes: [{ label: '合并请求', value: 'merge_request' }],
@@ -222,6 +227,17 @@ async function loadSyncStatus() {
   }
 }
 
+async function loadRuleExplanation() {
+  ruleExplanationLoading.value = true;
+  try {
+    ruleExplanation.value = await api.getCodeReviewIllegalRecordRuleExplanation();
+  } catch {
+    ruleExplanation.value = null;
+  } finally {
+    ruleExplanationLoading.value = false;
+  }
+}
+
 async function loadTableData() {
   const response = await api.getCodeReviewIllegalRecords({
     projectId: route.query.projectId as string | undefined,
@@ -251,6 +267,7 @@ bindLoader(async () => {
     await loadTableData();
     await loadFilterOptions();
     await loadSyncStatus();
+    await loadRuleExplanation();
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '非法记录数据加载失败');
     rows.value = [];
@@ -323,6 +340,14 @@ async function handleClearFilter(key: string) {
   await patchQuery({ page: 1, [key]: null });
 }
 
+function openRuleExplanation() {
+  if (!ruleExplanation.value?.supported) {
+    ElMessage.warning(ruleExplanation.value?.unsupportedReason || '当前页面暂不支持规则说明');
+    return;
+  }
+  ruleExplanationVisible.value = true;
+}
+
 </script>
 
 <template>
@@ -361,6 +386,16 @@ async function handleClearFilter(key: string) {
       <template #toolbar-actions>
         <div class="record-page-summary">
           <SyncMetaBadge :value="lastSyncedText" />
+          <el-button
+            v-if="ruleExplanation?.supported"
+            plain
+            size="small"
+            :icon="InfoFilled"
+            :loading="ruleExplanationLoading"
+            @click="openRuleExplanation"
+          >
+            规则说明
+          </el-button>
           <span class="record-page-summary-divider" />
           <span class="record-page-summary-label">当前排序</span>
           <el-tag effect="plain" type="info" class="record-page-sort-tag">
@@ -473,6 +508,85 @@ async function handleClearFilter(key: string) {
           </div>
         </section>
       </template>
+    </el-drawer>
+
+    <el-drawer
+      v-model="ruleExplanationVisible"
+      size="44%"
+      destroy-on-close
+      class="record-detail-drawer"
+    >
+      <template #header>
+        <div class="record-detail-header">
+          <div class="record-detail-header-main">
+            <div class="record-detail-header-kicker">规则说明</div>
+            <div class="record-detail-header-title">{{ ruleExplanation?.title || '代码走查非法记录规则说明' }}</div>
+            <div class="record-detail-header-meta">
+              <span class="record-detail-meta-item">版本 {{ ruleExplanation?.version || '-' }}</span>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <div v-loading="ruleExplanationLoading" class="record-rule-panel">
+        <el-empty
+          v-if="!ruleExplanation?.supported"
+          :description="ruleExplanation?.unsupportedReason || '当前页面暂不支持规则说明。'"
+        />
+
+        <template v-else>
+          <section class="record-detail-section">
+            <div class="record-detail-section-title">统计范围</div>
+            <div class="record-detail-content">{{ ruleExplanation?.scopeDescription || '-' }}</div>
+          </section>
+
+          <section class="record-detail-section">
+            <div class="record-detail-section-title">规则摘要</div>
+            <div class="record-detail-content">{{ ruleExplanation?.summary || '-' }}</div>
+          </section>
+
+          <section class="record-detail-section">
+            <div class="record-detail-section-title">Flow 过滤过程</div>
+            <el-timeline>
+              <el-timeline-item
+                v-for="step in ruleExplanation?.flowSteps || []"
+                :key="step.key"
+                placement="top"
+              >
+                <div class="rule-flow-step">
+                  <div class="rule-flow-step-title">{{ step.title }}</div>
+                  <div class="rule-flow-step-description">{{ step.description }}</div>
+                  <div class="rule-flow-step-metrics">
+                    <el-tag effect="plain">输入 {{ step.inputCount }}</el-tag>
+                    <el-tag effect="plain" type="success">命中 {{ step.outputCount }}</el-tag>
+                  </div>
+                  <div v-if="step.samples.length" class="rule-flow-step-samples">
+                    <el-card
+                      v-for="sample in step.samples"
+                      :key="`${step.key}-${sample.label}-${sample.detail}`"
+                      shadow="never"
+                      class="rule-flow-sample-card"
+                    >
+                      <div class="rule-flow-sample-label">{{ sample.label }}</div>
+                      <div class="rule-flow-sample-detail">{{ sample.detail }}</div>
+                    </el-card>
+                  </div>
+                </div>
+              </el-timeline-item>
+            </el-timeline>
+          </section>
+
+          <section class="record-detail-section">
+            <div class="record-detail-section-title">指标口径</div>
+            <el-table :data="ruleExplanation?.metricDefinitions || []" border stripe>
+              <el-table-column prop="label" label="指标" min-width="140" />
+              <el-table-column prop="definition" label="定义" min-width="220" show-overflow-tooltip />
+              <el-table-column prop="formula" label="计算方式" min-width="220" show-overflow-tooltip />
+              <el-table-column prop="note" label="说明" min-width="180" show-overflow-tooltip />
+            </el-table>
+          </section>
+        </template>
+      </div>
     </el-drawer>
   </section>
 </template>
@@ -648,6 +762,57 @@ async function handleClearFilter(key: string) {
   font-size: 22px;
   line-height: 1;
   color: rgba(15, 23, 42, 0.92);
+}
+
+.record-rule-panel {
+  display: grid;
+  gap: 16px;
+}
+
+.rule-flow-step {
+  display: grid;
+  gap: 10px;
+}
+
+.rule-flow-step-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: rgba(15, 23, 42, 0.9);
+}
+
+.rule-flow-step-description {
+  font-size: 13px;
+  line-height: 1.7;
+  color: rgba(15, 23, 42, 0.68);
+}
+
+.rule-flow-step-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.rule-flow-step-samples {
+  display: grid;
+  gap: 8px;
+}
+
+.rule-flow-sample-card :deep(.el-card__body) {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+}
+
+.rule-flow-sample-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(15, 23, 42, 0.82);
+}
+
+.rule-flow-sample-detail {
+  font-size: 12px;
+  line-height: 1.6;
+  color: rgba(15, 23, 42, 0.6);
 }
 
 @media (max-width: 960px) {

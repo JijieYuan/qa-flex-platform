@@ -5,6 +5,10 @@ import com.data.collection.platform.entity.CodeReviewIllegalRecordListResponse;
 import com.data.collection.platform.entity.CodeReviewIllegalRecordRowResponse;
 import com.data.collection.platform.entity.OptionItemResponse;
 import com.data.collection.platform.entity.RealtimeWorkspaceStatusResponse;
+import com.data.collection.platform.entity.statistics.StatisticBoardRuleExplanationResponse;
+import com.data.collection.platform.entity.statistics.StatisticRuleFlowStep;
+import com.data.collection.platform.entity.statistics.StatisticRuleFlowStepSample;
+import com.data.collection.platform.entity.statistics.StatisticRuleMetricDefinition;
 import java.sql.Array;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -32,6 +36,7 @@ import org.springframework.util.StringUtils;
 @Slf4j
 public class CodeReviewIllegalRecordService {
   public static final String WORKSPACE_KEY = "code-review-illegal-records";
+  private static final String RULE_VERSION = "code-review-illegal-records@2026-04-07-v1";
 
   private static final List<String> REALTIME_REFRESH_TABLES = List.of(
       "merge_requests",
@@ -216,6 +221,59 @@ public class CodeReviewIllegalRecordService {
     return realtimeWorkspaceService.requestRefresh(WORKSPACE_KEY, this::refreshMirrorForRealtimeView);
   }
 
+  public StatisticBoardRuleExplanationResponse getRuleExplanation() {
+    List<IllegalRecordSource> sources = loadSources();
+    List<IllegalRecordView> views = sources.stream().map(this::toView).toList();
+    long total = views.size();
+    long missingModule = views.stream().filter(row -> row.illegalTypes().contains("缺少模块标签")).count();
+    long missingOwner = views.stream().filter(row -> row.illegalTypes().contains("缺少标注责任人")).count();
+    long missingMetrics = views.stream().filter(row -> row.illegalTypes().stream().anyMatch(type -> type.contains("缺少代码注释比例") || type.contains("缺少缺陷数量") || type.contains("缺少新增代码行数"))).count();
+
+    return new StatisticBoardRuleExplanationResponse(
+        WORKSPACE_KEY,
+        true,
+        "代码走查非法记录规则说明",
+        RULE_VERSION,
+        "当前统计范围是已接入本地镜像的 Merge Request 相关数据；页面查询条件在此基础上继续筛选。",
+        "非法记录明细页的核心目的是说明“哪些字段缺失、为什么被判定为非法”，当前判定全部来自后端只读规则。",
+        List.of(
+            new StatisticRuleFlowStep(
+                "source-load",
+                "加载合并请求镜像",
+                "从本地 GitLab Merge Request 相关镜像表读取合并请求、评审人、标签和指标数据。",
+                total,
+                total,
+                views.stream().limit(3).map(this::toIllegalRecordSample).toList()),
+            new StatisticRuleFlowStep(
+                "missing-module-check",
+                "检查模块标签",
+                "若标签数组为空，则判定为“缺少模块标签”。",
+                total,
+                missingModule,
+                views.stream().filter(row -> row.illegalTypes().contains("缺少模块标签")).limit(3).map(this::toIllegalRecordSample).toList()),
+            new StatisticRuleFlowStep(
+                "missing-owner-check",
+                "检查标注责任人",
+                "若责任人为空，则判定为“缺少标注责任人”。",
+                total,
+                missingOwner,
+                views.stream().filter(row -> row.illegalTypes().contains("缺少标注责任人")).limit(3).map(this::toIllegalRecordSample).toList()),
+            new StatisticRuleFlowStep(
+                "missing-metric-check",
+                "检查外部指标",
+                "若代码注释比例、缺陷数量或新增代码行数缺失，则判定为对应非法类型。",
+                total,
+                missingMetrics,
+                views.stream().filter(row -> row.illegalTypes().stream().anyMatch(type -> type.contains("缺少代码注释比例") || type.contains("缺少缺陷数量") || type.contains("缺少新增代码行数"))).limit(3).map(this::toIllegalRecordSample).toList())),
+        List.of(
+            new StatisticRuleMetricDefinition("illegalTypes", "非法类型", "根据字段缺失情况组合生成非法类型标签。", "非法类型 = 缺少模块标签 / 缺少标注责任人 / 缺少外部指标", "当前为只读后端规则。"),
+            new StatisticRuleMetricDefinition("moduleName", "模块名称", "当前取 MR 标签数组中的第一个标签作为模块名。", "moduleName = label_titles[1]", "仍然是过渡实现。"),
+            new StatisticRuleMetricDefinition("commentRate", "代码注释比例", "当前来自外部指标字段，缺失时判定非法。", "commentRate = 外部指标值", "当前 SQL 中仍为空。"),
+            new StatisticRuleMetricDefinition("defectCount", "缺陷数量", "当前来自外部指标字段，缺失时判定非法。", "defectCount = 外部指标值", "当前 SQL 中仍为空。"),
+            new StatisticRuleMetricDefinition("addedLines", "新增代码行数", "当前来自 GitLab merge_request_metrics。", "addedLines = ods_gitlab_merge_request_metrics.added_lines", "已接入真实镜像字段。")),
+        null);
+  }
+
   private void refreshMirrorForRealtimeView() {
     try {
       gitlabMirrorSyncService.refreshTablesOnDemand(REALTIME_REFRESH_TABLES, "code-review-illegal-records");
@@ -291,6 +349,12 @@ public class CodeReviewIllegalRecordService {
         source.commentRate(),
         source.defectCount(),
         source.addedLines());
+  }
+
+  private StatisticRuleFlowStepSample toIllegalRecordSample(IllegalRecordView row) {
+    return new StatisticRuleFlowStepSample(
+        "MR #" + row.mergeRequestIid(),
+        row.projectName() + " | " + (row.illegalTypes().isEmpty() ? "无非法类型" : String.join("、", row.illegalTypes())));
   }
 
   private List<String> buildIllegalTypes(IllegalRecordSource source) {

@@ -611,6 +611,9 @@ export const api = {
         `/api/code-review/illegal-records/filter-options${query.toString() ? `?${query.toString()}` : ''}`,
       );
     },
+    getCodeReviewIllegalRecordRuleExplanation() {
+      return request<StatisticBoardRuleExplanationResponse>('/api/code-review/illegal-records/rule-explanation');
+    },
     getCodeReviewIllegalRecordRealtimeStatus() {
       return request<RealtimeWorkspaceStatusResponse>('/api/code-review/illegal-records/status');
     },

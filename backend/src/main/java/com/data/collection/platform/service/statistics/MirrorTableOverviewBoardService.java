@@ -4,6 +4,7 @@ import com.data.collection.platform.common.JsonUtils;
 import com.data.collection.platform.common.exception.BizException;
 import com.data.collection.platform.entity.statistics.StatisticBoardDefinition;
 import com.data.collection.platform.entity.statistics.StatisticBoardMeta;
+import com.data.collection.platform.entity.statistics.StatisticBoardRuleExplanationResponse;
 import com.data.collection.platform.entity.statistics.StatisticBoardResponse;
 import com.data.collection.platform.entity.statistics.StatisticCellData;
 import com.data.collection.platform.entity.statistics.StatisticColumnGroup;
@@ -16,6 +17,9 @@ import com.data.collection.platform.entity.statistics.StatisticFilterField;
 import com.data.collection.platform.entity.statistics.StatisticFilterGroup;
 import com.data.collection.platform.entity.statistics.StatisticFilterOption;
 import com.data.collection.platform.entity.statistics.StatisticRowData;
+import com.data.collection.platform.entity.statistics.StatisticRuleFlowStep;
+import com.data.collection.platform.entity.statistics.StatisticRuleFlowStepSample;
+import com.data.collection.platform.entity.statistics.StatisticRuleMetricDefinition;
 import com.data.collection.platform.mapper.MirrorTableOverviewMapper;
 import java.sql.Timestamp;
 import java.time.LocalDate;
@@ -31,9 +35,11 @@ import java.util.Objects;
 import org.springframework.stereotype.Service;
 
 @Service
-public class MirrorTableOverviewBoardService extends AbstractStatisticBoardService {
+public class MirrorTableOverviewBoardService extends AbstractStatisticBoardService
+    implements RuleExplainableStatisticBoardSupport {
   private static final String BOARD_KEY = "mirror-table-overview";
   private static final String DETAIL_VIEW_KEY = "mirror-record-list";
+  private static final String RULE_VERSION = "mirror-table-overview@2026-04-07-v1";
   private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
   private static final List<StatisticDetailColumn> DETAIL_COLUMNS =
       List.of(
@@ -135,6 +141,60 @@ public class MirrorTableOverviewBoardService extends AbstractStatisticBoardServi
         size,
         request.sortField() == null ? "syncedAt" : request.sortField(),
         "ascending".equalsIgnoreCase(request.sortOrder()) ? "ascending" : "descending");
+  }
+
+  @Override
+  public StatisticBoardRuleExplanationResponse getRuleExplanation(Map<String, String> filters) {
+    List<Map<String, Object>> summaryRows = overviewMapper.selectSummaryRows(extractTableNameFilter(parseFilterGroup(filters, buildDefinition())));
+    long totalRows = summaryRows.size();
+    long rowsWithSourceUpdate = summaryRows.stream().filter(row -> asLong(row.get("withSourceUpdate")) > 0).count();
+    long rowsWithRecentSync = summaryRows.stream().filter(row -> asLong(row.get("syncedIn24h")) > 0).count();
+
+    return new StatisticBoardRuleExplanationResponse(
+        BOARD_KEY,
+        true,
+        "镜像表基础统计规则说明",
+        RULE_VERSION,
+        "当前统计直接建立在本地镜像表汇总结果上，不引入业务标签规则。",
+        "该统计板用于解释镜像覆盖范围和同步时效，核心逻辑是镜像表聚合而不是业务规则归类。",
+        List.of(
+            new StatisticRuleFlowStep(
+                "load-summary",
+                "加载镜像表汇总",
+                "从镜像汇总 Mapper 读取各张镜像表的记录规模、源更新时间和同步时效数据。",
+                totalRows,
+                totalRows,
+                summaryRows.stream().limit(3).map(this::toSummarySample).toList()),
+            new StatisticRuleFlowStep(
+                "source-update-coverage",
+                "统计源更新时间覆盖",
+                "按照每张镜像表是否存在源更新时间字段数据，展示覆盖情况。",
+                totalRows,
+                rowsWithSourceUpdate,
+                summaryRows.stream().filter(row -> asLong(row.get("withSourceUpdate")) > 0).limit(3).map(this::toSummarySample).toList()),
+            new StatisticRuleFlowStep(
+                "recent-sync-coverage",
+                "统计最近同步覆盖",
+                "按 24 小时内是否有同步记录展示同步时效。",
+                totalRows,
+                rowsWithRecentSync,
+                summaryRows.stream().filter(row -> asLong(row.get("syncedIn24h")) > 0).limit(3).map(this::toSummarySample).toList())),
+        List.of(
+            new StatisticRuleMetricDefinition("totalRecords", "总记录数", "统计当前镜像表中的记录总数。", "总记录数 = 镜像表记录数", "来自汇总 Mapper。"),
+            new StatisticRuleMetricDefinition("withSourceUpdate", "有源更新时间", "统计具备源更新时间的记录数。", "有源更新时间 = updated_at_source 不为空的记录数", "用于判断源侧更新追踪能力。"),
+            new StatisticRuleMetricDefinition("withoutSourceUpdate", "缺少源更新时间", "统计缺少源更新时间的记录数。", "缺少源更新时间 = 总记录数 - 有源更新时间", "用于识别不可追踪源更新时间的表。"),
+            new StatisticRuleMetricDefinition("syncedIn24h", "24小时内同步", "统计最近 24 小时内完成同步的记录数。", "24小时内同步 = synced_at >= now - 24h 的记录数", "用于观察同步时效。"),
+            new StatisticRuleMetricDefinition("staleSync", "24小时前同步", "统计最近同步时间早于 24 小时的记录数。", "24小时前同步 = 总记录数 - 24小时内同步", "用于定位陈旧镜像。")),
+        null);
+  }
+
+  private StatisticRuleFlowStepSample toSummarySample(Map<String, Object> row) {
+    String tableName = String.valueOf(row.get("tableName"));
+    return new StatisticRuleFlowStepSample(
+        tableName,
+        "总记录数=" + asLong(row.get("totalRecords"))
+            + "，24小时内同步=" + asLong(row.get("syncedIn24h"))
+            + "，缺少源更新时间=" + asLong(row.get("withoutSourceUpdate")));
   }
 
   private StatisticBoardDefinition buildDefinition(List<StatisticFilterOption> tableOptions) {

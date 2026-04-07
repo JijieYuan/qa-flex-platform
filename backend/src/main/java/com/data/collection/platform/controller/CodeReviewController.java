@@ -4,6 +4,7 @@ import com.data.collection.platform.common.response.ApiResponse;
 import com.data.collection.platform.entity.CodeReviewIllegalRecordFilterOptionsResponse;
 import com.data.collection.platform.entity.CodeReviewIllegalRecordListResponse;
 import com.data.collection.platform.entity.RealtimeWorkspaceStatusResponse;
+import com.data.collection.platform.entity.statistics.StatisticBoardRuleExplanationResponse;
 import com.data.collection.platform.service.CodeReviewIllegalRecordService;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -65,6 +66,11 @@ public class CodeReviewController {
   public ApiResponse<CodeReviewIllegalRecordFilterOptionsResponse> getIllegalRecordFilterOptions(
       @RequestParam(required = false) Long projectId) {
     return ApiResponse.success(codeReviewIllegalRecordService.getFilterOptions(projectId));
+  }
+
+  @GetMapping("/illegal-records/rule-explanation")
+  public ApiResponse<StatisticBoardRuleExplanationResponse> getIllegalRecordRuleExplanation() {
+    return ApiResponse.success(codeReviewIllegalRecordService.getRuleExplanation());
   }
 
   @GetMapping("/illegal-records/status")

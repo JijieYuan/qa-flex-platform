@@ -96,16 +96,17 @@ class StatisticBoardControllerTest {
   }
 
   @Test
-  void shouldReturnUnsupportedRuleExplanationForMirrorTableOverviewBoard() {
+  void shouldLoadMirrorTableOverviewRuleExplanation() {
     StatisticBoardRuleExplanationResponse response =
         controller.getRuleExplanation("mirror-table-overview", Map.of()).getData();
 
     assertThat(response).isNotNull();
     assertThat(response.boardKey()).isEqualTo("mirror-table-overview");
-    assertThat(response.supported()).isFalse();
-    assertThat(response.unsupportedReason()).isNotBlank();
-    assertThat(response.flowSteps()).isEmpty();
-    assertThat(response.metricDefinitions()).isEmpty();
+    assertThat(response.supported()).isTrue();
+    assertThat(response.version()).isNotBlank();
+    assertThat(response.scopeDescription()).isNotBlank();
+    assertThat(response.flowSteps()).isNotEmpty();
+    assertThat(response.metricDefinitions()).isNotEmpty();
   }
 
   @Test
