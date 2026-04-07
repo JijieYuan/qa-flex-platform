@@ -1,10 +1,21 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
+import { ElMessage } from 'element-plus';
 import BaseRecordTable from '../components/base/BaseRecordTable.vue';
+import { api, type CodeReviewIllegalRecordFilterOptionsResponse, type CodeReviewIllegalRecordRowResponse } from '../api';
 import { useRouteTableState } from '../composables/useRouteTableState';
 import type { RecordTableActiveFilterTag, RecordTableColumn, RecordTableFilterField } from '../types/record-table';
 
-const { route, page, pageSize, sortBy, sortOrder, patchQuery } = useRouteTableState({
+const {
+  route,
+  page,
+  pageSize,
+  sortBy,
+  sortOrder,
+  patchQuery,
+  bindLoader,
+  isTableLoading,
+} = useRouteTableState({
   defaults: {
     page: 1,
     pageSize: 20,
@@ -14,6 +25,19 @@ const { route, page, pageSize, sortBy, sortOrder, patchQuery } = useRouteTableSt
 });
 
 const advancedVisible = ref(false);
+const rows = ref<CodeReviewIllegalRecordRowResponse[]>([]);
+const total = ref(0);
+const detailVisible = ref(false);
+const selectedRow = ref<CodeReviewIllegalRecordRowResponse | null>(null);
+const filterOptions = ref<CodeReviewIllegalRecordFilterOptionsResponse>({
+  requestTypes: [{ label: '合并请求', value: 'merge_request' }],
+  repositoryNames: [],
+  illegalTypes: [],
+  targetBranches: [],
+  mergedBys: [],
+  moduleNames: [],
+  projectNames: [],
+});
 
 const filterValues = computed<Record<string, unknown>>(() => {
   const start = String(route.query.mergedAtStart ?? '');
@@ -39,7 +63,7 @@ const primaryFilters = computed<RecordTableFilterField[]>(() => [
     label: '代码库',
     type: 'select',
     width: 180,
-    options: [{ label: '全部代码库', value: '' }],
+    options: [{ label: '全部代码库', value: '' }, ...filterOptions.value.repositoryNames],
   },
   {
     key: 'mergedAtRange',
@@ -54,7 +78,7 @@ const primaryFilters = computed<RecordTableFilterField[]>(() => [
     label: '非法类型',
     type: 'select',
     width: 180,
-    options: [{ label: '全部非法类型', value: '' }],
+    options: [{ label: '全部非法类型', value: '' }, ...filterOptions.value.illegalTypes],
   },
   {
     key: 'keyword',
@@ -70,37 +94,33 @@ const advancedFilters = computed<RecordTableFilterField[]>(() => [
     key: 'requestType',
     label: '请求类型',
     type: 'select',
-    options: [
-      { label: '全部请求类型', value: '' },
-      { label: '合并请求', value: 'merge_request' },
-      { label: '议题', value: 'issue' },
-    ],
+    options: [{ label: '全部请求类型', value: '' }, ...filterOptions.value.requestTypes],
   },
-  { key: 'mergeRequestIid', label: '合并请求编号', type: 'input', placeholder: '合并请求编号' },
-  { key: 'owner', label: '被挂责任人', type: 'input', placeholder: '被挂责任人' },
+  { key: 'mergeRequestIid', label: '合并请求编号', type: 'input', placeholder: '输入合并请求编号' },
+  { key: 'owner', label: '标注责任人', type: 'input', placeholder: '输入标注责任人' },
   {
     key: 'targetBranch',
     label: '目标分支',
     type: 'select',
-    options: [{ label: '全部目标分支', value: '' }],
+    options: [{ label: '全部目标分支', value: '' }, ...filterOptions.value.targetBranches],
   },
   {
     key: 'mergedBy',
     label: '合并人',
     type: 'select',
-    options: [{ label: '全部合并人', value: '' }],
+    options: [{ label: '全部合并人', value: '' }, ...filterOptions.value.mergedBys],
   },
   {
     key: 'moduleName',
     label: '模块名称',
     type: 'select',
-    options: [{ label: '全部模块名称', value: '' }],
+    options: [{ label: '全部模块名称', value: '' }, ...filterOptions.value.moduleNames],
   },
   {
     key: 'projectName',
     label: '项目名称',
     type: 'select',
-    options: [{ label: '全部项目名称', value: '' }],
+    options: [{ label: '全部项目名称', value: '' }, ...filterOptions.value.projectNames],
   },
 ]);
 
@@ -115,7 +135,7 @@ const activeFilterTags = computed<RecordTableActiveFilterTag[]>(() => {
   if (values.keyword) tags.push({ key: 'keyword', label: '关键字', value: String(values.keyword) });
   if (values.requestType) tags.push({ key: 'requestType', label: '请求类型', value: String(values.requestType) });
   if (values.mergeRequestIid) tags.push({ key: 'mergeRequestIid', label: '合并请求编号', value: String(values.mergeRequestIid) });
-  if (values.owner) tags.push({ key: 'owner', label: '被挂责任人', value: String(values.owner) });
+  if (values.owner) tags.push({ key: 'owner', label: '标注责任人', value: String(values.owner) });
   if (values.targetBranch) tags.push({ key: 'targetBranch', label: '目标分支', value: String(values.targetBranch) });
   if (values.mergedBy) tags.push({ key: 'mergedBy', label: '合并人', value: String(values.mergedBy) });
   if (values.moduleName) tags.push({ key: 'moduleName', label: '模块名称', value: String(values.moduleName) });
@@ -124,22 +144,93 @@ const activeFilterTags = computed<RecordTableActiveFilterTag[]>(() => {
 });
 
 const columns = computed<RecordTableColumn[]>(() => [
-  { key: 'mergeRequestIid', label: '合并请求编号', type: 'number', sortable: true, width: 128, fixed: 'left' },
-  { key: 'mergeRequestContent', label: '合并请求内容', type: 'link', sortable: true, minWidth: 260 },
+  { key: 'mergeRequestIid', label: '合并请求编号', type: 'link', sortable: true, width: 128, fixed: 'left' },
+  { key: 'mergeRequestContent', label: '合并请求内容', sortable: true, minWidth: 260 },
   { key: 'owner', label: '标注责任人', sortable: true, minWidth: 140 },
   { key: 'projectName', label: '所属项目', sortable: true, minWidth: 160 },
   { key: 'mergedAt', label: '合并时间', type: 'datetime', sortable: true, minWidth: 180 },
   { key: 'mergedBy', label: '合并人', sortable: true, minWidth: 140 },
   { key: 'moduleName', label: '模块名', sortable: true, minWidth: 140 },
   { key: 'targetBranch', label: '合并目标分支', sortable: true, minWidth: 180 },
-  { key: 'illegalType', label: '非法类型', type: 'tags', minWidth: 220 },
-  { key: 'commentRate', label: '代码注释比例(%)', sortable: true, width: 160, align: 'right' },
+  { key: 'illegalTypes', label: '非法类型', type: 'tags', minWidth: 220 },
+  { key: 'commentRateDisplay', label: '代码注释比例(%)', sortable: true, width: 160, align: 'right' },
   { key: 'defectCount', label: '缺陷数量', type: 'number', sortable: true, width: 120, align: 'right' },
   { key: 'addedLines', label: '新增代码行数(行)', type: 'number', sortable: true, width: 150, align: 'right' },
 ]);
 
-const rows = computed<Record<string, unknown>[]>(() => []);
-const total = computed(() => 0);
+const tableRows = computed<Record<string, unknown>[]>(() =>
+  rows.value.map((row) => ({
+    __raw: row,
+    mergeRequestIid: row.mergeRequestLink
+      ? { label: String(row.mergeRequestIid), href: row.mergeRequestLink }
+      : String(row.mergeRequestIid),
+    mergeRequestContent: row.mergeRequestContent,
+    owner: row.owner || '-',
+    projectName: row.projectName || '-',
+    mergedAt: row.mergedAt ? row.mergedAt.replace('T', ' ').slice(0, 19) : '-',
+    mergedBy: row.mergedBy || '-',
+    moduleName: row.moduleName || '-',
+    targetBranch: row.targetBranch || '-',
+    illegalTypes: row.illegalTypes.map((label) => ({ label, type: 'warning' as const })),
+    commentRateDisplay: row.commentRate == null ? '-' : `${row.commentRate.toFixed(2)}%`,
+    defectCount: row.defectCount,
+    addedLines: row.addedLines,
+  })),
+);
+
+function formatDateTime(value?: string | null) {
+  return value ? value.replace('T', ' ').slice(0, 19) : '-';
+}
+
+function formatMetric(value?: number | null, suffix = '') {
+  if (value == null) {
+    return '-';
+  }
+  return `${value}${suffix}`;
+}
+
+function openDetailDrawer(row: Record<string, unknown>) {
+  selectedRow.value = (row.__raw as CodeReviewIllegalRecordRowResponse) ?? null;
+  detailVisible.value = true;
+}
+
+async function loadFilterOptions() {
+  filterOptions.value = await api.getCodeReviewIllegalRecordFilterOptions(route.query.projectId as string | undefined);
+}
+
+async function loadTableData() {
+  const response = await api.getCodeReviewIllegalRecords({
+    projectId: route.query.projectId as string | undefined,
+    repositoryName: String(route.query.repositoryName ?? ''),
+    mergedAtStart: String(route.query.mergedAtStart ?? ''),
+    mergedAtEnd: String(route.query.mergedAtEnd ?? ''),
+    keyword: String(route.query.keyword ?? ''),
+    projectName: String(route.query.projectName ?? ''),
+    requestType: String(route.query.requestType ?? ''),
+    targetBranch: String(route.query.targetBranch ?? ''),
+    mergedBy: String(route.query.mergedBy ?? ''),
+    moduleName: String(route.query.moduleName ?? ''),
+    illegalType: String(route.query.illegalType ?? ''),
+    mergeRequestIid: String(route.query.mergeRequestIid ?? ''),
+    owner: String(route.query.owner ?? ''),
+    page: page.value,
+    size: pageSize.value,
+    sortBy: sortBy.value || 'mergedAt',
+    sortOrder: (sortOrder.value || 'desc') as 'asc' | 'desc',
+  });
+  rows.value = response.records;
+  total.value = response.total;
+}
+
+bindLoader(async () => {
+  try {
+    await Promise.all([loadFilterOptions(), loadTableData()]);
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '非法记录数据加载失败');
+    rows.value = [];
+    total.value = 0;
+  }
+});
 
 async function handleFilterChange(payload: { key: string; value: string | string[] | null }) {
   if (payload.key === 'mergedAtRange') {
@@ -179,7 +270,12 @@ async function handleReset() {
 }
 
 async function handleRefresh() {
-  await patchQuery({});
+  try {
+    await Promise.all([loadFilterOptions(), loadTableData()]);
+    ElMessage.success('非法记录已刷新');
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '非法记录刷新失败');
+  }
 }
 
 async function handleQuery() {
@@ -187,40 +283,27 @@ async function handleQuery() {
 }
 
 async function handleSizeChange(nextSize: number) {
-  await patchQuery({
-    pageSize: nextSize,
-    page: 1,
-  });
+  await patchQuery({ pageSize: nextSize, page: 1 });
 }
 
 async function handleCurrentChange(nextPage: number) {
-  await patchQuery({
-    page: nextPage,
-  });
+  await patchQuery({ page: nextPage });
 }
 
 async function handleSortChange(payload: { prop: string; order: 'ascending' | 'descending' | null }) {
   await patchQuery({
     sortBy: payload.prop || 'mergedAt',
-    sortOrder: payload.order === 'ascending' ? 'asc' : payload.order === 'descending' ? 'desc' : 'desc',
+    sortOrder: payload.order === 'ascending' ? 'asc' : 'desc',
     page: 1,
   });
 }
 
 async function handleClearFilter(key: string) {
   if (key === 'mergedAtRange') {
-    await patchQuery({
-      page: 1,
-      mergedAtStart: null,
-      mergedAtEnd: null,
-    });
+    await patchQuery({ page: 1, mergedAtStart: null, mergedAtEnd: null });
     return;
   }
-
-  await patchQuery({
-    page: 1,
-    [key]: null,
-  });
+  await patchQuery({ page: 1, [key]: null });
 }
 </script>
 
@@ -228,8 +311,8 @@ async function handleClearFilter(key: string) {
   <section class="record-page-shell">
     <BaseRecordTable
       :columns="columns"
-      :rows="rows"
-      :loading="false"
+      :rows="tableRows"
+      :loading="isTableLoading"
       :page="page"
       :page-size="pageSize"
       :total="total"
@@ -238,7 +321,7 @@ async function handleClearFilter(key: string) {
       :filter-values="filterValues"
       :active-filter-tags="activeFilterTags"
       :advanced-visible="advancedVisible"
-      empty-description="当前尚未接入真实非法记录数据，先保留真实表头和空表结构。"
+      empty-description="当前筛选条件下没有查询到非法记录。"
       :show-search="false"
       @filter-change="handleFilterChange"
       @reset="handleReset"
@@ -250,13 +333,129 @@ async function handleClearFilter(key: string) {
       @current-change="handleCurrentChange"
       @sort-change="handleSortChange"
     >
+      <template #toolbar-prefix>
+        <div class="record-page-toolbar-meta">
+          <div class="record-page-toolbar-title">非法记录明细</div>
+          <div class="record-page-toolbar-desc">代码走查结果明细与异常记录工作区</div>
+        </div>
+      </template>
+
       <template #toolbar-actions>
         <div class="record-page-summary">
           <span class="record-page-summary-label">当前排序</span>
-          <el-tag effect="plain">{{ sortBy || 'mergedAt' }} / {{ sortOrder || 'desc' }}</el-tag>
+          <el-tag effect="plain" type="info" class="record-page-sort-tag">
+            {{ sortBy || 'mergedAt' }} / {{ sortOrder || 'desc' }}
+          </el-tag>
         </div>
       </template>
+
+      <template #row-actions="{ row }">
+        <el-button class="record-detail-trigger" link @click="openDetailDrawer(row)">查看详情</el-button>
+      </template>
     </BaseRecordTable>
+
+    <el-drawer
+      v-model="detailVisible"
+      size="540px"
+      destroy-on-close
+      class="record-detail-drawer"
+    >
+      <template #header>
+        <div v-if="selectedRow" class="record-detail-header">
+          <div class="record-detail-header-main">
+            <div class="record-detail-header-kicker">代码走查详情</div>
+            <div class="record-detail-header-title">MR #{{ selectedRow.mergeRequestIid }}</div>
+            <div class="record-detail-header-meta">
+              <span class="record-detail-meta-item">{{ selectedRow.projectName || '-' }}</span>
+              <span class="record-detail-meta-dot" />
+              <span class="record-detail-meta-item">{{ selectedRow.targetBranch || '-' }}</span>
+              <span class="record-detail-meta-dot" />
+              <span class="record-detail-meta-item">{{ selectedRow.mergedBy || '-' }}</span>
+            </div>
+          </div>
+          <div class="record-detail-header-actions">
+            <el-link
+              v-if="selectedRow.mergeRequestLink"
+              :href="selectedRow.mergeRequestLink"
+              target="_blank"
+              type="primary"
+              :underline="false"
+              class="record-detail-header-link"
+            >
+              打开 GitLab
+            </el-link>
+          </div>
+        </div>
+      </template>
+
+      <template v-if="selectedRow">
+        <section class="record-detail-section">
+          <div class="record-detail-section-title">基础信息</div>
+          <el-descriptions :column="2" border size="small" class="record-detail-descriptions">
+            <el-descriptions-item label="合并请求编号">
+              <el-link
+                v-if="selectedRow.mergeRequestLink"
+                :href="selectedRow.mergeRequestLink"
+                target="_blank"
+                type="primary"
+              >
+                {{ selectedRow.mergeRequestIid }}
+              </el-link>
+              <span v-else>{{ selectedRow.mergeRequestIid }}</span>
+            </el-descriptions-item>
+            <el-descriptions-item label="请求类型">{{ selectedRow.requestType || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="所属项目">{{ selectedRow.projectName || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="代码库">{{ selectedRow.repositoryName || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="标注责任人">{{ selectedRow.owner || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="合并人">{{ selectedRow.mergedBy || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="模块名">{{ selectedRow.moduleName || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="合并目标分支">{{ selectedRow.targetBranch || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="合并时间">{{ formatDateTime(selectedRow.mergedAt) }}</el-descriptions-item>
+            <el-descriptions-item label="项目 ID">{{ selectedRow.projectId ?? '-' }}</el-descriptions-item>
+          </el-descriptions>
+        </section>
+
+        <section class="record-detail-section">
+          <div class="record-detail-section-title">合并请求内容</div>
+          <div class="record-detail-content">{{ selectedRow.mergeRequestContent || '-' }}</div>
+        </section>
+
+        <section class="record-detail-section">
+          <div class="record-detail-section-title">非法判定</div>
+          <div class="record-detail-tags">
+            <el-tag
+              v-for="illegalType in selectedRow.illegalTypes"
+              :key="illegalType"
+              type="warning"
+              effect="plain"
+            >
+              {{ illegalType }}
+            </el-tag>
+            <span v-if="!selectedRow.illegalTypes.length" class="record-detail-empty">-</span>
+          </div>
+        </section>
+
+        <section class="record-detail-section">
+          <div class="record-detail-section-title">度量指标</div>
+          <div class="record-detail-metrics">
+            <article class="record-detail-metric-card">
+              <span class="record-detail-metric-label">代码注释比例</span>
+              <strong class="record-detail-metric-value">
+                {{ selectedRow.commentRate == null ? '-' : `${selectedRow.commentRate.toFixed(2)}%` }}
+              </strong>
+            </article>
+            <article class="record-detail-metric-card">
+              <span class="record-detail-metric-label">缺陷数量</span>
+              <strong class="record-detail-metric-value">{{ formatMetric(selectedRow.defectCount) }}</strong>
+            </article>
+            <article class="record-detail-metric-card">
+              <span class="record-detail-metric-label">新增代码行数</span>
+              <strong class="record-detail-metric-value">{{ formatMetric(selectedRow.addedLines, ' 行') }}</strong>
+            </article>
+          </div>
+        </section>
+      </template>
+    </el-drawer>
   </section>
 </template>
 
@@ -264,6 +463,24 @@ async function handleClearFilter(key: string) {
 .record-page-shell {
   display: grid;
   gap: 12px;
+}
+
+.record-page-toolbar-meta {
+  display: grid;
+  gap: 2px;
+}
+
+.record-page-toolbar-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: rgba(15, 23, 42, 0.92);
+  line-height: 1.2;
+}
+
+.record-page-toolbar-desc {
+  font-size: 12px;
+  color: rgba(15, 23, 42, 0.45);
+  line-height: 1.4;
 }
 
 .record-page-summary {
@@ -275,5 +492,155 @@ async function handleClearFilter(key: string) {
 .record-page-summary-label {
   font-size: 12px;
   color: rgba(0, 0, 0, 0.45);
+}
+
+.record-page-sort-tag {
+  border-radius: 999px;
+}
+
+.record-detail-trigger {
+  padding-inline: 0;
+  font-weight: 500;
+  color: rgba(37, 99, 235, 0.88);
+}
+
+.record-detail-trigger:hover {
+  color: rgb(29, 78, 216);
+}
+
+.record-detail-drawer :deep(.el-drawer__header) {
+  margin-bottom: 0;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+}
+
+.record-detail-drawer :deep(.el-drawer__body) {
+  padding-top: 16px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+}
+
+.record-detail-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.record-detail-header-main {
+  display: grid;
+  gap: 8px;
+}
+
+.record-detail-header-kicker {
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(15, 23, 42, 0.42);
+  letter-spacing: 0.02em;
+}
+
+.record-detail-header-title {
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.2;
+  color: rgba(15, 23, 42, 0.94);
+}
+
+.record-detail-header-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.record-detail-meta-item {
+  font-size: 13px;
+  color: rgba(15, 23, 42, 0.58);
+}
+
+.record-detail-meta-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.18);
+}
+
+.record-detail-header-actions {
+  display: flex;
+  align-items: center;
+}
+
+.record-detail-header-link {
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: rgba(37, 99, 235, 0.08);
+  font-weight: 600;
+}
+
+.record-detail-section {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.record-detail-section-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: rgba(15, 23, 42, 0.48);
+  letter-spacing: 0.04em;
+}
+
+.record-detail-descriptions {
+  background: rgba(255, 255, 255, 0.96);
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.03);
+}
+
+.record-detail-content {
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  color: rgba(15, 23, 42, 0.82);
+  line-height: 1.7;
+  word-break: break-word;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.03);
+}
+
+.record-detail-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.record-detail-empty {
+  color: rgba(15, 23, 42, 0.45);
+}
+
+.record-detail-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.record-detail-metric-card {
+  display: grid;
+  gap: 6px;
+  padding: 14px 15px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.98);
+  border: 1px solid rgba(15, 23, 42, 0.06);
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.025);
+}
+
+.record-detail-metric-label {
+  font-size: 12px;
+  color: rgba(15, 23, 42, 0.5);
+}
+
+.record-detail-metric-value {
+  font-size: 18px;
+  line-height: 1.2;
+  color: rgba(15, 23, 42, 0.92);
 }
 </style>

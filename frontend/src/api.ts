@@ -286,6 +286,50 @@ export interface DatabaseTableRowsResponse {
   statusMessage?: string | null;
 }
 
+export interface OptionItemResponse {
+  label: string;
+  value: string;
+}
+
+export interface CodeReviewIllegalRecordRowResponse {
+  requestType: string;
+  mergeRequestId: number;
+  mergeRequestIid: number;
+  projectId: number;
+  mergeRequestContent: string;
+  mergeRequestLink?: string | null;
+  owner: string;
+  projectName: string;
+  repositoryName: string;
+  mergedAt?: string | null;
+  mergedBy: string;
+  moduleName: string;
+  targetBranch: string;
+  illegalTypes: string[];
+  commentRate?: number | null;
+  defectCount?: number | null;
+  addedLines?: number | null;
+}
+
+export interface CodeReviewIllegalRecordListResponse {
+  records: CodeReviewIllegalRecordRowResponse[];
+  total: number;
+  page: number;
+  size: number;
+  sortField: string;
+  sortOrder: 'asc' | 'desc';
+}
+
+export interface CodeReviewIllegalRecordFilterOptionsResponse {
+  requestTypes: OptionItemResponse[];
+  repositoryNames: OptionItemResponse[];
+  illegalTypes: OptionItemResponse[];
+  targetBranches: OptionItemResponse[];
+  mergedBys: OptionItemResponse[];
+  moduleNames: OptionItemResponse[];
+  projectNames: OptionItemResponse[];
+}
+
 export interface CollectFormDetailResponse {
   id: number;
   gitlabBaseUrl: string;
@@ -443,15 +487,15 @@ export const api = {
   getDatabaseTables() {
     return request<DatabaseTableOption[]>('/api/database-browser/tables');
   },
-  getDatabaseTableRows(params: {
+    getDatabaseTableRows(params: {
     tableName: string;
     page?: number;
     size?: number;
     keyword?: string;
     sortField?: string;
     sortOrder?: 'asc' | 'desc';
-  }) {
-    const query = new URLSearchParams({
+    }) {
+      const query = new URLSearchParams({
       tableName: params.tableName,
       page: String(params.page ?? 1),
       size: String(params.size ?? 20),
@@ -459,11 +503,59 @@ export const api = {
       ...(params.sortField ? { sortField: params.sortField } : {}),
       ...(params.sortOrder ? { sortOrder: params.sortOrder } : {}),
     });
-    return request<DatabaseTableRowsResponse>(`/api/database-browser/rows?${query.toString()}`);
-  },
-  getCollectFormDetail(params: {
-    gitlabBaseUrl: string;
-    projectId: number;
+      return request<DatabaseTableRowsResponse>(`/api/database-browser/rows?${query.toString()}`);
+    },
+    getCodeReviewIllegalRecords(params: {
+      projectId?: string | number | null;
+      repositoryName?: string;
+      mergedAtStart?: string;
+      mergedAtEnd?: string;
+      keyword?: string;
+      projectName?: string;
+      requestType?: string;
+      targetBranch?: string;
+      mergedBy?: string;
+      moduleName?: string;
+      illegalType?: string;
+      mergeRequestIid?: string;
+      owner?: string;
+      page?: number;
+      size?: number;
+      sortBy?: string;
+      sortOrder?: 'asc' | 'desc';
+    }) {
+      const query = new URLSearchParams({
+        page: String(params.page ?? 1),
+        size: String(params.size ?? 20),
+        ...(params.projectId != null && params.projectId !== '' ? { projectId: String(params.projectId) } : {}),
+        ...(params.repositoryName ? { repositoryName: params.repositoryName } : {}),
+        ...(params.mergedAtStart ? { mergedAtStart: params.mergedAtStart } : {}),
+        ...(params.mergedAtEnd ? { mergedAtEnd: params.mergedAtEnd } : {}),
+        ...(params.keyword ? { keyword: params.keyword } : {}),
+        ...(params.projectName ? { projectName: params.projectName } : {}),
+        ...(params.requestType ? { requestType: params.requestType } : {}),
+        ...(params.targetBranch ? { targetBranch: params.targetBranch } : {}),
+        ...(params.mergedBy ? { mergedBy: params.mergedBy } : {}),
+        ...(params.moduleName ? { moduleName: params.moduleName } : {}),
+        ...(params.illegalType ? { illegalType: params.illegalType } : {}),
+        ...(params.mergeRequestIid ? { mergeRequestIid: params.mergeRequestIid } : {}),
+        ...(params.owner ? { owner: params.owner } : {}),
+        ...(params.sortBy ? { sortBy: params.sortBy } : {}),
+        ...(params.sortOrder ? { sortOrder: params.sortOrder } : {}),
+      });
+      return request<CodeReviewIllegalRecordListResponse>(`/api/code-review/illegal-records?${query.toString()}`);
+    },
+    getCodeReviewIllegalRecordFilterOptions(projectId?: string | number | null) {
+      const query = new URLSearchParams(
+        projectId != null && projectId !== '' ? { projectId: String(projectId) } : {},
+      );
+      return request<CodeReviewIllegalRecordFilterOptionsResponse>(
+        `/api/code-review/illegal-records/filter-options${query.toString() ? `?${query.toString()}` : ''}`,
+      );
+    },
+    getCollectFormDetail(params: {
+      gitlabBaseUrl: string;
+      projectId: number;
     resourceType: string;
     resourceId: string;
     templateCode: string;

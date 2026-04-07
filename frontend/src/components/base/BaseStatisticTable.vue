@@ -1,7 +1,13 @@
 <script setup lang="ts">
 import type { Component } from 'vue';
 import { ArrowRight } from '@element-plus/icons-vue';
-import type { StatisticBoardResponse, StatisticCellData, StatisticColumnGroup, StatisticColumnLeaf, StatisticRowData } from '../../api';
+import type {
+  StatisticBoardResponse,
+  StatisticCellData,
+  StatisticColumnGroup,
+  StatisticColumnLeaf,
+  StatisticRowData,
+} from '../../api';
 import type { StatisticBoardUiHooks } from '../statistic-board-ui';
 import { ROW_LABEL_SORT_KEY, type SortDirection } from '../statistic-board-sorting';
 
@@ -63,7 +69,6 @@ const props = withDefaults(
     pageSizeOptions: () => [20, 50, 100, 200],
   },
 );
-
 </script>
 
 <template>
@@ -96,28 +101,28 @@ const props = withDefaults(
             class="stat-column-header first-column"
             :class="{ sorting: sortDirectionForColumn(ROW_LABEL_SORT_KEY) !== 'default' }"
           >
-            <span class="stat-column-header-label">{{ rowHeaderLabel }}</span>
-            <button
-              class="sort-trigger"
-              :class="`is-${sortDirectionForColumn(ROW_LABEL_SORT_KEY)}`"
-              type="button"
-              :title="sortStateLabel(sortDirectionForColumn(ROW_LABEL_SORT_KEY))"
-              @click.stop="toggleColumnSort(ROW_LABEL_SORT_KEY)"
-            >
-              <el-icon class="sort-trigger-icon">
-                <component :is="sortIconForDirection(sortDirectionForColumn(ROW_LABEL_SORT_KEY))" />
-              </el-icon>
-              <span class="sort-trigger-state">
-                {{ sortDirectionForColumn(ROW_LABEL_SORT_KEY) === 'asc' ? '升序' : sortDirectionForColumn(ROW_LABEL_SORT_KEY) === 'desc' ? '降序' : '排序' }}
-              </span>
-            </button>
+            <span class="stat-column-header-label" :title="rowHeaderLabel">{{ rowHeaderLabel }}</span>
+            <span class="stat-header-zone stat-header-zone-right">
+              <button
+                class="sort-trigger"
+                :class="`is-${sortDirectionForColumn(ROW_LABEL_SORT_KEY)}`"
+                type="button"
+                :title="sortStateLabel(sortDirectionForColumn(ROW_LABEL_SORT_KEY))"
+                @click.stop="toggleColumnSort(ROW_LABEL_SORT_KEY)"
+              >
+                <el-icon class="sort-trigger-icon">
+                  <component :is="sortIconForDirection(sortDirectionForColumn(ROW_LABEL_SORT_KEY))" />
+                </el-icon>
+                <span class="sort-trigger-state">
+                  {{ sortDirectionForColumn(ROW_LABEL_SORT_KEY) === 'asc' ? '升序' : sortDirectionForColumn(ROW_LABEL_SORT_KEY) === 'desc' ? '降序' : '排序' }}
+                </span>
+              </button>
+            </span>
           </div>
         </template>
 
         <template #default="{ row }">
-          <span class="stat-row-label">
-            {{ row.rowLabel }}
-          </span>
+          <span class="stat-row-label">{{ row.rowLabel }}</span>
         </template>
       </el-table-column>
 
@@ -132,15 +137,18 @@ const props = withDefaults(
             @drop.prevent="onGroupDrop(group.key)"
             @dragend="clearDragState"
           >
-            <span class="drag-handle group" aria-hidden="true">
-              <span></span>
-              <span></span>
-              <span></span>
-              <span></span>
-              <span></span>
-              <span></span>
+            <span class="stat-header-zone stat-header-zone-left" aria-hidden="true">
+              <span class="drag-handle group">
+                <span></span>
+                <span></span>
+                <span></span>
+                <span></span>
+                <span></span>
+                <span></span>
+              </span>
             </span>
-            <span class="stat-group-header-label">{{ group.label }}</span>
+            <span class="stat-group-header-label" :title="group.label">{{ group.label }}</span>
+            <span class="stat-header-zone stat-header-zone-right stat-header-zone-placeholder" aria-hidden="true"></span>
           </div>
         </template>
 
@@ -164,29 +172,33 @@ const props = withDefaults(
               @drop.prevent="onColumnDrop(group.key, column.key)"
               @dragend="clearDragState"
             >
-              <span class="drag-handle subtle" aria-hidden="true">
-                <span></span>
-                <span></span>
-                <span></span>
-                <span></span>
-                <span></span>
-                <span></span>
-              </span>
-              <span class="stat-column-header-label">{{ column.label }}</span>
-              <button
-                class="sort-trigger"
-                :class="`is-${sortDirectionForColumn(column.key)}`"
-                type="button"
-                :title="sortStateLabel(sortDirectionForColumn(column.key))"
-                @click.stop="toggleColumnSort(column.key)"
-              >
-                <el-icon class="sort-trigger-icon">
-                  <component :is="sortIconForDirection(sortDirectionForColumn(column.key))" />
-                </el-icon>
-                <span class="sort-trigger-state">
-                  {{ sortDirectionForColumn(column.key) === 'asc' ? '升序' : sortDirectionForColumn(column.key) === 'desc' ? '降序' : '排序' }}
+              <span class="stat-header-zone stat-header-zone-left" aria-hidden="true">
+                <span class="drag-handle subtle">
+                  <span></span>
+                  <span></span>
+                  <span></span>
+                  <span></span>
+                  <span></span>
+                  <span></span>
                 </span>
-              </button>
+              </span>
+              <span class="stat-column-header-label" :title="column.label">{{ column.label }}</span>
+              <span class="stat-header-zone stat-header-zone-right">
+                <button
+                  class="sort-trigger"
+                  :class="`is-${sortDirectionForColumn(column.key)}`"
+                  type="button"
+                  :title="sortStateLabel(sortDirectionForColumn(column.key))"
+                  @click.stop="toggleColumnSort(column.key)"
+                >
+                  <el-icon class="sort-trigger-icon">
+                    <component :is="sortIconForDirection(sortDirectionForColumn(column.key))" />
+                  </el-icon>
+                  <span class="sort-trigger-state">
+                    {{ sortDirectionForColumn(column.key) === 'asc' ? '升序' : sortDirectionForColumn(column.key) === 'desc' ? '降序' : '排序' }}
+                  </span>
+                </button>
+              </span>
             </div>
           </template>
 
@@ -234,7 +246,7 @@ const props = withDefaults(
     class="view-settings-drawer"
     @update:model-value="onSettingsVisibleChange"
   >
-    <div class="view-settings-panel" :class="props.uiHooks.settingsPanelClass" v-if="board">
+    <div v-if="board" class="view-settings-panel" :class="props.uiHooks.settingsPanelClass">
       <div class="view-settings-summary">
         <div class="view-settings-summary-title">列显示控制</div>
         <div class="view-settings-summary-text">当前已选择 {{ currentVisibleColumnCount }} 列，可按需调整当前页面的展示视图。</div>

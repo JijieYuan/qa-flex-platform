@@ -508,30 +508,30 @@ button {
 .stat-column-header {
   min-height: 34px;
   position: relative;
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  gap: 0;
+  display: grid;
+  align-items: center;
   width: 100%;
   color: #27415d;
   transition: color 160ms ease, background-color 160ms ease, transform 160ms ease;
 }
 
 .stat-group-header {
-  padding: 0 16px 2px;
+  grid-template-columns: 16px minmax(0, 1fr) 16px;
+  padding: 0 8px;
   cursor: grab;
   gap: 6px;
 }
 
 .stat-column-header {
-  padding: 0 28px 2px 10px;
+  grid-template-columns: 16px minmax(0, 1fr) 18px;
+  padding: 0 8px;
   cursor: grab;
   gap: 6px;
 }
 
 .stat-column-header.first-column {
-  padding: 0 28px 2px 12px;
-  justify-content: flex-start;
+  grid-template-columns: minmax(0, 1fr) 18px;
+  padding: 0 8px 0 12px;
   gap: 8px;
 }
 
@@ -558,23 +558,36 @@ button {
   display: block;
   white-space: nowrap;
   font-weight: 600;
-  overflow: visible;
-  text-overflow: clip;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.2;
+  min-width: 0;
 }
 
-.stat-group-header-label,
+.stat-group-header .stat-group-header-label {
+  text-align: center;
+  pointer-events: none;
+}
+
 .stat-column-header:not(.first-column) .stat-column-header-label {
-  position: static;
-  transform: none;
-  width: auto;
-  max-width: calc(100% - 28px);
   text-align: center;
   pointer-events: none;
 }
 
 .stat-column-header.first-column .stat-column-header-label {
-  width: auto;
   text-align: left;
+}
+
+.stat-header-zone {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-width: 0;
+}
+
+.stat-header-zone-placeholder {
+  visibility: hidden;
 }
 
 .stat-column-header.sorting .stat-column-header-label {
@@ -589,8 +602,8 @@ button {
   gap: 2px 2px;
   align-content: center;
   flex: 0 0 auto;
-  opacity: 0;
-  color: #8ba0b7;
+  opacity: 0.32;
+  color: #9aacbf;
   transition: opacity 160ms ease, transform 160ms ease, color 160ms ease;
   pointer-events: none;
 }
@@ -610,8 +623,8 @@ button {
 .stat-column-header:hover .drag-handle,
 .stat-group-header.dragging .drag-handle,
 .stat-column-header.dragging .drag-handle {
-  opacity: 1;
-  color: #5b78a0;
+  opacity: 0.72;
+  color: #5f7696;
 }
 
 .stat-group-header:hover .drag-handle,
@@ -634,11 +647,11 @@ button {
 }
 
 .sort-trigger {
-  min-width: 16px;
-  width: 16px;
-  height: 16px;
+  min-width: 18px;
+  width: 18px;
+  height: 18px;
   border: 0;
-  border-radius: 0;
+  border-radius: 6px;
   background: transparent;
   padding: 0;
   display: inline-flex;
@@ -647,21 +660,15 @@ button {
   gap: 0;
   color: #8ea0b4;
   cursor: pointer;
-  opacity: 0.52;
+  opacity: 0.62;
   box-shadow: none !important;
-  transition: color 160ms ease, opacity 160ms ease, transform 160ms ease;
-}
-
-.stat-column-header:not(.first-column) .sort-trigger {
-  position: absolute;
-  right: 8px;
-  top: 50%;
-  transform: translateY(-50%);
+  transition: color 160ms ease, opacity 160ms ease, transform 160ms ease, background-color 160ms ease;
 }
 
 .sort-trigger:hover {
   color: #476581;
   opacity: 0.9;
+  background: rgba(15, 23, 42, 0.06);
 }
 
 .sort-trigger-icon {

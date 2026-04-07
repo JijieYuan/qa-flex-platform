@@ -319,7 +319,7 @@ const firstColumnMinWidth = computed(() => {
       : boardViewPrefs.value.widthStrategy === 'header'
         ? 120
         : 132;
-  return Math.max(baseWidth, headerLabelMinimumWidth(rowHeaderLabel.value, 92));
+  return Math.max(baseWidth, headerLabelMinimumWidth(rowHeaderLabel.value, 96));
 });
 
 function initializeFilters(fields: StatisticFilterField[]) {
@@ -823,7 +823,7 @@ function columnWidth(column: StatisticColumnLeaf) {
 }
 
 function columnMinWidth(column: StatisticColumnLeaf) {
-  return Math.max(columnWidth(column), headerLabelMinimumWidth(column.label, 84));
+  return Math.max(columnWidth(column), headerLabelMinimumWidth(column.label, 98));
 }
 
 function columnResizable(column: StatisticColumnLeaf) {

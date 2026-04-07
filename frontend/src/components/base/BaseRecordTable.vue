@@ -470,7 +470,8 @@ function getFilterValue(key: string) {
   justify-content: space-between;
   gap: 12px;
   flex-wrap: wrap;
-  min-height: 36px;
+  min-height: 40px;
+  padding: 2px 2px 0;
 }
 
 .record-table-toolbar-main {
@@ -486,6 +487,7 @@ function getFilterValue(key: string) {
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+  margin-left: auto;
 }
 
 .record-table-frame {
@@ -557,5 +559,9 @@ function getFilterValue(key: string) {
 
 :deep(.el-empty__description p) {
   color: rgba(15, 23, 42, 0.5);
+}
+
+:deep(.el-button + .el-button) {
+  margin-left: 0;
 }
 </style>
