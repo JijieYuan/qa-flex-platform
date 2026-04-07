@@ -153,7 +153,7 @@ const columns = computed<RecordTableColumn[]>(() => [
   { key: 'moduleName', label: '模块名', sortable: true, minWidth: 140 },
   { key: 'targetBranch', label: '合并目标分支', sortable: true, minWidth: 180 },
   { key: 'illegalTypes', label: '非法类型', type: 'tags', minWidth: 220 },
-  { key: 'commentRateDisplay', label: '代码注释比例(%)', sortable: true, width: 160, align: 'right' },
+  { key: 'commentRate', label: '代码注释比例(%)', sortable: true, width: 160, align: 'right' },
   { key: 'defectCount', label: '缺陷数量', type: 'number', sortable: true, width: 120, align: 'right' },
   { key: 'addedLines', label: '新增代码行数(行)', type: 'number', sortable: true, width: 150, align: 'right' },
 ]);
@@ -172,7 +172,7 @@ const tableRows = computed<Record<string, unknown>[]>(() =>
     moduleName: row.moduleName || '-',
     targetBranch: row.targetBranch || '-',
     illegalTypes: row.illegalTypes.map((label) => ({ label, type: 'warning' as const })),
-    commentRateDisplay: row.commentRate == null ? '-' : `${row.commentRate.toFixed(2)}%`,
+    commentRate: formatPercent(row.commentRate),
     defectCount: row.defectCount,
     addedLines: row.addedLines,
   })),
@@ -187,6 +187,13 @@ function formatMetric(value?: number | null, suffix = '') {
     return '-';
   }
   return `${value}${suffix}`;
+}
+
+function formatPercent(value?: number | null) {
+  if (value == null) {
+    return '-';
+  }
+  return `${(value * 100).toFixed(2)}%`;
 }
 
 function openDetailDrawer(row: Record<string, unknown>) {
@@ -224,7 +231,8 @@ async function loadTableData() {
 
 bindLoader(async () => {
   try {
-    await Promise.all([loadFilterOptions(), loadTableData()]);
+    await loadTableData();
+    await loadFilterOptions();
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '非法记录数据加载失败');
     rows.value = [];
@@ -271,7 +279,8 @@ async function handleReset() {
 
 async function handleRefresh() {
   try {
-    await Promise.all([loadFilterOptions(), loadTableData()]);
+    await loadTableData();
+    await loadFilterOptions();
     ElMessage.success('非法记录已刷新');
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '非法记录刷新失败');
@@ -441,7 +450,7 @@ async function handleClearFilter(key: string) {
             <article class="record-detail-metric-card">
               <span class="record-detail-metric-label">代码注释比例</span>
               <strong class="record-detail-metric-value">
-                {{ selectedRow.commentRate == null ? '-' : `${selectedRow.commentRate.toFixed(2)}%` }}
+                {{ formatPercent(selectedRow.commentRate) }}
               </strong>
             </article>
             <article class="record-detail-metric-card">

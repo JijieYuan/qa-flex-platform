@@ -22,6 +22,7 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -40,6 +41,9 @@ public class CodeReviewIllegalRecordService {
       "projects",
       "namespaces",
       "users");
+
+  private static final List<OptionItemResponse> REQUEST_TYPE_OPTIONS =
+      List.of(new OptionItemResponse("合并请求", "merge_request"));
 
   private static final String BASE_SQL = """
       with reviewer_names as (
@@ -64,7 +68,13 @@ public class CodeReviewIllegalRecordService {
       ),
       merge_request_labels as (
         select ll.target_id as merge_request_id,
-               array_agg(distinct l.title order by l.title) filter (where l.title is not null and l.title <> '') as label_titles
+               array_remove(
+                 array_agg(
+                   nullif(btrim(l.title), '')
+                   order by coalesce(ll.source_updated_at, ll.updated_at, ll.created_at) desc nulls last, ll.id desc
+                 ),
+                 null
+               ) as label_titles
           from ods_gitlab_label_links ll
           join ods_gitlab_labels l
             on l.id = ll.label_id
@@ -180,15 +190,13 @@ public class CodeReviewIllegalRecordService {
   }
 
   public CodeReviewIllegalRecordFilterOptionsResponse getFilterOptions(Long projectId) {
-    refreshMirrorForRealtimeView();
-
     List<IllegalRecordView> rows = loadSources().stream()
         .map(this::toView)
         .filter(row -> matchesProjectId(row, projectId))
         .toList();
 
     return new CodeReviewIllegalRecordFilterOptionsResponse(
-        List.of(new OptionItemResponse("合并请求", "merge_request")),
+        REQUEST_TYPE_OPTIONS,
         toOptions(rows, IllegalRecordView::repositoryName),
         toOptions(rows.stream().flatMap(row -> row.illegalTypes().stream()).toList()),
         toOptions(rows, IllegalRecordView::targetBranch),
@@ -206,7 +214,12 @@ public class CodeReviewIllegalRecordService {
   }
 
   private List<IllegalRecordSource> loadSources() {
-    return jdbcTemplate.query(BASE_SQL, this::mapSource);
+    try {
+      return jdbcTemplate.query(BASE_SQL, this::mapSource);
+    } catch (DataAccessException e) {
+      log.warn("Failed to load code review illegal record sources from mirror tables, fallback to empty result", e);
+      return List.of();
+    }
   }
 
   private IllegalRecordSource mapSource(ResultSet rs, int rowNum) throws SQLException {
@@ -499,3 +512,4 @@ public class CodeReviewIllegalRecordService {
       Integer addedLines) {
   }
 }
+

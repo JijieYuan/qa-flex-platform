@@ -1,0 +1,17 @@
+server:
+  port: 0
+
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:15432/qaflex?currentSchema=qaflex_test
+    username: qaflex
+    password: qaflex_dev_2026
+    driver-class-name: org.postgresql.Driver
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:test-schema-init.sql,classpath:schema.sql
+
+platform:
+  gitlab-mirror:
+    scheduler-enabled: false

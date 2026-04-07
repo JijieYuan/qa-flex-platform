@@ -264,6 +264,12 @@ public class GitlabSyncTaskService {
         .in(GitlabSyncTask::getStatus, ACTIVE_STATUSES)) > 0;
   }
 
+  public boolean hasExecutingTask(Long configId) {
+    return taskMapper.selectCount(new LambdaQueryWrapper<GitlabSyncTask>()
+        .eq(GitlabSyncTask::getConfigId, configId)
+        .in(GitlabSyncTask::getStatus, SyncStatus.RUNNING, SyncStatus.CANCELLING)) > 0;
+  }
+
   public void recoverTimedOutTasks() {
     LocalDateTime threshold = LocalDateTime.now().minusSeconds(properties.getHeartbeatTimeoutSeconds());
     List<GitlabSyncTask> staleTasks = taskMapper.selectList(new LambdaQueryWrapper<GitlabSyncTask>()

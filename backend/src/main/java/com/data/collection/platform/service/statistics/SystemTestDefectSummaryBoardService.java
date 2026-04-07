@@ -13,6 +13,7 @@ import com.data.collection.platform.entity.statistics.StatisticDetailResponse;
 import com.data.collection.platform.entity.statistics.StatisticFilterField;
 import com.data.collection.platform.entity.statistics.StatisticFilterGroup;
 import com.data.collection.platform.entity.statistics.StatisticRowData;
+import com.data.collection.platform.service.GitlabMirrorSyncService;
 import java.sql.Array;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -27,14 +28,23 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 @Service
+@Slf4j
 public class SystemTestDefectSummaryBoardService extends AbstractStatisticBoardService {
   private static final String BOARD_KEY = "system-test-defect-summary";
   private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
+  private static final List<String> REALTIME_REFRESH_TABLES = List.of(
+      "issues",
+      "projects",
+      "users",
+      "label_links",
+      "labels");
   private static final String BASE_SQL = """
       with issue_labels as (
         select ll.target_id as issue_id,
@@ -71,10 +81,15 @@ public class SystemTestDefectSummaryBoardService extends AbstractStatisticBoardS
       """;
 
   private final JdbcTemplate jdbcTemplate;
+  private final GitlabMirrorSyncService gitlabMirrorSyncService;
 
-  public SystemTestDefectSummaryBoardService(JdbcTemplate jdbcTemplate, JsonUtils jsonUtils) {
+  public SystemTestDefectSummaryBoardService(
+      JdbcTemplate jdbcTemplate,
+      JsonUtils jsonUtils,
+      GitlabMirrorSyncService gitlabMirrorSyncService) {
     super(jsonUtils);
     this.jdbcTemplate = jdbcTemplate;
+    this.gitlabMirrorSyncService = gitlabMirrorSyncService;
   }
 
   @Override
@@ -148,6 +163,7 @@ public class SystemTestDefectSummaryBoardService extends AbstractStatisticBoardS
 
   @Override
   protected StatisticBoardResponse doLoadBoard(Map<String, String> filters, StatisticFilterGroup filterGroup) {
+    refreshMirrorForRealtimeView();
     long startedAt = System.currentTimeMillis();
     List<IssueSource> sources = loadSources(filters);
     Map<Long, AggregateBucket> buckets = new LinkedHashMap<>();
@@ -175,6 +191,7 @@ public class SystemTestDefectSummaryBoardService extends AbstractStatisticBoardS
 
   @Override
   protected StatisticDetailResponse doLoadDetail(StatisticDetailRequest request, StatisticFilterGroup filterGroup) {
+    refreshMirrorForRealtimeView();
     List<IssueSource> sources = loadSources(request.filters()).stream()
         .filter(source -> Objects.equals(String.valueOf(source.projectId()), request.rowKey()))
         .filter(matchesMetric(request.columnKey()))
@@ -204,10 +221,23 @@ public class SystemTestDefectSummaryBoardService extends AbstractStatisticBoardS
   private List<IssueSource> loadSources(Map<String, String> filters) {
     Long projectId = parseLong(withoutReservedFilters(filters).get("projectId"));
     String sql = BASE_SQL + (projectId == null ? "" : " and i.project_id = ?");
-    if (projectId == null) {
-      return jdbcTemplate.query(sql, this::mapIssue);
+    try {
+      if (projectId == null) {
+        return jdbcTemplate.query(sql, this::mapIssue);
+      }
+      return jdbcTemplate.query(sql, this::mapIssue, projectId);
+    } catch (DataAccessException e) {
+      log.warn("Failed to load system test defect sources from mirror tables, fallback to empty result", e);
+      return List.of();
     }
-    return jdbcTemplate.query(sql, this::mapIssue, projectId);
+  }
+
+  private void refreshMirrorForRealtimeView() {
+    try {
+      gitlabMirrorSyncService.refreshTablesOnDemand(REALTIME_REFRESH_TABLES, BOARD_KEY);
+    } catch (Exception e) {
+      log.warn("On-demand mirror refresh for {} failed, fallback to current mirror snapshot", BOARD_KEY, e);
+    }
   }
 
   private IssueSource mapIssue(ResultSet rs, int rowNum) throws SQLException {

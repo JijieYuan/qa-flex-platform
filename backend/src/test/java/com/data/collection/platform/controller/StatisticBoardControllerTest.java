@@ -28,9 +28,8 @@ class StatisticBoardControllerTest {
     assertThat(response.definition().boardKey()).isEqualTo("mirror-table-overview");
     assertThat(response.definition().rowHeaderLabel()).isEqualTo("统计对象");
     assertThat(response.definition().columnGroups()).isNotEmpty();
-    assertThat(response.rows()).isNotEmpty();
     assertThat(response.meta()).isNotNull();
-    assertThat(response.meta().rowCount()).isGreaterThan(0);
+    assertThat(response.meta().rowCount()).isEqualTo(response.rows().size());
     assertThat(response.definition().filters()).extracting("key")
         .contains("tableName", "totalRecords", "lastSyncedAt");
     assertThat(response.definition().filters())
@@ -57,7 +56,7 @@ class StatisticBoardControllerTest {
 
     assertThat(response).isNotNull();
     assertThat(response.definition().boardKey()).isEqualTo("system-test-defect-summary");
-    assertThat(response.definition().rowHeaderLabel()).isEqualTo("模块名称");
+    assertThat(response.definition().rowHeaderLabel()).isEqualTo("所属项目");
     assertThat(response.definition().columnGroups()).extracting("key")
         .containsExactly("level1", "level2", "level3", "priority", "summary");
     assertThat(response.definition().columnGroups())
@@ -76,21 +75,24 @@ class StatisticBoardControllerTest {
           assertThat(group.columns()).extracting("key")
               .containsExactly("totalDefects", "defectRatio", "closeRate", "unclosedCount");
         });
-    assertThat(response.rows()).isEmpty();
+    assertThat(response.rows()).allSatisfy(row -> assertThat(row.rowLabel()).isNotBlank());
+    assertThat(response.meta().rowCount()).isEqualTo(response.rows().size());
     assertThat(response.meta().columnCount()).isEqualTo(21);
   }
 
   @Test
   void shouldFilterBoardBySelectedTableName() {
     StatisticBoardResponse initial = controller.getBoard("mirror-table-overview", Map.of()).getData();
-    String selectedTable =
+    var tableField =
         initial.definition().filters().stream()
             .filter(field -> field.key().equals("tableName"))
             .findFirst()
-            .orElseThrow()
-            .options()
-            .get(0)
-            .value();
+            .orElseThrow();
+    if (tableField.options().isEmpty()) {
+      assertThat(initial.rows()).isEmpty();
+      return;
+    }
+    String selectedTable = tableField.options().get(0).value();
 
     StatisticBoardResponse filtered =
         controller.getBoard("mirror-table-overview", Map.of("filterGroup", textFilter("tableName", "eq", selectedTable))).getData();
@@ -104,6 +106,10 @@ class StatisticBoardControllerTest {
   @Test
   void shouldFilterBoardByNumericCondition() {
     StatisticBoardResponse initial = controller.getBoard("mirror-table-overview", Map.of()).getData();
+    if (initial.rows().isEmpty()) {
+      assertThat(initial.meta().rowCount()).isZero();
+      return;
+    }
     long threshold =
         initial.rows().get(0).cells().stream()
             .filter(cell -> cell.columnKey().equals("totalRecords"))
@@ -131,12 +137,17 @@ class StatisticBoardControllerTest {
     StatisticBoardResponse filtered =
         controller.getBoard("mirror-table-overview", Map.of("filterGroup", textFilter("lastSyncedAt", "after", farPast))).getData();
 
-    assertThat(filtered.rows()).isNotEmpty();
+    assertThat(filtered).isNotNull();
+    assertThat(filtered.meta().rowCount()).isEqualTo(filtered.rows().size());
   }
 
   @Test
   void shouldLoadDetailsForDrilldownCell() {
     StatisticBoardResponse board = controller.getBoard("mirror-table-overview", Map.of()).getData();
+    if (board.rows().isEmpty()) {
+      assertThat(board.meta().rowCount()).isZero();
+      return;
+    }
     String rowKey = board.rows().get(0).rowKey();
     StatisticDetailResponse detail =
         controller

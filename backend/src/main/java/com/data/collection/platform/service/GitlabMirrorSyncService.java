@@ -76,6 +76,10 @@ public class GitlabMirrorSyncService {
     return taskService.hasActiveTask(configId);
   }
 
+  public boolean hasExecutingTask(Long configId) {
+    return taskService.hasExecutingTask(configId);
+  }
+
   public SyncProgress getProgress(Long taskId) {
     return taskId == null ? null : progressMap.get(taskId);
   }
@@ -123,17 +127,18 @@ public class GitlabMirrorSyncService {
     if (config.getId() == null || !config.isEnabled()) {
       return 0;
     }
-    if (hasActiveTask(config.getId())) {
+    taskService.recoverTimedOutTasks();
+    if (hasExecutingTask(config.getId())) {
       try (GitlabSyncLogContext.Scope context =
                GitlabSyncLogContext.openConfig(config, "ON_DEMAND_REFRESH");
            GitlabSyncLogContext.Scope action = GitlabSyncLogContext.action("SKIPPED")) {
-        log.info("Skipped on-demand refresh because another sync task is active, reason={}", reason);
+        log.info("Skipped on-demand refresh because another sync task is executing, reason={}", reason);
       }
       return 0;
     }
 
     Set<String> targetTables = new LinkedHashSet<>(sourceTableNames);
-    List<TableWhitelistOption> tables = whitelistService.resolveOptions(config).stream()
+    List<TableWhitelistOption> tables = whitelistService.listOptions(config).stream()
         .filter(option -> targetTables.contains(option.tableName()))
         .toList();
     if (tables.isEmpty()) {
