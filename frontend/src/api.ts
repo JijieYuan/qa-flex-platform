@@ -359,6 +359,17 @@ export interface CollectFormNotificationPayloadResponse {
   resourceType: string;
 }
 
+export interface RealtimeWorkspaceStatusResponse {
+  workspaceKey: string;
+  supported: boolean;
+  status: string;
+  message: string;
+  refreshing: boolean;
+  lastSyncedAt?: string | null;
+  lastRefreshStartedAt?: string | null;
+  lastRefreshFinishedAt?: string | null;
+}
+
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, {
@@ -552,6 +563,22 @@ export const api = {
       return request<CodeReviewIllegalRecordFilterOptionsResponse>(
         `/api/code-review/illegal-records/filter-options${query.toString() ? `?${query.toString()}` : ''}`,
       );
+    },
+    getCodeReviewIllegalRecordRealtimeStatus() {
+      return request<RealtimeWorkspaceStatusResponse>('/api/code-review/illegal-records/status');
+    },
+    refreshCodeReviewIllegalRecords() {
+      return request<RealtimeWorkspaceStatusResponse>('/api/code-review/illegal-records/refresh', {
+        method: 'POST',
+      });
+    },
+    getStatisticBoardRealtimeStatus(boardKey: string) {
+      return request<RealtimeWorkspaceStatusResponse>(`/api/statistic-boards/${boardKey}/status`);
+    },
+    refreshStatisticBoardRealtime(boardKey: string) {
+      return request<RealtimeWorkspaceStatusResponse>(`/api/statistic-boards/${boardKey}/refresh`, {
+        method: 'POST',
+      });
     },
     getCollectFormDetail(params: {
       gitlabBaseUrl: string;

@@ -1,10 +1,12 @@
 package com.data.collection.platform.controller;
 
 import com.data.collection.platform.common.response.ApiResponse;
+import com.data.collection.platform.entity.RealtimeWorkspaceStatusResponse;
 import com.data.collection.platform.entity.statistics.StatisticBoardResponse;
 import com.data.collection.platform.entity.statistics.StatisticDetailRequest;
 import com.data.collection.platform.entity.statistics.StatisticDetailResponse;
 import com.data.collection.platform.service.statistics.StatisticBoardRegistry;
+import com.data.collection.platform.service.statistics.RealtimeStatisticBoardSupport;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Positive;
 import java.util.Map;
@@ -13,6 +15,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -59,5 +62,44 @@ public class StatisticBoardController {
             HttpHeaders.CONTENT_DISPOSITION,
             "attachment; filename=\"" + boardKey + ".csv\"")
         .body(csv);
+  }
+
+  @GetMapping("/{boardKey}/status")
+  public ApiResponse<RealtimeWorkspaceStatusResponse> getBoardRealtimeStatus(
+      @PathVariable @NotBlank String boardKey) {
+    var service = registry.getRequired(boardKey);
+    if (service instanceof RealtimeStatisticBoardSupport realtimeSupport) {
+      return ApiResponse.success(realtimeSupport.getRealtimeStatus());
+    }
+    return ApiResponse.success(
+        new RealtimeWorkspaceStatusResponse(
+            boardKey,
+            false,
+            "UNSUPPORTED",
+            "当前统计表暂不支持实时刷新",
+            false,
+            null,
+            null,
+            null));
+  }
+
+  @PostMapping("/{boardKey}/refresh")
+  public ApiResponse<RealtimeWorkspaceStatusResponse> refreshBoardRealtimeData(
+      @PathVariable @NotBlank String boardKey) {
+    var service = registry.getRequired(boardKey);
+    if (service instanceof RealtimeStatisticBoardSupport realtimeSupport) {
+      return ApiResponse.success("已开始刷新最新数据", realtimeSupport.requestRealtimeRefresh());
+    }
+    return ApiResponse.success(
+        "当前统计表暂不支持实时刷新",
+        new RealtimeWorkspaceStatusResponse(
+            boardKey,
+            false,
+            "UNSUPPORTED",
+            "当前统计表暂不支持实时刷新",
+            false,
+            null,
+            null,
+            null));
   }
 }

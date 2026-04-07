@@ -2,8 +2,14 @@
 import { computed, ref } from 'vue';
 import { ElMessage } from 'element-plus';
 import BaseRecordTable from '../components/base/BaseRecordTable.vue';
-import { api, type CodeReviewIllegalRecordFilterOptionsResponse, type CodeReviewIllegalRecordRowResponse } from '../api';
+import RealtimeDataShell from '../components/realtime/RealtimeDataShell.vue';
+import {
+  api,
+  type CodeReviewIllegalRecordFilterOptionsResponse,
+  type CodeReviewIllegalRecordRowResponse,
+} from '../api';
 import { useRouteTableState } from '../composables/useRouteTableState';
+import { useRealtimeWorkspace } from '../composables/useRealtimeWorkspace';
 import type { RecordTableActiveFilterTag, RecordTableColumn, RecordTableFilterField } from '../types/record-table';
 
 const {
@@ -29,6 +35,7 @@ const rows = ref<CodeReviewIllegalRecordRowResponse[]>([]);
 const total = ref(0);
 const detailVisible = ref(false);
 const selectedRow = ref<CodeReviewIllegalRecordRowResponse | null>(null);
+
 const filterOptions = ref<CodeReviewIllegalRecordFilterOptionsResponse>({
   requestTypes: [{ label: '合并请求', value: 'merge_request' }],
   repositoryNames: [],
@@ -196,6 +203,22 @@ function formatPercent(value?: number | null) {
   return `${(value * 100).toFixed(2)}%`;
 }
 
+const realtimeWorkspace = useRealtimeWorkspace({
+  fetchStatus: () => api.getCodeReviewIllegalRecordRealtimeStatus(),
+  requestRefresh: () => api.refreshCodeReviewIllegalRecords(),
+  reloadData: async () => {
+    await loadTableData();
+    await loadFilterOptions();
+  },
+  messages: {
+    refreshRequestFailed: '非法记录刷新失败',
+    statusPollFailed: '实时状态刷新失败',
+  },
+});
+
+const realtimeStatus = realtimeWorkspace.status;
+const realtimeRefreshing = realtimeWorkspace.refreshing;
+
 function openDetailDrawer(row: Record<string, unknown>) {
   selectedRow.value = (row.__raw as CodeReviewIllegalRecordRowResponse) ?? null;
   detailVisible.value = true;
@@ -203,6 +226,10 @@ function openDetailDrawer(row: Record<string, unknown>) {
 
 async function loadFilterOptions() {
   filterOptions.value = await api.getCodeReviewIllegalRecordFilterOptions(route.query.projectId as string | undefined);
+}
+
+async function loadRealtimeStatus() {
+  await realtimeWorkspace.loadStatus();
 }
 
 async function loadTableData() {
@@ -233,6 +260,8 @@ bindLoader(async () => {
   try {
     await loadTableData();
     await loadFilterOptions();
+    await loadRealtimeStatus();
+    realtimeWorkspace.ensureInitialSilentRefresh();
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '非法记录数据加载失败');
     rows.value = [];
@@ -278,13 +307,7 @@ async function handleReset() {
 }
 
 async function handleRefresh() {
-  try {
-    await loadTableData();
-    await loadFilterOptions();
-    ElMessage.success('非法记录已刷新');
-  } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '非法记录刷新失败');
-  }
+  await realtimeWorkspace.triggerRefresh(false);
 }
 
 async function handleQuery() {
@@ -314,42 +337,19 @@ async function handleClearFilter(key: string) {
   }
   await patchQuery({ page: 1, [key]: null });
 }
+
 </script>
 
 <template>
   <section class="record-page-shell">
-    <BaseRecordTable
-      :columns="columns"
-      :rows="tableRows"
-      :loading="isTableLoading"
-      :page="page"
-      :page-size="pageSize"
-      :total="total"
-      :primary-filters="primaryFilters"
-      :advanced-filters="advancedFilters"
-      :filter-values="filterValues"
-      :active-filter-tags="activeFilterTags"
-      :advanced-visible="advancedVisible"
-      empty-description="当前筛选条件下没有查询到非法记录。"
-      :show-search="false"
-      @filter-change="handleFilterChange"
-      @reset="handleReset"
+    <RealtimeDataShell
+      title=""
+      description=""
+      :status="realtimeStatus"
+      :refreshing="realtimeRefreshing"
       @refresh="handleRefresh"
-      @query="handleQuery"
-      @clear-filter="handleClearFilter"
-      @update:advanced-visible="advancedVisible = $event"
-      @size-change="handleSizeChange"
-      @current-change="handleCurrentChange"
-      @sort-change="handleSortChange"
     >
-      <template #toolbar-prefix>
-        <div class="record-page-toolbar-meta">
-          <div class="record-page-toolbar-title">非法记录明细</div>
-          <div class="record-page-toolbar-desc">代码走查结果明细与异常记录工作区</div>
-        </div>
-      </template>
-
-      <template #toolbar-actions>
+      <template #actions>
         <div class="record-page-summary">
           <span class="record-page-summary-label">当前排序</span>
           <el-tag effect="plain" type="info" class="record-page-sort-tag">
@@ -358,10 +358,42 @@ async function handleClearFilter(key: string) {
         </div>
       </template>
 
-      <template #row-actions="{ row }">
-        <el-button class="record-detail-trigger" link @click="openDetailDrawer(row)">查看详情</el-button>
-      </template>
-    </BaseRecordTable>
+      <BaseRecordTable
+        :columns="columns"
+        :rows="tableRows"
+        :loading="isTableLoading"
+        :page="page"
+        :page-size="pageSize"
+        :total="total"
+        :primary-filters="primaryFilters"
+        :advanced-filters="advancedFilters"
+        :filter-values="filterValues"
+        :active-filter-tags="activeFilterTags"
+        :advanced-visible="advancedVisible"
+        :show-search="false"
+        :show-refresh="false"
+        empty-description="当前筛选条件下没有查询到非法记录。"
+        @filter-change="handleFilterChange"
+        @reset="handleReset"
+        @query="handleQuery"
+        @clear-filter="handleClearFilter"
+        @update:advanced-visible="advancedVisible = $event"
+        @size-change="handleSizeChange"
+        @current-change="handleCurrentChange"
+        @sort-change="handleSortChange"
+      >
+        <template #toolbar-prefix>
+          <div class="record-page-toolbar-meta">
+            <div class="record-page-toolbar-title">非法记录明细</div>
+            <div class="record-page-toolbar-desc">代码走查结果明细与异常记录工作区</div>
+          </div>
+        </template>
+
+        <template #row-actions="{ row }">
+          <el-button class="record-detail-trigger" link @click="openDetailDrawer(row)">查看详情</el-button>
+        </template>
+      </BaseRecordTable>
+    </RealtimeDataShell>
 
     <el-drawer
       v-model="detailVisible"
@@ -449,9 +481,7 @@ async function handleClearFilter(key: string) {
           <div class="record-detail-metrics">
             <article class="record-detail-metric-card">
               <span class="record-detail-metric-label">代码注释比例</span>
-              <strong class="record-detail-metric-value">
-                {{ formatPercent(selectedRow.commentRate) }}
-              </strong>
+              <strong class="record-detail-metric-value">{{ formatPercent(selectedRow.commentRate) }}</strong>
             </article>
             <article class="record-detail-metric-card">
               <span class="record-detail-metric-label">缺陷数量</span>
@@ -578,42 +608,25 @@ async function handleClearFilter(key: string) {
   align-items: center;
 }
 
-.record-detail-header-link {
-  padding: 6px 10px;
-  border-radius: 10px;
-  background: rgba(37, 99, 235, 0.08);
-  font-weight: 600;
-}
-
 .record-detail-section {
   display: grid;
-  gap: 10px;
-  margin-bottom: 18px;
+  gap: 12px;
+  margin-bottom: 20px;
 }
 
 .record-detail-section-title {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 700;
-  color: rgba(15, 23, 42, 0.48);
-  letter-spacing: 0.04em;
-}
-
-.record-detail-descriptions {
-  background: rgba(255, 255, 255, 0.96);
-  border-radius: 14px;
-  overflow: hidden;
-  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.03);
+  color: rgba(15, 23, 42, 0.76);
 }
 
 .record-detail-content {
   padding: 14px 16px;
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.96);
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  color: rgba(15, 23, 42, 0.82);
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid rgba(15, 23, 42, 0.06);
+  color: rgba(15, 23, 42, 0.76);
   line-height: 1.7;
-  word-break: break-word;
-  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.03);
 }
 
 .record-detail-tags {
@@ -623,7 +636,7 @@ async function handleClearFilter(key: string) {
 }
 
 .record-detail-empty {
-  color: rgba(15, 23, 42, 0.45);
+  color: rgba(15, 23, 42, 0.4);
 }
 
 .record-detail-metrics {
@@ -634,22 +647,27 @@ async function handleClearFilter(key: string) {
 
 .record-detail-metric-card {
   display: grid;
-  gap: 6px;
-  padding: 14px 15px;
+  gap: 8px;
+  padding: 16px;
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.98);
+  background: rgba(255, 255, 255, 0.92);
   border: 1px solid rgba(15, 23, 42, 0.06);
-  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.025);
 }
 
 .record-detail-metric-label {
   font-size: 12px;
-  color: rgba(15, 23, 42, 0.5);
+  color: rgba(15, 23, 42, 0.48);
 }
 
 .record-detail-metric-value {
-  font-size: 18px;
-  line-height: 1.2;
+  font-size: 22px;
+  line-height: 1;
   color: rgba(15, 23, 42, 0.92);
+}
+
+@media (max-width: 960px) {
+  .record-detail-metrics {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

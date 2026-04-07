@@ -4,6 +4,7 @@ import com.data.collection.platform.entity.CodeReviewIllegalRecordFilterOptionsR
 import com.data.collection.platform.entity.CodeReviewIllegalRecordListResponse;
 import com.data.collection.platform.entity.CodeReviewIllegalRecordRowResponse;
 import com.data.collection.platform.entity.OptionItemResponse;
+import com.data.collection.platform.entity.RealtimeWorkspaceStatusResponse;
 import java.sql.Array;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -30,6 +31,7 @@ import org.springframework.util.StringUtils;
 @Service
 @Slf4j
 public class CodeReviewIllegalRecordService {
+  public static final String WORKSPACE_KEY = "code-review-illegal-records";
 
   private static final List<String> REALTIME_REFRESH_TABLES = List.of(
       "merge_requests",
@@ -126,14 +128,17 @@ public class CodeReviewIllegalRecordService {
 
   private final JdbcTemplate jdbcTemplate;
   private final GitlabMirrorSyncService gitlabMirrorSyncService;
+  private final RealtimeWorkspaceService realtimeWorkspaceService;
   private final String defaultGitlabBaseUrl;
 
   public CodeReviewIllegalRecordService(
       JdbcTemplate jdbcTemplate,
       GitlabMirrorSyncService gitlabMirrorSyncService,
+      RealtimeWorkspaceService realtimeWorkspaceService,
       @Value("${gitlab-mirror.web-base-url:http://172.22.10.233}") String defaultGitlabBaseUrl) {
     this.jdbcTemplate = jdbcTemplate;
     this.gitlabMirrorSyncService = gitlabMirrorSyncService;
+    this.realtimeWorkspaceService = realtimeWorkspaceService;
     this.defaultGitlabBaseUrl = defaultGitlabBaseUrl;
   }
 
@@ -155,8 +160,6 @@ public class CodeReviewIllegalRecordService {
       int size,
       String sortField,
       String sortOrder) {
-    refreshMirrorForRealtimeView();
-
     int safePage = page <= 0 ? 1 : page;
     int safeSize = size <= 0 ? 20 : Math.min(size, 100);
     String safeSortField = normalizeSortField(sortField);
@@ -203,6 +206,14 @@ public class CodeReviewIllegalRecordService {
         toOptions(rows, IllegalRecordView::mergedBy),
         toOptions(rows, IllegalRecordView::moduleName),
         toOptions(rows, IllegalRecordView::projectName));
+  }
+
+  public RealtimeWorkspaceStatusResponse getRealtimeStatus() {
+    return realtimeWorkspaceService.getStatus(WORKSPACE_KEY);
+  }
+
+  public RealtimeWorkspaceStatusResponse requestRealtimeRefresh() {
+    return realtimeWorkspaceService.requestRefresh(WORKSPACE_KEY, this::refreshMirrorForRealtimeView);
   }
 
   private void refreshMirrorForRealtimeView() {

@@ -14,6 +14,8 @@ import com.data.collection.platform.entity.statistics.StatisticFilterField;
 import com.data.collection.platform.entity.statistics.StatisticFilterGroup;
 import com.data.collection.platform.entity.statistics.StatisticRowData;
 import com.data.collection.platform.service.GitlabMirrorSyncService;
+import com.data.collection.platform.entity.RealtimeWorkspaceStatusResponse;
+import com.data.collection.platform.service.RealtimeWorkspaceService;
 import java.sql.Array;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -36,7 +38,8 @@ import org.springframework.util.StringUtils;
 
 @Service
 @Slf4j
-public class SystemTestDefectSummaryBoardService extends AbstractStatisticBoardService {
+public class SystemTestDefectSummaryBoardService extends AbstractStatisticBoardService
+    implements RealtimeStatisticBoardSupport {
   private static final String BOARD_KEY = "system-test-defect-summary";
   private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
   private static final List<String> REALTIME_REFRESH_TABLES = List.of(
@@ -82,14 +85,17 @@ public class SystemTestDefectSummaryBoardService extends AbstractStatisticBoardS
 
   private final JdbcTemplate jdbcTemplate;
   private final GitlabMirrorSyncService gitlabMirrorSyncService;
+  private final RealtimeWorkspaceService realtimeWorkspaceService;
 
   public SystemTestDefectSummaryBoardService(
       JdbcTemplate jdbcTemplate,
       JsonUtils jsonUtils,
-      GitlabMirrorSyncService gitlabMirrorSyncService) {
+      GitlabMirrorSyncService gitlabMirrorSyncService,
+      RealtimeWorkspaceService realtimeWorkspaceService) {
     super(jsonUtils);
     this.jdbcTemplate = jdbcTemplate;
     this.gitlabMirrorSyncService = gitlabMirrorSyncService;
+    this.realtimeWorkspaceService = realtimeWorkspaceService;
   }
 
   @Override
@@ -163,7 +169,6 @@ public class SystemTestDefectSummaryBoardService extends AbstractStatisticBoardS
 
   @Override
   protected StatisticBoardResponse doLoadBoard(Map<String, String> filters, StatisticFilterGroup filterGroup) {
-    refreshMirrorForRealtimeView();
     long startedAt = System.currentTimeMillis();
     List<IssueSource> sources = loadSources(filters);
     Map<Long, AggregateBucket> buckets = new LinkedHashMap<>();
@@ -191,7 +196,6 @@ public class SystemTestDefectSummaryBoardService extends AbstractStatisticBoardS
 
   @Override
   protected StatisticDetailResponse doLoadDetail(StatisticDetailRequest request, StatisticFilterGroup filterGroup) {
-    refreshMirrorForRealtimeView();
     List<IssueSource> sources = loadSources(request.filters()).stream()
         .filter(source -> Objects.equals(String.valueOf(source.projectId()), request.rowKey()))
         .filter(matchesMetric(request.columnKey()))
@@ -238,6 +242,14 @@ public class SystemTestDefectSummaryBoardService extends AbstractStatisticBoardS
     } catch (Exception e) {
       log.warn("On-demand mirror refresh for {} failed, fallback to current mirror snapshot", BOARD_KEY, e);
     }
+  }
+
+  public RealtimeWorkspaceStatusResponse getRealtimeStatus() {
+    return realtimeWorkspaceService.getStatus(BOARD_KEY);
+  }
+
+  public RealtimeWorkspaceStatusResponse requestRealtimeRefresh() {
+    return realtimeWorkspaceService.requestRefresh(BOARD_KEY, this::refreshMirrorForRealtimeView);
   }
 
   private IssueSource mapIssue(ResultSet rs, int rowNum) throws SQLException {
