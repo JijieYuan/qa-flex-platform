@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref } from 'vue';
+import { computed, ref } from 'vue';
 import { ElMessage } from 'element-plus';
 import BaseRecordTable from '../components/base/BaseRecordTable.vue';
 import RealtimeDataShell from '../components/realtime/RealtimeDataShell.vue';
@@ -7,9 +7,9 @@ import {
   api,
   type CodeReviewIllegalRecordFilterOptionsResponse,
   type CodeReviewIllegalRecordRowResponse,
-  type RealtimeWorkspaceStatusResponse,
 } from '../api';
 import { useRouteTableState } from '../composables/useRouteTableState';
+import { useRealtimeWorkspace } from '../composables/useRealtimeWorkspace';
 import type { RecordTableActiveFilterTag, RecordTableColumn, RecordTableFilterField } from '../types/record-table';
 
 const {
@@ -35,11 +35,6 @@ const rows = ref<CodeReviewIllegalRecordRowResponse[]>([]);
 const total = ref(0);
 const detailVisible = ref(false);
 const selectedRow = ref<CodeReviewIllegalRecordRowResponse | null>(null);
-const realtimeStatus = ref<RealtimeWorkspaceStatusResponse | null>(null);
-const realtimeRefreshing = ref(false);
-
-let realtimePollTimer: number | null = null;
-let silentRefreshTriggered = false;
 
 const filterOptions = ref<CodeReviewIllegalRecordFilterOptionsResponse>({
   requestTypes: [{ label: '合并请求', value: 'merge_request' }],
@@ -208,6 +203,22 @@ function formatPercent(value?: number | null) {
   return `${(value * 100).toFixed(2)}%`;
 }
 
+const realtimeWorkspace = useRealtimeWorkspace({
+  fetchStatus: () => api.getCodeReviewIllegalRecordRealtimeStatus(),
+  requestRefresh: () => api.refreshCodeReviewIllegalRecords(),
+  reloadData: async () => {
+    await loadTableData();
+    await loadFilterOptions();
+  },
+  messages: {
+    refreshRequestFailed: '非法记录刷新失败',
+    statusPollFailed: '实时状态刷新失败',
+  },
+});
+
+const realtimeStatus = realtimeWorkspace.status;
+const realtimeRefreshing = realtimeWorkspace.refreshing;
+
 function openDetailDrawer(row: Record<string, unknown>) {
   selectedRow.value = (row.__raw as CodeReviewIllegalRecordRowResponse) ?? null;
   detailVisible.value = true;
@@ -218,7 +229,7 @@ async function loadFilterOptions() {
 }
 
 async function loadRealtimeStatus() {
-  realtimeStatus.value = await api.getCodeReviewIllegalRecordRealtimeStatus();
+  await realtimeWorkspace.loadStatus();
 }
 
 async function loadTableData() {
@@ -250,10 +261,7 @@ bindLoader(async () => {
     await loadTableData();
     await loadFilterOptions();
     await loadRealtimeStatus();
-    if (!silentRefreshTriggered) {
-      silentRefreshTriggered = true;
-      void triggerRealtimeRefresh(true);
-    }
+    realtimeWorkspace.ensureInitialSilentRefresh();
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '非法记录数据加载失败');
     rows.value = [];
@@ -299,7 +307,7 @@ async function handleReset() {
 }
 
 async function handleRefresh() {
-  await triggerRealtimeRefresh(false);
+  await realtimeWorkspace.triggerRefresh(false);
 }
 
 async function handleQuery() {
@@ -330,55 +338,6 @@ async function handleClearFilter(key: string) {
   await patchQuery({ page: 1, [key]: null });
 }
 
-async function triggerRealtimeRefresh(silent: boolean) {
-  try {
-    realtimeRefreshing.value = true;
-    realtimeStatus.value = await api.refreshCodeReviewIllegalRecords();
-    if (!silent) {
-      ElMessage.success('已开始刷新最新数据');
-    }
-    startRealtimePolling(silent);
-  } catch (error) {
-    realtimeRefreshing.value = false;
-    ElMessage.error(error instanceof Error ? error.message : '非法记录刷新失败');
-  }
-}
-
-function clearRealtimePolling() {
-  if (realtimePollTimer != null) {
-    window.clearTimeout(realtimePollTimer);
-    realtimePollTimer = null;
-  }
-}
-
-function startRealtimePolling(silent: boolean) {
-  clearRealtimePolling();
-  const poll = async () => {
-    try {
-      await loadRealtimeStatus();
-      if (realtimeStatus.value?.refreshing) {
-        realtimePollTimer = window.setTimeout(poll, 1500);
-        return;
-      }
-      realtimeRefreshing.value = false;
-      await loadTableData();
-      await loadFilterOptions();
-      if (!silent) {
-        ElMessage.success(realtimeStatus.value?.status === 'FAILED' ? '刷新失败，已保留当前结果' : '已刷新为最新数据');
-      }
-    } catch (error) {
-      realtimeRefreshing.value = false;
-      if (!silent) {
-        ElMessage.error(error instanceof Error ? error.message : '实时状态刷新失败');
-      }
-    }
-  };
-  realtimePollTimer = window.setTimeout(poll, 1200);
-}
-
-onBeforeUnmount(() => {
-  clearRealtimePolling();
-});
 </script>
 
 <template>
