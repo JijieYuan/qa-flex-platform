@@ -62,8 +62,15 @@ const lastSyncedText = computed(() => {
 });
 
 const showHeader = computed(
-  () => Boolean(props.title || props.description || props.showRefresh || props.status?.message || props.status),
+  () => Boolean(props.title || props.description || props.showRefresh || props.status),
 );
+
+const showInlineAlert = computed(() => {
+  if (!props.status?.message) {
+    return false;
+  }
+  return props.status.status === 'FAILED';
+});
 </script>
 
 <template>
@@ -75,7 +82,7 @@ const showHeader = computed(
       </div>
 
       <div class="realtime-shell-actions">
-        <div class="realtime-shell-status">
+        <div v-if="status" class="realtime-shell-status">
           <span class="realtime-shell-status-label">最近同步</span>
           <strong class="realtime-shell-status-value">{{ lastSyncedText }}</strong>
           <el-tag size="small" effect="plain" :type="statusType">{{ statusLabel }}</el-tag>
@@ -95,7 +102,7 @@ const showHeader = computed(
     </header>
 
     <el-alert
-      v-if="status?.message"
+      v-if="showInlineAlert"
       :title="status.message"
       :type="statusType"
       :closable="false"
@@ -120,6 +127,7 @@ const showHeader = computed(
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
+  padding: 2px 0 4px;
 }
 
 .realtime-shell-meta {
@@ -153,9 +161,9 @@ const showHeader = computed(
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 12px;
+  padding: 6px 10px;
   border-radius: 999px;
-  background: rgba(248, 250, 252, 0.92);
+  background: rgba(248, 250, 252, 0.88);
   border: 1px solid rgba(15, 23, 42, 0.08);
 }
 
@@ -179,7 +187,42 @@ const showHeader = computed(
 }
 
 .realtime-shell-compact {
+  gap: 8px;
+}
+
+.realtime-shell-compact .realtime-shell-header {
+  align-items: center;
+  gap: 12px;
+  padding-top: 0;
+}
+
+.realtime-shell-compact .realtime-shell-meta {
+  gap: 2px;
+}
+
+.realtime-shell-compact .realtime-shell-title {
+  font-size: 14px;
+}
+
+.realtime-shell-compact .realtime-shell-description {
+  font-size: 11px;
+  color: rgba(15, 23, 42, 0.42);
+}
+
+.realtime-shell-compact .realtime-shell-actions {
   gap: 10px;
+}
+
+.realtime-shell-compact .realtime-shell-status {
+  padding: 4px 10px;
+  gap: 6px;
+  background: transparent;
+  border-color: rgba(15, 23, 42, 0.06);
+}
+
+.realtime-shell-compact .realtime-shell-status-label,
+.realtime-shell-compact .realtime-shell-status-value {
+  font-size: 11px;
 }
 
 @media (max-width: 1200px) {

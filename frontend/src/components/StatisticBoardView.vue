@@ -979,8 +979,8 @@ onBeforeUnmount(() => {
 <template>
   <div class="stat-board" :class="props.uiHooks.rootClass">
     <RealtimeDataShell
-      :title="realtimeEnabled ? '' : ''"
-      :description="''"
+      title=""
+      description=""
       :status="realtimeStatus"
       :refreshing="realtimeRefreshing"
       :show-refresh="realtimeEnabled"

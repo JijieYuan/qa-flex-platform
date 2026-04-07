@@ -384,8 +384,8 @@ onBeforeUnmount(() => {
 <template>
   <section class="record-page-shell">
     <RealtimeDataShell
-      title="代码走查非法记录"
-      description="首屏优先读取当前镜像结果，后台静默刷新后自动更新页面。"
+      title=""
+      description=""
       :status="realtimeStatus"
       :refreshing="realtimeRefreshing"
       @refresh="handleRefresh"
@@ -423,6 +423,13 @@ onBeforeUnmount(() => {
         @current-change="handleCurrentChange"
         @sort-change="handleSortChange"
       >
+        <template #toolbar-prefix>
+          <div class="record-page-toolbar-meta">
+            <div class="record-page-toolbar-title">非法记录明细</div>
+            <div class="record-page-toolbar-desc">代码走查结果明细与异常记录工作区</div>
+          </div>
+        </template>
+
         <template #row-actions="{ row }">
           <el-button class="record-detail-trigger" link @click="openDetailDrawer(row)">查看详情</el-button>
         </template>
@@ -536,6 +543,24 @@ onBeforeUnmount(() => {
 .record-page-shell {
   display: grid;
   gap: 12px;
+}
+
+.record-page-toolbar-meta {
+  display: grid;
+  gap: 2px;
+}
+
+.record-page-toolbar-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: rgba(15, 23, 42, 0.92);
+  line-height: 1.2;
+}
+
+.record-page-toolbar-desc {
+  font-size: 12px;
+  color: rgba(15, 23, 42, 0.45);
+  line-height: 1.4;
 }
 
 .record-page-summary {
