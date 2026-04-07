@@ -5,8 +5,9 @@ import com.data.collection.platform.entity.RealtimeWorkspaceStatusResponse;
 import com.data.collection.platform.entity.statistics.StatisticBoardResponse;
 import com.data.collection.platform.entity.statistics.StatisticDetailRequest;
 import com.data.collection.platform.entity.statistics.StatisticDetailResponse;
-import com.data.collection.platform.service.statistics.StatisticBoardRegistry;
+import com.data.collection.platform.service.RealtimeWorkspaceService;
 import com.data.collection.platform.service.statistics.RealtimeStatisticBoardSupport;
+import com.data.collection.platform.service.statistics.StatisticBoardRegistry;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Positive;
 import java.util.Map;
@@ -24,9 +25,13 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/statistic-boards")
 public class StatisticBoardController {
   private final StatisticBoardRegistry registry;
+  private final RealtimeWorkspaceService realtimeWorkspaceService;
 
-  public StatisticBoardController(StatisticBoardRegistry registry) {
+  public StatisticBoardController(
+      StatisticBoardRegistry registry,
+      RealtimeWorkspaceService realtimeWorkspaceService) {
     this.registry = registry;
+    this.realtimeWorkspaceService = realtimeWorkspaceService;
   }
 
   @GetMapping("/{boardKey}")
@@ -58,9 +63,7 @@ public class StatisticBoardController {
     String csv = registry.getRequired(boardKey).exportBoardCsv(filters);
     return ResponseEntity.ok()
         .contentType(new MediaType("text", "csv"))
-        .header(
-            HttpHeaders.CONTENT_DISPOSITION,
-            "attachment; filename=\"" + boardKey + ".csv\"")
+        .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + boardKey + ".csv\"")
         .body(csv);
   }
 
@@ -71,16 +74,7 @@ public class StatisticBoardController {
     if (service instanceof RealtimeStatisticBoardSupport realtimeSupport) {
       return ApiResponse.success(realtimeSupport.getRealtimeStatus());
     }
-    return ApiResponse.success(
-        new RealtimeWorkspaceStatusResponse(
-            boardKey,
-            false,
-            "UNSUPPORTED",
-            "当前统计表暂不支持实时刷新",
-            false,
-            null,
-            null,
-            null));
+    return ApiResponse.success(realtimeWorkspaceService.getStatus(boardKey));
   }
 
   @PostMapping("/{boardKey}/refresh")

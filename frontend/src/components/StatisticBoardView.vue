@@ -59,7 +59,6 @@ const props = withDefaults(
 
 const route = useRoute();
 const router = useRouter();
-const realtimeEnabled = computed(() => props.boardKey === 'system-test-defect-summary');
 const syncStatus = ref<RealtimeWorkspaceStatusResponse | null>(null);
 
 function parsePositiveInteger(rawValue: unknown, fallback: number) {
@@ -382,10 +381,6 @@ async function loadBoard(showError = true) {
 }
 
 async function loadRealtimeStatus() {
-  if (!realtimeEnabled.value) {
-    syncStatus.value = null;
-    return;
-  }
   try {
     syncStatus.value = await api.getStatisticBoardRealtimeStatus(props.boardKey);
   } catch {
@@ -959,10 +954,10 @@ watch(
 
           <div class="stat-board-toolbar-actions" :class="props.uiHooks.toolbarActionsClass">
             <span v-if="board?.definition.title" class="stat-board-meta-text">{{ board.definition.title }}</span>
-            <SyncMetaBadge v-if="realtimeEnabled" :value="lastSyncedText" />
+            <SyncMetaBadge :value="lastSyncedText" />
             <el-button type="primary" :icon="Search" @click="applyFiltersToRoute">查询</el-button>
             <el-button @click="resetFilters">重置</el-button>
-            <el-button v-if="!realtimeEnabled" :icon="RefreshRight" @click="refreshBoard">刷新</el-button>
+            <el-button :icon="RefreshRight" @click="refreshBoard">刷新</el-button>
             <el-button plain :icon="Download" @click="exportBoard">导出</el-button>
             <el-dropdown trigger="click" @command="handleSettingsCommand">
               <el-button class="view-settings-trigger">
