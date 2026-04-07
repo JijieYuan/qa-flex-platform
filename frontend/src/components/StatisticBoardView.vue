@@ -4,9 +4,9 @@ import { ArrowDown, ArrowUp, Download, RefreshRight, Search, Sort } from '@eleme
 import { ElMessage } from 'element-plus';
 import { useRoute, useRouter } from 'vue-router';
 import BaseStatisticTable from './base/BaseStatisticTable.vue';
-import RealtimeDataShell from './realtime/RealtimeDataShell.vue';
 import {
   api,
+  type RealtimeWorkspaceStatusResponse,
   type StatisticBoardResponse,
   type StatisticCellData,
   type StatisticColumnGroup,
@@ -17,7 +17,6 @@ import {
   type StatisticFilterOperator,
   type StatisticRowData,
 } from '../api';
-import { useRealtimeWorkspace } from '../composables/useRealtimeWorkspace';
 import {
   defaultVisibleColumnKeys,
   loadStatisticBoardViewPrefs,
@@ -60,6 +59,7 @@ const props = withDefaults(
 const route = useRoute();
 const router = useRouter();
 const realtimeEnabled = computed(() => props.boardKey === 'system-test-defect-summary');
+const syncStatus = ref<RealtimeWorkspaceStatusResponse | null>(null);
 
 function parsePositiveInteger(rawValue: unknown, fallback: number) {
   const parsed = Number.parseInt(String(rawValue ?? ''), 10);
@@ -247,6 +247,12 @@ const currentSortSummary = computed(() => {
   }
   return `${currentSortColumn.value.label} / ${boardViewPrefs.value.sortDirection === 'asc' ? '升序' : '降序'}`;
 });
+const lastSyncedText = computed(() => {
+  if (!syncStatus.value?.lastSyncedAt) {
+    return '暂无同步记录';
+  }
+  return syncStatus.value.lastSyncedAt.replace('T', ' ').slice(0, 19);
+});
 
 const tableRenderKey = computed(
   () =>
@@ -376,25 +382,15 @@ async function loadBoard(showError = true) {
 
 async function loadRealtimeStatus() {
   if (!realtimeEnabled.value) {
+    syncStatus.value = null;
     return;
   }
-  await realtimeWorkspace.loadStatus();
+  try {
+    syncStatus.value = await api.getStatisticBoardRealtimeStatus(props.boardKey);
+  } catch {
+    syncStatus.value = null;
+  }
 }
-
-const realtimeWorkspace = useRealtimeWorkspace({
-  enabled: realtimeEnabled,
-  fetchStatus: () => api.getStatisticBoardRealtimeStatus(props.boardKey),
-  requestRefresh: () => api.refreshStatisticBoardRealtime(props.boardKey),
-  reloadData: async () => {
-    await loadBoard(false);
-    if (detailVisible.value) {
-      await loadDetail();
-    }
-  },
-});
-
-const realtimeStatus = realtimeWorkspace.status;
-const realtimeRefreshing = realtimeWorkspace.refreshing;
 
 async function exportBoard() {
   try {
@@ -673,10 +669,6 @@ async function applyFiltersToRoute() {
 }
 
 async function refreshBoard() {
-  if (realtimeEnabled.value) {
-    await realtimeWorkspace.triggerRefresh(false);
-    return;
-  }
   loading.value = true;
   try {
     await loadBoard();
@@ -908,7 +900,6 @@ watch(
       syncTablePaginationFromRoute();
       await loadBoard(false);
       await loadRealtimeStatus();
-      realtimeWorkspace.ensureInitialSilentRefresh();
       detailVisible.value = routeDetailVisible();
       if (detailVisible.value) {
         activeRow.value = board.value?.rows.find((row) => row.rowKey === String(route.query.detailRowKey ?? '')) ?? null;
@@ -931,15 +922,6 @@ watch(
 
 <template>
   <div class="stat-board" :class="props.uiHooks.rootClass">
-    <RealtimeDataShell
-      title=""
-      description=""
-      :status="realtimeStatus"
-      :refreshing="realtimeRefreshing"
-      :show-refresh="realtimeEnabled"
-      compact
-      @refresh="refreshBoard"
-    >
       <el-card shadow="never" class="stat-board-card" :class="props.uiHooks.cardClass" v-loading="loading">
       <div class="stat-board-query-shell">
         <div class="stat-board-toolbar" :class="props.uiHooks.toolbarClass">
@@ -976,6 +958,10 @@ watch(
 
           <div class="stat-board-toolbar-actions" :class="props.uiHooks.toolbarActionsClass">
             <span v-if="board?.definition.title" class="stat-board-meta-text">{{ board.definition.title }}</span>
+            <div v-if="realtimeEnabled" class="stat-board-sync-meta">
+              <span class="stat-board-sync-label">最近同步</span>
+              <span class="stat-board-sync-value">{{ lastSyncedText }}</span>
+            </div>
             <el-button type="primary" :icon="Search" @click="applyFiltersToRoute">查询</el-button>
             <el-button @click="resetFilters">重置</el-button>
             <el-button v-if="!realtimeEnabled" :icon="RefreshRight" @click="refreshBoard">刷新</el-button>
@@ -1063,7 +1049,6 @@ watch(
         :toggle-column-selection="toggleColumnSelection"
       />
       </el-card>
-    </RealtimeDataShell>
 
     <el-dialog
       :model-value="detailVisible"

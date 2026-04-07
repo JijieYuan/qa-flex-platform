@@ -2,14 +2,13 @@
 import { computed, ref } from 'vue';
 import { ElMessage } from 'element-plus';
 import BaseRecordTable from '../components/base/BaseRecordTable.vue';
-import RealtimeDataShell from '../components/realtime/RealtimeDataShell.vue';
 import {
   api,
   type CodeReviewIllegalRecordFilterOptionsResponse,
   type CodeReviewIllegalRecordRowResponse,
+  type RealtimeWorkspaceStatusResponse,
 } from '../api';
 import { useRouteTableState } from '../composables/useRouteTableState';
-import { useRealtimeWorkspace } from '../composables/useRealtimeWorkspace';
 import type { RecordTableActiveFilterTag, RecordTableColumn, RecordTableFilterField } from '../types/record-table';
 
 const {
@@ -35,6 +34,7 @@ const rows = ref<CodeReviewIllegalRecordRowResponse[]>([]);
 const total = ref(0);
 const detailVisible = ref(false);
 const selectedRow = ref<CodeReviewIllegalRecordRowResponse | null>(null);
+const syncStatus = ref<RealtimeWorkspaceStatusResponse | null>(null);
 
 const filterOptions = ref<CodeReviewIllegalRecordFilterOptionsResponse>({
   requestTypes: [{ label: '合并请求', value: 'merge_request' }],
@@ -202,22 +202,7 @@ function formatPercent(value?: number | null) {
   }
   return `${(value * 100).toFixed(2)}%`;
 }
-
-const realtimeWorkspace = useRealtimeWorkspace({
-  fetchStatus: () => api.getCodeReviewIllegalRecordRealtimeStatus(),
-  requestRefresh: () => api.refreshCodeReviewIllegalRecords(),
-  reloadData: async () => {
-    await loadTableData();
-    await loadFilterOptions();
-  },
-  messages: {
-    refreshRequestFailed: '非法记录刷新失败',
-    statusPollFailed: '实时状态刷新失败',
-  },
-});
-
-const realtimeStatus = realtimeWorkspace.status;
-const realtimeRefreshing = realtimeWorkspace.refreshing;
+const lastSyncedText = computed(() => formatDateTime(syncStatus.value?.lastSyncedAt));
 
 function openDetailDrawer(row: Record<string, unknown>) {
   selectedRow.value = (row.__raw as CodeReviewIllegalRecordRowResponse) ?? null;
@@ -228,8 +213,12 @@ async function loadFilterOptions() {
   filterOptions.value = await api.getCodeReviewIllegalRecordFilterOptions(route.query.projectId as string | undefined);
 }
 
-async function loadRealtimeStatus() {
-  await realtimeWorkspace.loadStatus();
+async function loadSyncStatus() {
+  try {
+    syncStatus.value = await api.getCodeReviewIllegalRecordRealtimeStatus();
+  } catch {
+    syncStatus.value = null;
+  }
 }
 
 async function loadTableData() {
@@ -260,8 +249,7 @@ bindLoader(async () => {
   try {
     await loadTableData();
     await loadFilterOptions();
-    await loadRealtimeStatus();
-    realtimeWorkspace.ensureInitialSilentRefresh();
+    await loadSyncStatus();
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '非法记录数据加载失败');
     rows.value = [];
@@ -306,10 +294,6 @@ async function handleReset() {
   });
 }
 
-async function handleRefresh() {
-  await realtimeWorkspace.triggerRefresh(false);
-}
-
 async function handleQuery() {
   await patchQuery({ page: 1 });
 }
@@ -342,15 +326,42 @@ async function handleClearFilter(key: string) {
 
 <template>
   <section class="record-page-shell">
-    <RealtimeDataShell
-      title=""
-      description=""
-      :status="realtimeStatus"
-      :refreshing="realtimeRefreshing"
-      @refresh="handleRefresh"
+    <BaseRecordTable
+      :columns="columns"
+      :rows="tableRows"
+      :loading="isTableLoading"
+      :page="page"
+      :page-size="pageSize"
+      :total="total"
+      :primary-filters="primaryFilters"
+      :advanced-filters="advancedFilters"
+      :filter-values="filterValues"
+      :active-filter-tags="activeFilterTags"
+      :advanced-visible="advancedVisible"
+      :show-search="false"
+      :show-refresh="false"
+      empty-description="当前筛选条件下没有查询到非法记录。"
+      @filter-change="handleFilterChange"
+      @reset="handleReset"
+      @query="handleQuery"
+      @clear-filter="handleClearFilter"
+      @update:advanced-visible="advancedVisible = $event"
+      @size-change="handleSizeChange"
+      @current-change="handleCurrentChange"
+      @sort-change="handleSortChange"
     >
-      <template #actions>
+      <template #toolbar-prefix>
+        <div class="record-page-toolbar-meta">
+          <div class="record-page-toolbar-title">非法记录明细</div>
+          <div class="record-page-toolbar-desc">代码走查结果明细与异常记录工作区</div>
+        </div>
+      </template>
+
+      <template #toolbar-actions>
         <div class="record-page-summary">
+          <span class="record-page-summary-label">最近同步</span>
+          <span class="record-page-summary-value">{{ lastSyncedText }}</span>
+          <span class="record-page-summary-divider" />
           <span class="record-page-summary-label">当前排序</span>
           <el-tag effect="plain" type="info" class="record-page-sort-tag">
             {{ sortBy || 'mergedAt' }} / {{ sortOrder || 'desc' }}
@@ -358,42 +369,10 @@ async function handleClearFilter(key: string) {
         </div>
       </template>
 
-      <BaseRecordTable
-        :columns="columns"
-        :rows="tableRows"
-        :loading="isTableLoading"
-        :page="page"
-        :page-size="pageSize"
-        :total="total"
-        :primary-filters="primaryFilters"
-        :advanced-filters="advancedFilters"
-        :filter-values="filterValues"
-        :active-filter-tags="activeFilterTags"
-        :advanced-visible="advancedVisible"
-        :show-search="false"
-        :show-refresh="false"
-        empty-description="当前筛选条件下没有查询到非法记录。"
-        @filter-change="handleFilterChange"
-        @reset="handleReset"
-        @query="handleQuery"
-        @clear-filter="handleClearFilter"
-        @update:advanced-visible="advancedVisible = $event"
-        @size-change="handleSizeChange"
-        @current-change="handleCurrentChange"
-        @sort-change="handleSortChange"
-      >
-        <template #toolbar-prefix>
-          <div class="record-page-toolbar-meta">
-            <div class="record-page-toolbar-title">非法记录明细</div>
-            <div class="record-page-toolbar-desc">代码走查结果明细与异常记录工作区</div>
-          </div>
-        </template>
-
-        <template #row-actions="{ row }">
-          <el-button class="record-detail-trigger" link @click="openDetailDrawer(row)">查看详情</el-button>
-        </template>
-      </BaseRecordTable>
-    </RealtimeDataShell>
+      <template #row-actions="{ row }">
+        <el-button class="record-detail-trigger" link @click="openDetailDrawer(row)">查看详情</el-button>
+      </template>
+    </BaseRecordTable>
 
     <el-drawer
       v-model="detailVisible"
@@ -531,6 +510,18 @@ async function handleClearFilter(key: string) {
 .record-page-summary-label {
   font-size: 12px;
   color: rgba(0, 0, 0, 0.45);
+}
+
+.record-page-summary-value {
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(15, 23, 42, 0.82);
+}
+
+.record-page-summary-divider {
+  width: 1px;
+  height: 14px;
+  background: rgba(15, 23, 42, 0.1);
 }
 
 .record-page-sort-tag {
