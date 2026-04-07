@@ -17,6 +17,7 @@ public interface CollectFormRecordMapper extends BaseMapper<CollectFormRecord> {
          and resource_type = #{resourceType}
          and resource_id = #{resourceId}
          and template_code = #{templateCode}
+         and deleted = false
        limit 1
       """)
   CollectFormRecord selectByContext(
