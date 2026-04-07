@@ -4,6 +4,7 @@ import { ArrowDown, ArrowUp, Download, RefreshRight, Search, Sort } from '@eleme
 import { ElMessage } from 'element-plus';
 import { useRoute, useRouter } from 'vue-router';
 import BaseStatisticTable from './base/BaseStatisticTable.vue';
+import SyncMetaBadge from './realtime/SyncMetaBadge.vue';
 import {
   api,
   type RealtimeWorkspaceStatusResponse,
@@ -958,10 +959,7 @@ watch(
 
           <div class="stat-board-toolbar-actions" :class="props.uiHooks.toolbarActionsClass">
             <span v-if="board?.definition.title" class="stat-board-meta-text">{{ board.definition.title }}</span>
-            <div v-if="realtimeEnabled" class="stat-board-sync-meta">
-              <span class="stat-board-sync-label">最近同步</span>
-              <span class="stat-board-sync-value">{{ lastSyncedText }}</span>
-            </div>
+            <SyncMetaBadge v-if="realtimeEnabled" :value="lastSyncedText" />
             <el-button type="primary" :icon="Search" @click="applyFiltersToRoute">查询</el-button>
             <el-button @click="resetFilters">重置</el-button>
             <el-button v-if="!realtimeEnabled" :icon="RefreshRight" @click="refreshBoard">刷新</el-button>

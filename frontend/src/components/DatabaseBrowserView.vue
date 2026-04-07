@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus';
 import { Edit, Refresh, Search, WarningFilled } from '@element-plus/icons-vue';
 import { api, type DatabaseTableOption, type DatabaseTableRowsResponse } from '../api';
+import SyncMetaBadge from './realtime/SyncMetaBadge.vue';
 import { useRouteTableState } from '../composables/useRouteTableState';
 
 const tablesLoading = ref(false);
@@ -322,7 +323,7 @@ onBeforeUnmount(() => {
 
           <div class="db-table-meta">
             <el-tag :type="syncStatusTagType" round>{{ syncStatusText() }}</el-tag>
-            <span class="db-table-meta-text">Last Sync: {{ formatTime(rowsResponse?.lastSyncTime || selectedOption?.lastSyncTime) }}</span>
+            <SyncMetaBadge :value="formatTime(rowsResponse?.lastSyncTime || selectedOption?.lastSyncTime)" />
             <span class="db-table-meta-text">Total: {{ total }}</span>
           </div>
         </div>

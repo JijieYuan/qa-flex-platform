@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue';
 import { ElMessage } from 'element-plus';
 import BaseRecordTable from '../components/base/BaseRecordTable.vue';
+import SyncMetaBadge from '../components/realtime/SyncMetaBadge.vue';
 import {
   api,
   type CodeReviewIllegalRecordFilterOptionsResponse,
@@ -359,8 +360,7 @@ async function handleClearFilter(key: string) {
 
       <template #toolbar-actions>
         <div class="record-page-summary">
-          <span class="record-page-summary-label">最近同步</span>
-          <span class="record-page-summary-value">{{ lastSyncedText }}</span>
+          <SyncMetaBadge :value="lastSyncedText" />
           <span class="record-page-summary-divider" />
           <span class="record-page-summary-label">当前排序</span>
           <el-tag effect="plain" type="info" class="record-page-sort-tag">
@@ -510,12 +510,6 @@ async function handleClearFilter(key: string) {
 .record-page-summary-label {
   font-size: 12px;
   color: rgba(0, 0, 0, 0.45);
-}
-
-.record-page-summary-value {
-  font-size: 12px;
-  font-weight: 600;
-  color: rgba(15, 23, 42, 0.82);
 }
 
 .record-page-summary-divider {
