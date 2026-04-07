@@ -5,4 +5,8 @@ $env:JAVA_HOME = (Resolve-Path $javaHome).Path
 $env:MAVEN_HOME = (Resolve-Path $mavenHome).Path
 $env:PATH = "$env:JAVA_HOME\\bin;$env:MAVEN_HOME\\bin;$env:PATH"
 Set-Location $projectRoot
-mvn spring-boot:run
+$mvnArgs = @(
+  "-Dspring-boot.run.jvmArguments=-Dspring.devtools.restart.enabled=false",
+  "spring-boot:run"
+)
+& mvn @mvnArgs
