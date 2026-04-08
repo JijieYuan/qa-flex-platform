@@ -212,28 +212,6 @@ const lastSyncedText = computed(() => formatDateTime(syncStatus.value?.lastSynce
 const ruleExplanationSteps = computed(() => ruleExplanation.value?.flowSteps || []);
 const ruleExplanationMetrics = computed(() => ruleExplanation.value?.metricDefinitions || []);
 const ruleFirstInputCount = computed(() => ruleExplanationSteps.value[0]?.inputCount || 0);
-const __duplicateRuleFinalOutputCount = computed(() => {
-  const steps = ruleExplanationSteps.value;
-  return steps.length ? steps[steps.length - 1].outputCount : 0;
-});
-const __duplicateRuleFinalRetainedRate = computed(() => {
-  if (!ruleFirstInputCount.value) {
-    return '0%';
-  }
-  return `${((__duplicateRuleFinalOutputCount.value / ruleFirstInputCount.value) * 100).toFixed(1)}%`;
-});
-const __duplicateQaFriendlyRuleSummary = computed(() => {
-  if (!ruleExplanation.value?.supported) {
-    return '';
-  }
-  if (!ruleExplanationSteps.value.length) {
-    return ruleExplanation.value?.summary || '当前页面已经启用规则说明，但暂时没有可展示的统计过程。';
-  }
-  return `当前结果一共基于 ${ruleFirstInputCount.value} 条合并请求逐步检查，最终命中 ${ruleFinalOutputCount.value} 条需要关注的记录，占原始数据的 ${ruleFinalRetainedRate.value}。`;
-});
-const __duplicateRuleExplanationSteps = computed(() => ruleExplanation.value?.flowSteps ?? []);
-const __duplicateRuleExplanationMetrics = computed(() => ruleExplanation.value?.metricDefinitions ?? []);
-const __duplicateRuleFirstInputCount = computed(() => __duplicateRuleExplanationSteps.value[0]?.inputCount ?? 0);
 const ruleFinalOutputCount = computed(() => {
   const steps = ruleExplanationSteps.value;
   return steps.length ? steps[steps.length - 1].outputCount : 0;
@@ -253,6 +231,7 @@ const qaFriendlyRuleSummary = computed(() => {
   }
   return `当前结果一共基于 ${ruleFirstInputCount.value} 条合并请求逐步检查，最终命中 ${ruleFinalOutputCount.value} 条需要关注的记录，占原始数据的 ${ruleFinalRetainedRate.value}。`;
 });
+const ruleExclusionSteps = computed(() => ruleExplanationSteps.value.slice(1));
 
 function openDetailDrawer(row: Record<string, unknown>) {
   selectedRow.value = (row.__raw as CodeReviewIllegalRecordRowResponse) ?? null;
@@ -409,6 +388,10 @@ function ruleStepSummary(step: { inputCount: number; outputCount: number }, inde
     return `第 ${index + 1} 步检查后，数据没有变化，仍命中 ${step.outputCount} 条。`;
   }
   return `第 ${index + 1} 步检查后，识别出 ${step.outputCount} 条需要关注的记录，较上一步变化 ${changed} 条，占当前输入数据的 ${ruleStepRetainedRate(step)}。`;
+}
+
+function metricFormulaSummary(metric: { label: string; definition: string; formula: string; note?: string | null }) {
+  return `${metric.label}：${metric.definition}`;
 }
 
 </script>
@@ -599,54 +582,84 @@ function ruleStepSummary(step: { inputCount: number; outputCount: number }, inde
 
         <template v-else>
           <section class="record-detail-section">
-            <div class="record-detail-section-title">统计范围</div>
+            <div class="record-detail-section-title">先看结论</div>
+            <div class="record-rule-summary-card">
+              <div class="record-rule-summary-main">{{ qaFriendlyRuleSummary }}</div>
+              <div v-if="ruleExplanation?.summary" class="record-rule-summary-sub">{{ ruleExplanation.summary }}</div>
+            </div>
+            <div class="record-rule-overview-grid">
+              <article class="record-rule-overview-card">
+                <span class="record-rule-overview-label">原始数据</span>
+                <strong class="record-rule-overview-value">{{ ruleFirstInputCount }}</strong>
+              </article>
+              <article class="record-rule-overview-card">
+                <span class="record-rule-overview-label">最终命中</span>
+                <strong class="record-rule-overview-value">{{ ruleFinalOutputCount }}</strong>
+              </article>
+              <article class="record-rule-overview-card">
+                <span class="record-rule-overview-label">命中比例</span>
+                <strong class="record-rule-overview-value">{{ ruleFinalRetainedRate }}</strong>
+              </article>
+            </div>
+          </section>
+
+          <section class="record-detail-section">
+            <div class="record-detail-section-title">这次统计包含哪些数据</div>
             <div class="record-detail-content">{{ ruleExplanation?.scopeDescription || '-' }}</div>
           </section>
 
           <section class="record-detail-section">
-            <div class="record-detail-section-title">规则摘要</div>
-            <div class="record-detail-content">{{ ruleExplanation?.summary || '-' }}</div>
-          </section>
-
-          <section class="record-detail-section">
-            <div class="record-detail-section-title">Flow 过滤过程</div>
-            <el-timeline>
-              <el-timeline-item
-                v-for="step in ruleExplanation?.flowSteps || []"
+            <div class="record-detail-section-title">哪些情况会被判定为需要关注</div>
+            <div class="record-rule-card-grid">
+              <article
+                v-for="(step, index) in ruleExclusionSteps"
                 :key="step.key"
-                placement="top"
+                class="record-rule-card"
               >
-                <div class="rule-flow-step">
-                  <div class="rule-flow-step-title">{{ step.title }}</div>
-                  <div class="rule-flow-step-description">{{ step.description }}</div>
-                  <div class="rule-flow-step-metrics">
-                    <el-tag effect="plain">输入 {{ step.inputCount }}</el-tag>
-                    <el-tag effect="plain" type="success">命中 {{ step.outputCount }}</el-tag>
-                  </div>
-                  <div v-if="step.samples.length" class="rule-flow-step-samples">
-                    <el-card
-                      v-for="sample in step.samples"
-                      :key="`${step.key}-${sample.label}-${sample.detail}`"
-                      shadow="never"
-                      class="rule-flow-sample-card"
-                    >
-                      <div class="rule-flow-sample-label">{{ sample.label }}</div>
-                      <div class="rule-flow-sample-detail">{{ sample.detail }}</div>
-                    </el-card>
-                  </div>
+                <div class="record-rule-card-title">规则 {{ index + 1 }}：{{ step.title }}</div>
+                <div class="record-rule-card-description">{{ step.description }}</div>
+                <div class="record-rule-card-summary">{{ ruleStepSummary(step, index + 1) }}</div>
+                <div class="record-rule-card-stats">
+                  <span class="record-rule-card-stat">识别 {{ ruleStepRemovedCount(step) }} 条</span>
+                  <span class="record-rule-card-stat">累计命中 {{ step.outputCount }} 条</span>
+                  <span class="record-rule-card-stat">占比 {{ ruleStepRetainedRate(step) }}</span>
                 </div>
-              </el-timeline-item>
-            </el-timeline>
+              </article>
+            </div>
           </section>
 
           <section class="record-detail-section">
-            <div class="record-detail-section-title">指标口径</div>
-            <el-table :data="ruleExplanation?.metricDefinitions || []" border stripe>
-              <el-table-column prop="label" label="指标" min-width="140" />
-              <el-table-column prop="definition" label="定义" min-width="220" show-overflow-tooltip />
-              <el-table-column prop="formula" label="计算方式" min-width="220" show-overflow-tooltip />
-              <el-table-column prop="note" label="说明" min-width="180" show-overflow-tooltip />
-            </el-table>
+            <div class="record-detail-section-title">数据是怎么一步步变化的</div>
+            <div class="record-process-chain">
+              <article
+                v-for="(step, index) in ruleExplanationSteps"
+                :key="`${step.key}-process`"
+                class="record-process-card"
+              >
+                <div class="record-process-step">第 {{ index + 1 }} 步</div>
+                <div class="record-process-title">{{ step.title }}</div>
+                <div class="record-process-value">{{ step.outputCount }} 条</div>
+                <div class="record-process-note">
+                  {{ index === 0 ? '这是最开始纳入检查的合并请求。' : `这一轮处理后，共有 ${step.outputCount} 条被标记为需要关注。` }}
+                </div>
+              </article>
+            </div>
+          </section>
+
+          <section class="record-detail-section">
+            <div class="record-detail-section-title">最后这些数字怎么算</div>
+            <div class="record-formula-card-grid">
+              <article
+                v-for="metric in ruleExplanationMetrics"
+                :key="metric.key"
+                class="record-formula-card"
+              >
+                <div class="record-formula-card-title">{{ metric.label }}</div>
+                <div class="record-formula-card-definition">{{ metricFormulaSummary(metric) }}</div>
+                <div class="record-formula-card-formula">{{ metric.formula }}</div>
+                <div v-if="metric.note" class="record-formula-card-note">{{ metric.note }}</div>
+              </article>
+            </div>
           </section>
         </template>
       </div>
@@ -832,53 +845,120 @@ function ruleStepSummary(step: { inputCount: number; outputCount: number }, inde
   gap: 16px;
 }
 
-.rule-flow-step {
+.record-rule-summary-card {
   display: grid;
-  gap: 10px;
+  gap: 8px;
+  padding: 16px 18px;
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(239, 246, 255, 0.95) 0%, rgba(248, 250, 252, 0.98) 100%);
+  border: 1px solid rgba(59, 130, 246, 0.14);
 }
 
-.rule-flow-step-title {
+.record-rule-summary-main {
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.7;
+  color: rgba(15, 23, 42, 0.9);
+}
+
+.record-rule-summary-sub {
+  font-size: 13px;
+  line-height: 1.7;
+  color: rgba(15, 23, 42, 0.66);
+}
+
+.record-rule-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.record-rule-overview-card,
+.record-rule-card,
+.record-formula-card,
+.record-process-card {
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid rgba(15, 23, 42, 0.06);
+}
+
+.record-rule-overview-label {
+  font-size: 12px;
+  color: rgba(15, 23, 42, 0.52);
+}
+
+.record-rule-overview-value,
+.record-process-value {
+  font-size: 22px;
+  line-height: 1;
+  color: rgba(15, 23, 42, 0.92);
+}
+
+.record-rule-card-grid,
+.record-formula-card-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.record-rule-card-title,
+.record-formula-card-title,
+.record-process-title {
   font-size: 14px;
   font-weight: 700;
   color: rgba(15, 23, 42, 0.9);
 }
 
-.rule-flow-step-description {
+.record-rule-card-description,
+.record-formula-card-definition,
+.record-formula-card-note,
+.record-process-note {
   font-size: 13px;
   line-height: 1.7;
   color: rgba(15, 23, 42, 0.68);
 }
 
-.rule-flow-step-metrics {
+.record-rule-card-summary,
+.record-formula-card-formula {
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(248, 250, 252, 0.96);
+  border: 1px solid rgba(15, 23, 42, 0.06);
+  font-size: 13px;
+  line-height: 1.7;
+  color: rgba(15, 23, 42, 0.8);
+}
+
+.record-rule-card-stats {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
 }
 
-.rule-flow-step-samples {
-  display: grid;
-  gap: 8px;
-}
-
-.rule-flow-sample-card :deep(.el-card__body) {
-  display: grid;
-  gap: 4px;
-  padding: 12px 14px;
-}
-
-.rule-flow-sample-label {
-  font-size: 13px;
-  font-weight: 600;
-  color: rgba(15, 23, 42, 0.82);
-}
-
-.rule-flow-sample-detail {
+.record-rule-card-stat {
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(241, 245, 249, 0.95);
   font-size: 12px;
-  line-height: 1.6;
-  color: rgba(15, 23, 42, 0.6);
+  color: rgba(15, 23, 42, 0.72);
 }
+
+.record-process-chain {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+}
+
+.record-process-step {
+  font-size: 12px;
+  color: rgba(15, 23, 42, 0.46);
+}
+
 
 @media (max-width: 960px) {
+  .record-rule-overview-grid,
   .record-detail-metrics {
     grid-template-columns: 1fr;
   }

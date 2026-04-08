@@ -266,11 +266,11 @@ public class CodeReviewIllegalRecordService {
                 missingMetrics,
                 views.stream().filter(row -> row.illegalTypes().stream().anyMatch(type -> type.contains("缺少代码注释比例") || type.contains("缺少缺陷数量") || type.contains("缺少新增代码行数"))).limit(3).map(this::toIllegalRecordSample).toList())),
         List.of(
-            new StatisticRuleMetricDefinition("illegalTypes", "非法类型", "根据字段缺失情况组合生成非法类型标签。", "非法类型 = 缺少模块标签 / 缺少标注责任人 / 缺少外部指标", "当前为只读后端规则。"),
-            new StatisticRuleMetricDefinition("moduleName", "模块名称", "当前取 MR 标签数组中的第一个标签作为模块名。", "moduleName = label_titles[1]", "仍然是过渡实现。"),
-            new StatisticRuleMetricDefinition("commentRate", "代码注释比例", "当前来自外部指标字段，缺失时判定非法。", "commentRate = 外部指标值", "当前 SQL 中仍为空。"),
-            new StatisticRuleMetricDefinition("defectCount", "缺陷数量", "当前来自外部指标字段，缺失时判定非法。", "defectCount = 外部指标值", "当前 SQL 中仍为空。"),
-            new StatisticRuleMetricDefinition("addedLines", "新增代码行数", "当前来自 GitLab merge_request_metrics。", "addedLines = ods_gitlab_merge_request_metrics.added_lines", "已接入真实镜像字段。")),
+            new StatisticRuleMetricDefinition("illegalTypes", "非法类型", "系统根据规则检查结果，标记这条记录需要补充哪些信息。", "非法类型 = 缺少模块标签 / 缺少标注责任人 / 缺少外部指标", "用于告诉用户这条记录为什么需要继续处理。"),
+            new StatisticRuleMetricDefinition("moduleName", "模块名称", "表示这条合并请求所属的功能模块。", "模块名称来自合并请求关联的模块标识", "如果缺少模块信息，这条记录会被判定为需要关注。"),
+            new StatisticRuleMetricDefinition("commentRate", "代码注释比例", "表示本次改动中代码注释的覆盖情况。", "代码注释比例 = 注释相关统计值", "如果缺少该指标，这条记录会被判定为需要关注。"),
+            new StatisticRuleMetricDefinition("defectCount", "缺陷数量", "表示本次改动关联的缺陷数量。", "缺陷数量 = 关联缺陷统计值", "如果缺少该指标，这条记录会被判定为需要关注。"),
+            new StatisticRuleMetricDefinition("addedLines", "新增代码行数", "表示本次合并请求新增的代码规模。", "新增代码行数 = 本次改动新增代码行数", "用于辅助判断记录是否完整。")),
         null);
   }
 
