@@ -882,3 +882,26 @@
 1. 导入真实项目标签与评论数据
 2. 配置 `testing_phase_calendar`
 3. 继续把其他统计服务改造成纯 fact 聚合
+
+### 14.1 已按代码落实的两项治理
+
+围绕后续数据量增长与规则持续变更，当前代码已经先落实了两项轻量治理，而不是只停留在建议层：
+
+- 批量写入治理
+  - `FactBuildService` 已改为按固定批次执行 `batch upsert`
+  - 当前批次大小为 `200`
+  - 目标是减少逐条 `upsert` 带来的数据库往返与事务开销
+- 规则领域拆分
+  - 原 `IssueFactNormalizationRules` 已退化为薄门面
+  - 内部拆为：
+    - `IssueLabelRules`
+    - `IssueClassificationRules`
+    - `IssueSlaRules`
+    - `IssueLegacyRules`
+    - `IssueRuleSupport`
+
+这套做法更接近阿里常见的轻量 DWD 构建实践：
+
+- 构建时强调增量与批处理
+- 规则按领域拆分，但不引入重型规则引擎
+- 查询层只消费事实字段，不重复做复杂业务判定

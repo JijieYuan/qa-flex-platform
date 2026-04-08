@@ -236,4 +236,17 @@ mvn "-Dtest=IssueFactNormalizationRulesTest,FactBuildControllerTest,StatisticBoa
 - Make sure:
   - architecture plan is current
   - current-state doc is current
+## 最新进展补充
 
+本计划中的两项基础治理已经进入代码：
+
+- `FactBuildService` 已补 `batch upsert`
+  - `issue_fact` / `merge_request_fact` 当前按 `200` 条分批写入
+- `IssueFactNormalizationRules` 已按领域拆分
+  - 标签规则、分类规则、SLA 规则、历史遗留规则已拆成独立类
+
+因此，当前后续重点可以从“先把结构理顺”转向：
+
+1. 继续补真实项目标签别名
+2. 导入真实评论模板数据
+3. 用真实阶段日历验证 `is_legacy`

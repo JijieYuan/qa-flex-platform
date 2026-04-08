@@ -29,6 +29,7 @@ public class FactBuildService {
   private static final String DEFAULT_SOURCE_SYSTEM = "GITLAB";
   private static final String DEFAULT_SOURCE_INSTANCE = "default";
   private static final String MIRROR_INGEST_CHANNEL = "MIRROR";
+  private static final int FACT_BATCH_SIZE = 200;
 
   private static final String ISSUE_SOURCE_SQL = """
       with distinct_issue_labels as (
@@ -237,7 +238,7 @@ public class FactBuildService {
           changedSince == null
               ? jdbcTemplate.query(sql, (rs, rowNum) -> mapIssueFact(rs, calendar))
               : jdbcTemplate.query(sql, (rs, rowNum) -> mapIssueFact(rs, calendar), Timestamp.valueOf(changedSince));
-      facts.forEach(issueFactMapper::upsert);
+      batchUpsertIssueFacts(facts);
       return new FactBuildResponse(
           "issue",
           full,
@@ -257,7 +258,7 @@ public class FactBuildService {
           changedSince == null
               ? jdbcTemplate.query(sql, this::mapMergeRequestFact)
               : jdbcTemplate.query(sql, this::mapMergeRequestFact, Timestamp.valueOf(changedSince));
-      facts.forEach(mergeRequestFactMapper::upsert);
+      batchUpsertMergeRequestFacts(facts);
       return new FactBuildResponse(
           "merge-request",
           full,
@@ -430,6 +431,30 @@ public class FactBuildService {
     fact.setAddedLines((Integer) rs.getObject("added_lines"));
     fact.setDeleted(false);
     return fact;
+  }
+
+  private void batchUpsertIssueFacts(List<IssueFact> facts) {
+    for (List<IssueFact> batch : partition(facts, FACT_BATCH_SIZE)) {
+      issueFactMapper.batchUpsert(batch);
+    }
+  }
+
+  private void batchUpsertMergeRequestFacts(List<MergeRequestFact> facts) {
+    for (List<MergeRequestFact> batch : partition(facts, FACT_BATCH_SIZE)) {
+      mergeRequestFactMapper.batchUpsert(batch);
+    }
+  }
+
+  private <T> List<List<T>> partition(List<T> items, int batchSize) {
+    if (items == null || items.isEmpty()) {
+      return List.of();
+    }
+    List<List<T>> result = new ArrayList<>();
+    for (int start = 0; start < items.size(); start += batchSize) {
+      int end = Math.min(start + batchSize, items.size());
+      result.add(items.subList(start, end));
+    }
+    return result;
   }
 
   private boolean isClosed(ResultSet rs) throws SQLException {

@@ -1076,3 +1076,22 @@
 
 - `issue_fact` 全量口径框架、字段设计、构建逻辑、接口触发链路均已落地
 - 当前剩余重点已经不再是“有没有这套架构”，而是继续补真实项目数据和阶段日历，让归一化字段在真实数据集上充分命中
+
+### 18.1 当前已补的性能与维护性收口
+
+为了避免后续随着事实字段增多而让构建链路退化，本轮又补了两项基础治理：
+
+- `FactBuildService` 已从“逐条 upsert”改为“分批 batch upsert”
+  - 当前批次大小：`200`
+  - `issue_fact` 与 `merge_request_fact` 都已改为批量写入
+- `IssueFactNormalizationRules` 已从单一大类拆分为领域规则类
+  - `IssueLabelRules`
+  - `IssueClassificationRules`
+  - `IssueSlaRules`
+  - `IssueLegacyRules`
+  - `IssueRuleSupport`
+
+当前收益：
+
+- 后续 `rebuild` 时数据库往返次数明显减少，更适合持续增量构建
+- 规则扩展时不再继续向一个超大类堆逻辑，后续补充真实项目别名时更安全
