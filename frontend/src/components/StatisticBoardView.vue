@@ -272,6 +272,28 @@ const tableRenderKey = computed(
 );
 
 const rowHeaderLabel = computed(() => board.value?.definition.rowHeaderLabel || '统计对象');
+const ruleExplanationSteps = computed(() => ruleExplanation.value?.flowSteps ?? []);
+const ruleExplanationMetrics = computed(() => ruleExplanation.value?.metricDefinitions ?? []);
+const ruleFirstInputCount = computed(() => ruleExplanationSteps.value[0]?.inputCount ?? 0);
+const ruleFinalOutputCount = computed(() => {
+  const steps = ruleExplanationSteps.value;
+  return steps.length ? steps[steps.length - 1].outputCount : 0;
+});
+const ruleFinalRetainedRate = computed(() => {
+  if (!ruleFirstInputCount.value) {
+    return '0%';
+  }
+  return `${((ruleFinalOutputCount.value / ruleFirstInputCount.value) * 100).toFixed(1)}%`;
+});
+const qaFriendlyRuleSummary = computed(() => {
+  if (!ruleExplanation.value?.supported) {
+    return '';
+  }
+  if (!ruleExplanationSteps.value.length) {
+    return ruleExplanation.value?.summary || '当前页面已经启用规则说明，但暂时没有可展示的统计过程。';
+  }
+  return `当前结果一共基于 ${ruleFirstInputCount.value} 条原始数据逐步筛选，最后保留 ${ruleFinalOutputCount.value} 条，最终保留比例为 ${ruleFinalRetainedRate.value}。`;
+});
 const {
   tableCurrentPage,
   tablePageSize,
@@ -706,6 +728,25 @@ function handleRuleExplanationVisibleChange(visible: boolean) {
   ruleExplanationVisible.value = visible;
 }
 
+function ruleStepRemovedCount(step: { inputCount: number; outputCount: number }) {
+  return Math.max(step.inputCount - step.outputCount, 0);
+}
+
+function ruleStepRetainedRate(step: { inputCount: number; outputCount: number }) {
+  if (!step.inputCount) {
+    return '0%';
+  }
+  return `${((step.outputCount / step.inputCount) * 100).toFixed(1)}%`;
+}
+
+function ruleStepSummary(step: { inputCount: number; outputCount: number }, index: number) {
+  const removed = ruleStepRemovedCount(step);
+  if (removed <= 0) {
+    return `第 ${index + 1} 步处理后，数据没有减少，仍保留 ${step.outputCount} 条。`;
+  }
+  return `第 ${index + 1} 步处理后，剩余 ${step.outputCount} 条，较上一步减少 ${removed} 条，保留比例 ${ruleStepRetainedRate(step)}。`;
+}
+
 function removeFilterCondition(conditionId: string) {
   const index = filterDraft.conditions.findIndex((condition) => condition.id === conditionId);
   if (index >= 0) {
@@ -1097,36 +1138,55 @@ watch(
         />
 
         <template v-else>
-          <el-alert
-            v-if="ruleExplanation?.summary"
-            :title="ruleExplanation.summary"
-            type="info"
-            :closable="false"
-            show-icon
-          />
+          <div class="rule-explanation-section">
+            <div class="rule-explanation-section-title">先看结论</div>
+            <div class="rule-explanation-summary-card">
+              <div class="rule-explanation-summary-main">{{ qaFriendlyRuleSummary }}</div>
+              <div v-if="ruleExplanation?.summary" class="rule-explanation-summary-sub">
+                {{ ruleExplanation.summary }}
+              </div>
+            </div>
+            <div class="rule-explanation-overview-grid">
+              <article class="rule-overview-card">
+                <span class="rule-overview-label">原始数据</span>
+                <strong class="rule-overview-value">{{ ruleFirstInputCount }}</strong>
+              </article>
+              <article class="rule-overview-card">
+                <span class="rule-overview-label">最终保留</span>
+                <strong class="rule-overview-value">{{ ruleFinalOutputCount }}</strong>
+              </article>
+              <article class="rule-overview-card">
+                <span class="rule-overview-label">最终保留比例</span>
+                <strong class="rule-overview-value">{{ ruleFinalRetainedRate }}</strong>
+              </article>
+            </div>
+          </div>
 
           <el-descriptions border :column="1" class="rule-explanation-meta">
-            <el-descriptions-item label="规则版本">{{ ruleExplanation?.version || '-' }}</el-descriptions-item>
-            <el-descriptions-item label="统计范围">{{ ruleExplanation?.scopeDescription || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="当前使用规则版本">{{ ruleExplanation?.version || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="这次统计包含哪些数据">{{ ruleExplanation?.scopeDescription || '-' }}</el-descriptions-item>
           </el-descriptions>
 
           <div class="rule-explanation-section">
-            <div class="rule-explanation-section-title">Flow 过滤过程</div>
+            <div class="rule-explanation-section-title">统计过程</div>
             <el-timeline>
               <el-timeline-item
-                v-for="step in ruleExplanation?.flowSteps || []"
+                v-for="(step, index) in ruleExplanationSteps"
                 :key="step.key"
                 placement="top"
               >
                 <div class="rule-flow-step">
                   <div class="rule-flow-step-title">{{ step.title }}</div>
                   <div class="rule-flow-step-description">{{ step.description }}</div>
+                  <div class="rule-flow-step-summary">{{ ruleStepSummary(step, index) }}</div>
                   <div class="rule-flow-step-metrics">
-                    <el-tag effect="plain">输入 {{ step.inputCount }}</el-tag>
-                    <el-tag effect="plain" type="success">输出 {{ step.outputCount }}</el-tag>
-                    <el-tag effect="plain" type="warning">过滤 {{ Math.max(step.inputCount - step.outputCount, 0) }}</el-tag>
+                    <el-tag effect="plain">开始时 {{ step.inputCount }} 条</el-tag>
+                    <el-tag effect="plain" type="success">处理后剩 {{ step.outputCount }} 条</el-tag>
+                    <el-tag effect="plain" type="warning">本步减少 {{ ruleStepRemovedCount(step) }} 条</el-tag>
+                    <el-tag effect="plain" type="info">保留比例 {{ ruleStepRetainedRate(step) }}</el-tag>
                   </div>
                   <div v-if="step.samples.length" class="rule-flow-step-samples">
+                    <div class="rule-flow-step-samples-title">示例数据</div>
                     <el-card
                       v-for="sample in step.samples"
                       :key="`${step.key}-${sample.label}-${sample.detail}`"
@@ -1143,12 +1203,12 @@ watch(
           </div>
 
           <div class="rule-explanation-section">
-            <div class="rule-explanation-section-title">指标口径</div>
-            <el-table :data="ruleExplanation?.metricDefinitions || []" border stripe>
-              <el-table-column prop="label" label="指标" min-width="140" />
-              <el-table-column prop="definition" label="定义" min-width="220" show-overflow-tooltip />
-              <el-table-column prop="formula" label="计算方式" min-width="220" show-overflow-tooltip />
-              <el-table-column prop="note" label="说明" min-width="180" show-overflow-tooltip />
+            <div class="rule-explanation-section-title">这个数字怎么算</div>
+            <el-table :data="ruleExplanationMetrics" border stripe>
+              <el-table-column prop="label" label="数字名称" min-width="140" />
+              <el-table-column prop="definition" label="它表示什么" min-width="220" show-overflow-tooltip />
+              <el-table-column prop="formula" label="系统怎么算" min-width="220" show-overflow-tooltip />
+              <el-table-column prop="note" label="补充说明" min-width="180" show-overflow-tooltip />
             </el-table>
           </div>
         </template>
@@ -1210,3 +1270,142 @@ watch(
 
   </div>
 </template>
+
+<style scoped>
+.rule-explanation-panel {
+  display: grid;
+  gap: 16px;
+}
+
+.rule-explanation-section {
+  display: grid;
+  gap: 12px;
+}
+
+.rule-explanation-section-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: rgba(15, 23, 42, 0.76);
+}
+
+.rule-explanation-summary-card {
+  display: grid;
+  gap: 8px;
+  padding: 16px 18px;
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(239, 246, 255, 0.95) 0%, rgba(248, 250, 252, 0.98) 100%);
+  border: 1px solid rgba(59, 130, 246, 0.14);
+}
+
+.rule-explanation-summary-main {
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.7;
+  color: rgba(15, 23, 42, 0.9);
+}
+
+.rule-explanation-summary-sub {
+  font-size: 13px;
+  line-height: 1.7;
+  color: rgba(15, 23, 42, 0.66);
+}
+
+.rule-explanation-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.rule-overview-card {
+  display: grid;
+  gap: 8px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(15, 23, 42, 0.06);
+}
+
+.rule-overview-label {
+  font-size: 12px;
+  color: rgba(15, 23, 42, 0.52);
+}
+
+.rule-overview-value {
+  font-size: 22px;
+  line-height: 1;
+  color: rgba(15, 23, 42, 0.92);
+}
+
+.rule-explanation-meta {
+  background: rgba(255, 255, 255, 0.82);
+  border-radius: 18px;
+}
+
+.rule-flow-step {
+  display: grid;
+  gap: 10px;
+}
+
+.rule-flow-step-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: rgba(15, 23, 42, 0.9);
+}
+
+.rule-flow-step-description {
+  font-size: 13px;
+  line-height: 1.7;
+  color: rgba(15, 23, 42, 0.68);
+}
+
+.rule-flow-step-summary {
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(248, 250, 252, 0.96);
+  border: 1px solid rgba(15, 23, 42, 0.06);
+  font-size: 13px;
+  line-height: 1.7;
+  color: rgba(15, 23, 42, 0.78);
+}
+
+.rule-flow-step-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.rule-flow-step-samples {
+  display: grid;
+  gap: 8px;
+}
+
+.rule-flow-step-samples-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: rgba(15, 23, 42, 0.5);
+}
+
+.rule-flow-sample-card :deep(.el-card__body) {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+}
+
+.rule-flow-sample-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(15, 23, 42, 0.82);
+}
+
+.rule-flow-sample-detail {
+  font-size: 12px;
+  line-height: 1.6;
+  color: rgba(15, 23, 42, 0.6);
+}
+
+@media (max-width: 960px) {
+  .rule-explanation-overview-grid {
+    grid-template-columns: 1fr;
+  }
+}
+</style>

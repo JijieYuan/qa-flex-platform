@@ -209,6 +209,50 @@ function formatPercent(value?: number | null) {
   return `${(value * 100).toFixed(2)}%`;
 }
 const lastSyncedText = computed(() => formatDateTime(syncStatus.value?.lastSyncedAt));
+const ruleExplanationSteps = computed(() => ruleExplanation.value?.flowSteps || []);
+const ruleExplanationMetrics = computed(() => ruleExplanation.value?.metricDefinitions || []);
+const ruleFirstInputCount = computed(() => ruleExplanationSteps.value[0]?.inputCount || 0);
+const __duplicateRuleFinalOutputCount = computed(() => {
+  const steps = ruleExplanationSteps.value;
+  return steps.length ? steps[steps.length - 1].outputCount : 0;
+});
+const __duplicateRuleFinalRetainedRate = computed(() => {
+  if (!ruleFirstInputCount.value) {
+    return '0%';
+  }
+  return `${((__duplicateRuleFinalOutputCount.value / ruleFirstInputCount.value) * 100).toFixed(1)}%`;
+});
+const __duplicateQaFriendlyRuleSummary = computed(() => {
+  if (!ruleExplanation.value?.supported) {
+    return '';
+  }
+  if (!ruleExplanationSteps.value.length) {
+    return ruleExplanation.value?.summary || '当前页面已经启用规则说明，但暂时没有可展示的统计过程。';
+  }
+  return `当前结果一共基于 ${ruleFirstInputCount.value} 条合并请求逐步检查，最终命中 ${ruleFinalOutputCount.value} 条需要关注的记录，占原始数据的 ${ruleFinalRetainedRate.value}。`;
+});
+const __duplicateRuleExplanationSteps = computed(() => ruleExplanation.value?.flowSteps ?? []);
+const __duplicateRuleExplanationMetrics = computed(() => ruleExplanation.value?.metricDefinitions ?? []);
+const __duplicateRuleFirstInputCount = computed(() => __duplicateRuleExplanationSteps.value[0]?.inputCount ?? 0);
+const ruleFinalOutputCount = computed(() => {
+  const steps = ruleExplanationSteps.value;
+  return steps.length ? steps[steps.length - 1].outputCount : 0;
+});
+const ruleFinalRetainedRate = computed(() => {
+  if (!ruleFirstInputCount.value) {
+    return '0%';
+  }
+  return `${((ruleFinalOutputCount.value / ruleFirstInputCount.value) * 100).toFixed(1)}%`;
+});
+const qaFriendlyRuleSummary = computed(() => {
+  if (!ruleExplanation.value?.supported) {
+    return '';
+  }
+  if (!ruleExplanationSteps.value.length) {
+    return ruleExplanation.value?.summary || '当前页面已经启用规则说明，但暂时没有可展示的统计过程。';
+  }
+  return `当前结果一共基于 ${ruleFirstInputCount.value} 条合并请求逐步检查，最终命中 ${ruleFinalOutputCount.value} 条需要关注的记录，占原始数据的 ${ruleFinalRetainedRate.value}。`;
+});
 
 function openDetailDrawer(row: Record<string, unknown>) {
   selectedRow.value = (row.__raw as CodeReviewIllegalRecordRowResponse) ?? null;
@@ -346,6 +390,25 @@ function openRuleExplanation() {
     return;
   }
   ruleExplanationVisible.value = true;
+}
+
+function ruleStepRemovedCount(step: { inputCount: number; outputCount: number }) {
+  return Math.max(step.inputCount - step.outputCount, 0);
+}
+
+function ruleStepRetainedRate(step: { inputCount: number; outputCount: number }) {
+  if (!step.inputCount) {
+    return '0%';
+  }
+  return `${((step.outputCount / step.inputCount) * 100).toFixed(1)}%`;
+}
+
+function ruleStepSummary(step: { inputCount: number; outputCount: number }, index: number) {
+  const changed = ruleStepRemovedCount(step);
+  if (changed <= 0) {
+    return `第 ${index + 1} 步检查后，数据没有变化，仍命中 ${step.outputCount} 条。`;
+  }
+  return `第 ${index + 1} 步检查后，识别出 ${step.outputCount} 条需要关注的记录，较上一步变化 ${changed} 条，占当前输入数据的 ${ruleStepRetainedRate(step)}。`;
 }
 
 </script>
