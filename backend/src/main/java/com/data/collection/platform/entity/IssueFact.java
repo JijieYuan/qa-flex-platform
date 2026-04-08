@@ -65,6 +65,9 @@ public class IssueFact {
   @TableField("updated_at_source")
   private LocalDateTime updatedAtSource;
 
+  @TableField("ods_updated_at")
+  private LocalDateTime odsUpdatedAt;
+
   @TableField("closed_at_source")
   private LocalDateTime closedAtSource;
 

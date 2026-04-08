@@ -17,10 +17,10 @@ import com.data.collection.platform.entity.statistics.StatisticRowData;
 import com.data.collection.platform.entity.statistics.StatisticRuleFlowStep;
 import com.data.collection.platform.entity.statistics.StatisticRuleFlowStepSample;
 import com.data.collection.platform.entity.statistics.StatisticRuleMetricDefinition;
+import com.data.collection.platform.service.FactBuildService;
 import com.data.collection.platform.service.GitlabMirrorSyncService;
 import com.data.collection.platform.entity.RealtimeWorkspaceStatusResponse;
 import com.data.collection.platform.service.RealtimeWorkspaceService;
-import java.sql.Array;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDateTime;
@@ -55,54 +55,42 @@ public class SystemTestDefectSummaryBoardService extends AbstractStatisticBoardS
       "labels");
   private static final List<String> EXCLUDED_LABEL_TOKENS = List.of("功能屏蔽", "已拒绝", "建议");
   private static final List<String> CLOSED_EXCLUDED_LABEL_TOKENS = List.of("申请否决", "需求如此");
-  private static final String BASE_SQL = """
-      with issue_labels as (
-        select ll.target_id as issue_id,
-               array_agg(distinct lower(l.title) order by lower(l.title)) filter (where l.title is not null and l.title <> '') as label_titles
-          from ods_gitlab_label_links ll
-          join ods_gitlab_labels l
-            on l.id = ll.label_id
-           and coalesce(l.mirror_deleted, false) = false
-         where coalesce(ll.mirror_deleted, false) = false
-           and ll.target_type = 'Issue'
-         group by ll.target_id
-      )
+  private static final String FACT_SQL = """
       select
-        i.id,
-        i.iid,
-        i.title,
-        i.project_id,
-        p.name as project_name,
-        coalesce(author.name, '') as author_name,
-        i.updated_at,
-        i.closed_at,
-        i.state_id,
-        labels.label_titles
-      from ods_gitlab_issues i
-      left join ods_gitlab_projects p
-        on p.id = i.project_id
-       and coalesce(p.mirror_deleted, false) = false
-      left join ods_gitlab_users author
-        on author.id = i.author_id
-       and coalesce(author.mirror_deleted, false) = false
-      left join issue_labels labels
-        on labels.issue_id = i.id
-      where coalesce(i.mirror_deleted, false) = false
+        issue_id as id,
+        issue_iid as iid,
+        title,
+        project_id,
+        project_name,
+        coalesce(author_name, '') as author_name,
+        updated_at_source as updated_at,
+        closed_at_source as closed_at,
+        coalesce(issue_state, 'opened') as issue_state,
+        coalesce(severity_level, '') as severity_level,
+        coalesce(urgency, '') as urgency,
+        coalesce(category, '') as category,
+        coalesce(bug_status, '') as bug_status,
+        coalesce(label_names, '') as label_names
+      from issue_fact
+      where deleted = false
       """;
 
   private final JdbcTemplate jdbcTemplate;
   private final GitlabMirrorSyncService gitlabMirrorSyncService;
   private final RealtimeWorkspaceService realtimeWorkspaceService;
+  private final FactBuildService factBuildService;
 
   public SystemTestDefectSummaryBoardService(
       JdbcTemplate jdbcTemplate,
       JsonUtils jsonUtils,
       GitlabMirrorSyncService gitlabMirrorSyncService,
-      RealtimeWorkspaceService realtimeWorkspaceService) {
+      RealtimeWorkspaceService realtimeWorkspaceService,
+      FactBuildService factBuildService) {
     super(jsonUtils);
     this.jdbcTemplate = jdbcTemplate;
     this.gitlabMirrorSyncService = gitlabMirrorSyncService;
     this.realtimeWorkspaceService = realtimeWorkspaceService;
+    this.factBuildService = factBuildService;
   }
 
   @Override
@@ -231,24 +219,41 @@ public class SystemTestDefectSummaryBoardService extends AbstractStatisticBoardS
 
   private List<IssueSource> loadSources(Map<String, String> filters) {
     Long projectId = parseLong(withoutReservedFilters(filters).get("projectId"));
-    String sql = BASE_SQL + (projectId == null ? "" : " and i.project_id = ?");
     try {
-      if (projectId == null) {
-        return jdbcTemplate.query(sql, this::mapIssue);
+      List<IssueSource> facts = ensureFactsReady(projectId);
+      if (!facts.isEmpty()) {
+        return facts;
       }
-      return jdbcTemplate.query(sql, this::mapIssue, projectId);
     } catch (DataAccessException e) {
-      log.warn("Failed to load system test defect sources from mirror tables, fallback to empty result", e);
+      log.warn("Failed to load issue facts", e);
       return List.of();
     }
+    return List.of();
   }
 
   private void refreshMirrorForRealtimeView() {
     try {
       gitlabMirrorSyncService.refreshTablesOnDemand(REALTIME_REFRESH_TABLES, BOARD_KEY);
+      factBuildService.rebuildIssueFacts(false);
     } catch (Exception e) {
       log.warn("On-demand mirror refresh for {} failed, fallback to current mirror snapshot", BOARD_KEY, e);
     }
+  }
+
+  private List<IssueSource> loadSourcesFromFact(Long projectId) {
+    String sql = FACT_SQL + (projectId == null ? "" : " and project_id = ?");
+    return projectId == null
+        ? jdbcTemplate.query(sql, this::mapIssueFact)
+        : jdbcTemplate.query(sql, this::mapIssueFact, projectId);
+  }
+
+  private List<IssueSource> ensureFactsReady(Long projectId) {
+    List<IssueSource> facts = loadSourcesFromFact(projectId);
+    if (!facts.isEmpty()) {
+      return facts;
+    }
+    factBuildService.rebuildIssueFacts(true);
+    return loadSourcesFromFact(projectId);
   }
 
   public RealtimeWorkspaceStatusResponse getRealtimeStatus() {
@@ -267,8 +272,8 @@ public class SystemTestDefectSummaryBoardService extends AbstractStatisticBoardS
         true,
         "系统测试缺陷汇总规则说明",
         RULE_VERSION,
-        "当前一期基于本地 GitLab Issue 镜像数据执行统计；支持按项目筛选，并在统计前执行标签排除规则。",
-        "统计口径、Flow 步骤和指标说明全部来自当前后端实现，目的是让使用者看到“原始数据 -> 过滤后 -> 指标汇总”的真实过程。",
+        "当前一期基于 issue_fact 执行统计；支持按项目筛选，并在统计前执行标签排除规则。",
+        "统计口径、过滤步骤和指标说明全部基于事实表中的统一字段，目的是让使用者看到“事实数据 -> 过滤后 -> 指标汇总”的真实过程。",
         flowSnapshot.flowSteps(),
         buildMetricDefinitions(),
         null);
@@ -285,8 +290,8 @@ public class SystemTestDefectSummaryBoardService extends AbstractStatisticBoardS
     steps.add(
         new StatisticRuleFlowStep(
             "source-load",
-            "加载镜像议题",
-            "从本地 GitLab Issue 镜像中读取当前查询范围内的原始议题记录。",
+            "加载议题事实",
+            "从 issue_fact 中读取当前查询范围内已经归一化的议题记录。",
             initial.size(),
             initial.size(),
             sampleIssues(initial)));
@@ -336,25 +341,25 @@ public class SystemTestDefectSummaryBoardService extends AbstractStatisticBoardS
         new StatisticRuleMetricDefinition(
             "level1",
             "一级缺陷",
-            "按照标题或标签中的回退、挂机、一级等关键词识别一级缺陷。",
+            "基于事实表中的严重程度和缺陷分类字段识别一级缺陷。",
             "一级缺陷数量 = 回退数量 + 挂机数量 + 其他一级数量",
-            "当前实现仍基于关键词归类。"),
+            "严重程度和分类由事实构建服务统一归一化。"),
         new StatisticRuleMetricDefinition(
             "level2",
             "二级缺陷",
-            "按照标题或标签中的二级、level2、l2 等关键词识别。",
+            "基于事实表中的严重程度字段识别二级缺陷。",
             "二级修复率 = 二级已修复数量 / 二级总数量",
             "当分母为 0 时返回 0.00%。"),
         new StatisticRuleMetricDefinition(
             "level3",
             "三级缺陷",
-            "按照标题或标签中的三级、level3、l3 等关键词识别。",
+            "基于事实表中的严重程度字段识别三级缺陷。",
             "三级修复率 = 三级已修复数量 / 三级总数量",
             "当分母为 0 时返回 0.00%。"),
         new StatisticRuleMetricDefinition(
             "priority",
             "优先级统计",
-            "按照标题或标签中出现的 P1/P2/P3 关键词识别优先级。",
+            "基于事实表中的优先级字段识别 P1/P2/P3。",
             "Pn 修复率 = Pn 已关闭数量 / Pn 总数量",
             "优先级与严重级别相互独立。"),
         new StatisticRuleMetricDefinition(
@@ -365,7 +370,7 @@ public class SystemTestDefectSummaryBoardService extends AbstractStatisticBoardS
             "当前实现按项目维度汇总。"));
   }
 
-  private IssueSource mapIssue(ResultSet rs, int rowNum) throws SQLException {
+  private IssueSource mapIssueFact(ResultSet rs, int rowNum) throws SQLException {
     return new IssueSource(
         rs.getLong("id"),
         rs.getInt("iid"),
@@ -375,25 +380,23 @@ public class SystemTestDefectSummaryBoardService extends AbstractStatisticBoardS
         defaultText(rs.getString("author_name"), ""),
         rs.getTimestamp("updated_at") == null ? null : rs.getTimestamp("updated_at").toLocalDateTime(),
         rs.getTimestamp("closed_at") == null ? null : rs.getTimestamp("closed_at").toLocalDateTime(),
-        rs.getInt("state_id"),
-        readTextArray(rs.getArray("label_titles")));
+        defaultText(rs.getString("issue_state"), "opened"),
+        defaultText(rs.getString("severity_level"), ""),
+        defaultText(rs.getString("urgency"), ""),
+        defaultText(rs.getString("category"), ""),
+        defaultText(rs.getString("bug_status"), ""),
+        splitLabels(rs.getString("label_names")));
   }
 
-  private List<String> readTextArray(Array array) throws SQLException {
-    if (array == null) {
-      return List.of();
-    }
-    Object raw = array.getArray();
-    if (!(raw instanceof Object[] values)) {
+  private List<String> splitLabels(String labelNames) {
+    if (!StringUtils.hasText(labelNames)) {
       return List.of();
     }
     List<String> result = new ArrayList<>();
-    for (Object value : values) {
-      if (value != null) {
-        String normalized = String.valueOf(value).trim();
-        if (!normalized.isEmpty()) {
-          result.add(normalized);
-        }
+    for (String value : labelNames.split(",")) {
+      String normalized = value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
+      if (!normalized.isEmpty()) {
+        result.add(normalized);
       }
     }
     return result;
@@ -553,16 +556,21 @@ public class SystemTestDefectSummaryBoardService extends AbstractStatisticBoardS
       String authorName,
       LocalDateTime updatedAt,
       LocalDateTime closedAt,
-      Integer stateId,
+      String issueState,
+      String severityLevel,
+      String urgency,
+      String category,
+      String bugStatus,
       List<String> labels) {
 
     boolean isClosed() {
-      return closedAt != null || (stateId != null && stateId != 1);
+      return closedAt != null
+          || "closed".equalsIgnoreCase(issueState)
+          || "已关闭".equals(bugStatus);
     }
 
     boolean hasPriority(String priority) {
-      String safePriority = priority.toLowerCase(Locale.ROOT);
-      return matchesLabelOrTitle("(^|[^a-z0-9])" + safePriority + "([^a-z0-9]|$)");
+      return priority.equalsIgnoreCase(urgency);
     }
 
     boolean hasAnyLabel(List<String> candidates) {
@@ -579,38 +587,23 @@ public class SystemTestDefectSummaryBoardService extends AbstractStatisticBoardS
     }
 
     boolean isLevel1Back() {
-      return matchesAny("回退", "rollback");
+      return "一级".equals(severityLevel) && "回退".equals(category);
     }
 
     boolean isLevel1Hang() {
-      return matchesAny("挂机", "hang");
+      return "一级".equals(severityLevel) && "挂机".equals(category);
     }
 
     boolean isLevel1Other() {
-      return matchesAny("一级", "level1", "l1") && !isLevel1Back() && !isLevel1Hang();
+      return "一级".equals(severityLevel) && !isLevel1Back() && !isLevel1Hang();
     }
 
     boolean isLevel2() {
-      return matchesAny("二级", "level2", "l2");
+      return "二级".equals(severityLevel);
     }
 
     boolean isLevel3() {
-      return matchesAny("三级", "level3", "l3");
-    }
-
-    private boolean matchesAny(String... tokens) {
-      String haystack = (title + "|" + String.join("|", labels)).toLowerCase(Locale.ROOT);
-      for (String token : tokens) {
-        if (haystack.contains(token.toLowerCase(Locale.ROOT))) {
-          return true;
-        }
-      }
-      return false;
-    }
-
-    private boolean matchesLabelOrTitle(String regex) {
-      String haystack = (title + "|" + String.join("|", labels)).toLowerCase(Locale.ROOT);
-      return haystack.matches(".*" + regex + ".*");
+      return "三级".equals(severityLevel);
     }
   }
 

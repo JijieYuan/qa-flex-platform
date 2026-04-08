@@ -9,7 +9,7 @@ import com.data.collection.platform.entity.statistics.StatisticBoardRuleExplanat
 import com.data.collection.platform.entity.statistics.StatisticRuleFlowStep;
 import com.data.collection.platform.entity.statistics.StatisticRuleFlowStepSample;
 import com.data.collection.platform.entity.statistics.StatisticRuleMetricDefinition;
-import java.sql.Array;
+import com.data.collection.platform.service.FactBuildService;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDate;
@@ -52,109 +52,43 @@ public class CodeReviewIllegalRecordService {
   private static final List<OptionItemResponse> REQUEST_TYPE_OPTIONS =
       List.of(new OptionItemResponse("合并请求", "merge_request"));
 
-  private static final String BASE_SQL = """
-      with reviewer_names as (
-        select mr.merge_request_id,
-               string_agg(distinct u.name, ', ' order by u.name) as reviewer_names
-          from ods_gitlab_merge_request_reviewers mr
-          join ods_gitlab_users u
-            on u.id = mr.user_id
-           and coalesce(u.mirror_deleted, false) = false
-         where coalesce(mr.mirror_deleted, false) = false
-         group by mr.merge_request_id
-      ),
-      assignee_names as (
-        select ma.merge_request_id,
-               string_agg(distinct u.name, ', ' order by u.name) as assignee_names
-          from ods_gitlab_merge_request_assignees ma
-          join ods_gitlab_users u
-            on u.id = ma.user_id
-           and coalesce(u.mirror_deleted, false) = false
-         where coalesce(ma.mirror_deleted, false) = false
-         group by ma.merge_request_id
-      ),
-      merge_request_labels as (
-        select ll.target_id as merge_request_id,
-               array_remove(
-                 array_agg(
-                   nullif(btrim(l.title), '')
-                   order by coalesce(ll.source_updated_at, ll.updated_at, ll.created_at) desc nulls last, ll.id desc
-                 ),
-                 null
-               ) as label_titles
-          from ods_gitlab_label_links ll
-          join ods_gitlab_labels l
-            on l.id = ll.label_id
-           and coalesce(l.mirror_deleted, false) = false
-         where coalesce(ll.mirror_deleted, false) = false
-           and ll.target_type = 'MergeRequest'
-         group by ll.target_id
-      ),
-      imported_metrics as (
-        select m.project_id,
-               m.merge_request_id,
-               m.merge_request_iid,
-               m.comment_rate,
-               m.defect_count
-          from code_review_external_metrics m
-      )
+  private static final String FACT_SQL = """
       select
-        mr.id as merge_request_id,
-        mr.iid as merge_request_iid,
-        mr.target_project_id as project_id,
-        mr.title as merge_request_content,
-        p.name as project_name,
-        coalesce(owner_ns.path || '/' || p.path, p.path) as repository_name,
-        coalesce(metrics.merged_at, mr.updated_at) as merged_at,
-        coalesce(merge_user.name, author.name, '') as merged_by,
-        coalesce(nullif(trim(reviewers.reviewer_names), ''), nullif(trim(assignees.assignee_names), ''), '') as owner,
-        coalesce(mr.target_branch, '') as target_branch,
-        coalesce((labels.label_titles)[1], '') as module_name,
-        labels.label_titles as label_titles,
-        metrics.added_lines as added_lines,
-        imported_metrics.comment_rate as comment_rate,
-        imported_metrics.defect_count as defect_count
-      from ods_gitlab_merge_requests mr
-      left join ods_gitlab_merge_request_metrics metrics
-        on metrics.merge_request_id = mr.id
-       and coalesce(metrics.mirror_deleted, false) = false
-      left join ods_gitlab_projects p
-        on p.id = mr.target_project_id
-       and coalesce(p.mirror_deleted, false) = false
-      left join ods_gitlab_namespaces owner_ns
-        on owner_ns.id = p.namespace_id
-       and coalesce(owner_ns.mirror_deleted, false) = false
-      left join ods_gitlab_users author
-        on author.id = mr.author_id
-       and coalesce(author.mirror_deleted, false) = false
-      left join ods_gitlab_users merge_user
-        on merge_user.id = mr.merge_user_id
-       and coalesce(merge_user.mirror_deleted, false) = false
-      left join reviewer_names reviewers
-        on reviewers.merge_request_id = mr.id
-      left join assignee_names assignees
-        on assignees.merge_request_id = mr.id
-      left join merge_request_labels labels
-        on labels.merge_request_id = mr.id
-      left join imported_metrics
-        on imported_metrics.project_id = mr.target_project_id
-       and (imported_metrics.merge_request_id = mr.id or imported_metrics.merge_request_iid = mr.iid)
-      where coalesce(mr.mirror_deleted, false) = false
+        merge_request_id,
+        merge_request_iid,
+        project_id,
+        title as merge_request_content,
+        project_name,
+        repository_name,
+        merged_at_source as merged_at,
+        merge_user_name as merged_by,
+        owner_name as owner,
+        target_branch,
+        module_name,
+        coalesce(label_names, '') as label_names,
+        comment_rate,
+        defect_count,
+        added_lines
+      from merge_request_fact
+      where deleted = false
       """;
 
   private final JdbcTemplate jdbcTemplate;
   private final GitlabMirrorSyncService gitlabMirrorSyncService;
   private final RealtimeWorkspaceService realtimeWorkspaceService;
+  private final FactBuildService factBuildService;
   private final String defaultGitlabBaseUrl;
 
   public CodeReviewIllegalRecordService(
       JdbcTemplate jdbcTemplate,
       GitlabMirrorSyncService gitlabMirrorSyncService,
       RealtimeWorkspaceService realtimeWorkspaceService,
+      FactBuildService factBuildService,
       @Value("${gitlab-mirror.web-base-url:http://172.22.10.233}") String defaultGitlabBaseUrl) {
     this.jdbcTemplate = jdbcTemplate;
     this.gitlabMirrorSyncService = gitlabMirrorSyncService;
     this.realtimeWorkspaceService = realtimeWorkspaceService;
+    this.factBuildService = factBuildService;
     this.defaultGitlabBaseUrl = defaultGitlabBaseUrl;
   }
 
@@ -246,13 +180,13 @@ public class CodeReviewIllegalRecordService {
         true,
         "代码走查非法记录规则说明",
         RULE_VERSION,
-        "当前统计范围是已接入本地镜像的 Merge Request 相关数据；页面查询条件在此基础上继续筛选。",
-        "非法记录明细页的核心目的是说明“哪些字段缺失、为什么被判定为非法”，当前判定全部来自后端只读规则。",
+        "当前统计范围是已归一化到事实表中的 Merge Request 相关数据；页面查询条件在此基础上继续筛选。",
+        "非法记录明细页的核心目的是说明“哪些字段缺失、为什么被判定为非法”，当前判定基于 merge_request_fact 中的统一字段。",
         List.of(
             new StatisticRuleFlowStep(
                 "source-load",
-                "加载合并请求镜像",
-                "从本地 GitLab Merge Request 相关镜像表读取合并请求、评审人、标签和指标数据。",
+                "加载合并请求事实",
+                "从 merge_request_fact 中读取已经归一化的合并请求、责任人、模块和指标数据。",
                 total,
                 total,
                 views.stream().limit(3).map(this::toIllegalRecordSample).toList()),
@@ -289,6 +223,7 @@ public class CodeReviewIllegalRecordService {
   private void refreshMirrorForRealtimeView() {
     try {
       gitlabMirrorSyncService.refreshTablesOnDemand(REALTIME_REFRESH_TABLES, "code-review-illegal-records");
+      factBuildService.rebuildMergeRequestFacts(false);
     } catch (Exception e) {
       log.warn("On-demand mirror refresh for code review illegal records failed, fallback to current mirror snapshot", e);
     }
@@ -296,14 +231,27 @@ public class CodeReviewIllegalRecordService {
 
   private List<IllegalRecordSource> loadSources() {
     try {
-      return jdbcTemplate.query(BASE_SQL, this::mapSource);
+      List<IllegalRecordSource> facts = ensureFactsReady();
+      if (!facts.isEmpty()) {
+        return facts;
+      }
     } catch (DataAccessException e) {
-      log.warn("Failed to load code review illegal record sources from mirror tables, fallback to empty result", e);
+      log.warn("Failed to load merge request facts", e);
       return List.of();
     }
+    return List.of();
   }
 
-  private IllegalRecordSource mapSource(ResultSet rs, int rowNum) throws SQLException {
+  private List<IllegalRecordSource> ensureFactsReady() {
+    List<IllegalRecordSource> facts = jdbcTemplate.query(FACT_SQL, this::mapFactSource);
+    if (!facts.isEmpty()) {
+      return facts;
+    }
+    factBuildService.rebuildMergeRequestFacts(true);
+    return jdbcTemplate.query(FACT_SQL, this::mapFactSource);
+  }
+
+  private IllegalRecordSource mapFactSource(ResultSet rs, int rowNum) throws SQLException {
     return new IllegalRecordSource(
         rs.getLong("merge_request_id"),
         rs.getInt("merge_request_iid"),
@@ -316,7 +264,7 @@ public class CodeReviewIllegalRecordService {
         rs.getString("owner"),
         rs.getString("target_branch"),
         rs.getString("module_name"),
-        readTextArray(rs.getArray("label_titles")),
+        splitLabels(rs.getString("label_names")),
         toDouble(rs.getObject("comment_rate")),
         (Integer) rs.getObject("defect_count"),
         (Integer) rs.getObject("added_lines"));
@@ -332,19 +280,15 @@ public class CodeReviewIllegalRecordService {
     return Double.valueOf(String.valueOf(value));
   }
 
-  private List<String> readTextArray(Array array) throws SQLException {
-    if (array == null) {
-      return List.of();
-    }
-    Object raw = array.getArray();
-    if (!(raw instanceof Object[] values)) {
+  private List<String> splitLabels(String labelNames) {
+    if (!StringUtils.hasText(labelNames)) {
       return List.of();
     }
     List<String> result = new ArrayList<>();
-    for (Object value : values) {
-      String text = normalizeText(value == null ? null : String.valueOf(value));
-      if (text != null) {
-        result.add(text);
+    for (String value : labelNames.split(",")) {
+      String normalized = normalizeText(value);
+      if (normalized != null) {
+        result.add(normalized);
       }
     }
     return result;

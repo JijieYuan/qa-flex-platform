@@ -7,6 +7,7 @@ import static org.mockito.Mockito.when;
 
 import com.data.collection.platform.common.JsonUtils;
 import com.data.collection.platform.entity.statistics.StatisticBoardRuleExplanationResponse;
+import com.data.collection.platform.service.FactBuildService;
 import com.data.collection.platform.service.GitlabMirrorSyncService;
 import com.data.collection.platform.service.RealtimeWorkspaceService;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -31,6 +32,9 @@ class SystemTestDefectSummaryRuleExplanationTest {
   @Mock
   private RealtimeWorkspaceService realtimeWorkspaceService;
 
+  @Mock
+  private FactBuildService factBuildService;
+
   @Test
   void shouldDescribeSystemTestBoardRuleFlowEvenWhenMirrorTablesAreEmpty() {
     when(jdbcTemplate.query(anyString(), org.mockito.ArgumentMatchers.<RowMapper<Object>>any())).thenReturn(List.of());
@@ -38,7 +42,8 @@ class SystemTestDefectSummaryRuleExplanationTest {
         jdbcTemplate,
         new JsonUtils(new ObjectMapper()),
         gitlabMirrorSyncService,
-        realtimeWorkspaceService);
+        realtimeWorkspaceService,
+        factBuildService);
 
     StatisticBoardRuleExplanationResponse response = service.getRuleExplanation(Map.of());
 

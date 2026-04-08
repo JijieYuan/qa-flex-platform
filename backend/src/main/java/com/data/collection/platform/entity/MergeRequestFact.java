@@ -84,6 +84,9 @@ public class MergeRequestFact {
   @TableField("updated_at_source")
   private LocalDateTime updatedAtSource;
 
+  @TableField("ods_updated_at")
+  private LocalDateTime odsUpdatedAt;
+
   @TableField("merged_at_source")
   private LocalDateTime mergedAtSource;
 

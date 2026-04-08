@@ -143,6 +143,7 @@ create table if not exists issue_fact (
     assignee_name varchar(128),
     created_at_source timestamp,
     updated_at_source timestamp,
+    ods_updated_at timestamp,
     closed_at_source timestamp,
     module_name varchar(255),
     testing_phase varchar(128),
@@ -186,6 +187,7 @@ create table if not exists merge_request_fact (
     label_names text,
     created_at_source timestamp,
     updated_at_source timestamp,
+    ods_updated_at timestamp,
     merged_at_source timestamp,
     review_status varchar(128),
     review_duration_minutes integer,
@@ -246,6 +248,8 @@ alter table gitlab_sync_tasks add column if not exists payload_json text;
 alter table gitlab_sync_tasks add column if not exists created_at timestamp not null default current_timestamp;
 alter table gitlab_sync_tasks add column if not exists updated_at timestamp not null default current_timestamp;
 alter table sys_table_registry add column if not exists preview_enabled boolean not null default true;
+alter table issue_fact add column if not exists ods_updated_at timestamp;
+alter table merge_request_fact add column if not exists ods_updated_at timestamp;
 
 create index if not exists idx_gitlab_mirror_records_table on gitlab_mirror_records(config_id, table_name);
 create index if not exists idx_collect_form_records_context on collect_form_records(project_id, resource_type, resource_id, template_code);

@@ -815,6 +815,8 @@
   - `issue_fact`
   - `merge_request_fact`
   - 这两张表当前已进入 `schema.sql`，并已补充对应实体、Mapper、数据库浏览入口
+  - 已补充 `FactBuildService` 与 `/api/facts/rebuild` 手动构建入口
+  - `system-test-defect-summary` 与 `code-review-illegal-records` 刷新时会尝试增量构建对应事实表
   - 它们表示“正式业务事实记录”，不是“某个单独指标结果表”
 
 ### 14.4 议题类数据建议
@@ -907,6 +909,7 @@
   - 当前已作为正式事实表设计落地
   - 只承载“归一化后的事实”
   - 不直接等同于页面指标定义
+  - 当前统计服务已接入“fact 优先、ODS 回退”的读取策略
 
 ### 15.3 服务层应承担的职责
 
@@ -940,3 +943,18 @@
 - 已补充对老平台“双库 + 动态数据源切换 + Mongo 注释率结果表”设计的参考结论
 - 已明确“注释率等外部来源数据先保留统一导入口，不预设 Mongo / HTTP 回调 / 定时拉取等具体接入方式”
 - 已将 `issue_fact` / `merge_request_fact` 及其来源字段骨架正式落入代码
+- 已补充“性能瓶颈预设治理方案”到架构方案文档，包括事实构建压力、事实表膨胀、规则聚合查询压力三类主要风险及对应治理思路
+- 已补充事实构建链路骨架：
+  - `FactBuildService`
+  - `FactBuildController`
+  - `POST /api/facts/rebuild`
+- 已开始按 SSOT 收口：
+  - `system-test-defect-summary` 不再在 BoardService 中保留严重程度/优先级的 ODS 关键词判定逻辑
+  - 相关判定已改为消费 `issue_fact` 中的归一化字段
+  - `code-review-illegal-records` 已改为只读取 `merge_request_fact`
+- 已补充增量水位线字段：
+  - `issue_fact.ods_updated_at`
+  - `merge_request_fact.ods_updated_at`
+- 已将议题字段归一化规则集中到单点映射：
+  - `IssueFactNormalizationRules`
+  - 当前用于统一严重程度、优先级、测试阶段、缺陷分类、延期标记、模块名等字段归一化
