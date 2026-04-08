@@ -146,15 +146,35 @@ create table if not exists issue_fact (
     ods_updated_at timestamp,
     closed_at_source timestamp,
     module_name varchar(255),
+    primary_module_name varchar(255),
+    module_names text,
     testing_phase varchar(128),
     severity_level varchar(128),
+    severity_alias varchar(128),
     urgency varchar(64),
     bug_status varchar(128),
     category varchar(255),
+    reason_category varchar(255),
     system_test_label varchar(255),
     label_names text,
+    is_excluded boolean not null default false,
+    exclusion_reason varchar(255),
+    is_fixed boolean not null default false,
     delay_issue boolean not null default false,
+    delay_reason varchar(255),
     delay_cause varchar(255),
+    is_regression boolean not null default false,
+    is_crash boolean not null default false,
+    is_level1_other boolean not null default false,
+    is_illegal boolean not null default false,
+    illegal_reason varchar(255),
+    has_response boolean not null default false,
+    response_overdue boolean not null default false,
+    is_response_delayed boolean not null default false,
+    resolve_sla_days integer not null default 18,
+    resolve_deadline_at timestamp,
+    is_resolve_delayed boolean not null default false,
+    is_legacy boolean not null default false,
     deleted boolean not null default false,
     fact_refreshed_at timestamp not null default current_timestamp,
     created_at timestamp not null default current_timestamp,
@@ -205,6 +225,19 @@ create table if not exists merge_request_fact (
     unique (source_system, source_instance, project_id, merge_request_id)
 );
 
+create table if not exists testing_phase_calendar (
+    id bigserial primary key,
+    project_id bigint not null,
+    testing_phase varchar(128) not null,
+    phase_start_at timestamp not null,
+    phase_end_at timestamp,
+    enabled boolean not null default true,
+    remark varchar(255),
+    created_at timestamp not null default current_timestamp,
+    updated_at timestamp not null default current_timestamp,
+    unique (project_id, testing_phase)
+);
+
 create table if not exists sys_table_registry (
     id bigserial primary key,
     config_id bigint not null references gitlab_sync_configs(id) on delete cascade,
@@ -249,7 +282,27 @@ alter table gitlab_sync_tasks add column if not exists created_at timestamp not 
 alter table gitlab_sync_tasks add column if not exists updated_at timestamp not null default current_timestamp;
 alter table sys_table_registry add column if not exists preview_enabled boolean not null default true;
 alter table issue_fact add column if not exists ods_updated_at timestamp;
+alter table issue_fact add column if not exists primary_module_name varchar(255);
+alter table issue_fact add column if not exists module_names text;
 alter table merge_request_fact add column if not exists ods_updated_at timestamp;
+alter table issue_fact add column if not exists severity_alias varchar(128);
+alter table issue_fact add column if not exists reason_category varchar(255);
+alter table issue_fact add column if not exists is_excluded boolean not null default false;
+alter table issue_fact add column if not exists exclusion_reason varchar(255);
+alter table issue_fact add column if not exists is_fixed boolean not null default false;
+alter table issue_fact add column if not exists delay_reason varchar(255);
+alter table issue_fact add column if not exists is_regression boolean not null default false;
+alter table issue_fact add column if not exists is_crash boolean not null default false;
+alter table issue_fact add column if not exists is_level1_other boolean not null default false;
+alter table issue_fact add column if not exists is_illegal boolean not null default false;
+alter table issue_fact add column if not exists illegal_reason varchar(255);
+alter table issue_fact add column if not exists has_response boolean not null default false;
+alter table issue_fact add column if not exists response_overdue boolean not null default false;
+alter table issue_fact add column if not exists is_response_delayed boolean not null default false;
+alter table issue_fact add column if not exists resolve_sla_days integer not null default 18;
+alter table issue_fact add column if not exists resolve_deadline_at timestamp;
+alter table issue_fact add column if not exists is_resolve_delayed boolean not null default false;
+alter table issue_fact add column if not exists is_legacy boolean not null default false;
 
 create index if not exists idx_gitlab_mirror_records_table on gitlab_mirror_records(config_id, table_name);
 create index if not exists idx_collect_form_records_context on collect_form_records(project_id, resource_type, resource_id, template_code);
@@ -257,9 +310,12 @@ create index if not exists idx_code_review_external_metrics_context on code_revi
 create index if not exists idx_issue_fact_context on issue_fact(source_system, source_instance, project_id, issue_iid);
 create index if not exists idx_issue_fact_state on issue_fact(issue_state, severity_level, urgency);
 create index if not exists idx_issue_fact_module on issue_fact(module_name, testing_phase, bug_status);
+create index if not exists idx_issue_fact_filters on issue_fact(project_id, severity_level, is_excluded, is_fixed);
+create index if not exists idx_issue_fact_legacy on issue_fact(issue_state, is_legacy, testing_phase);
 create index if not exists idx_merge_request_fact_context on merge_request_fact(source_system, source_instance, project_id, merge_request_iid);
 create index if not exists idx_merge_request_fact_owner on merge_request_fact(owner_name, module_name, merge_request_state);
 create index if not exists idx_merge_request_fact_metrics on merge_request_fact(comment_rate, defect_count, review_duration_minutes);
+create index if not exists idx_testing_phase_calendar_context on testing_phase_calendar(project_id, testing_phase, enabled);
 create index if not exists idx_sys_table_registry_config on sys_table_registry(config_id, source_table_name);
 create index if not exists idx_sys_table_registry_preview on sys_table_registry(config_id, preview_enabled, source_table_name);
 create index if not exists idx_gitlab_sync_logs_config on gitlab_sync_logs(config_id, started_at desc);

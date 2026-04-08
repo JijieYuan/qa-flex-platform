@@ -1,10 +1,11 @@
 package com.data.collection.platform.service.statistics;
 
 import com.data.collection.platform.common.JsonUtils;
+import com.data.collection.platform.entity.RealtimeWorkspaceStatusResponse;
 import com.data.collection.platform.entity.statistics.StatisticBoardDefinition;
 import com.data.collection.platform.entity.statistics.StatisticBoardMeta;
-import com.data.collection.platform.entity.statistics.StatisticBoardRuleExplanationResponse;
 import com.data.collection.platform.entity.statistics.StatisticBoardResponse;
+import com.data.collection.platform.entity.statistics.StatisticBoardRuleExplanationResponse;
 import com.data.collection.platform.entity.statistics.StatisticCellData;
 import com.data.collection.platform.entity.statistics.StatisticColumnGroup;
 import com.data.collection.platform.entity.statistics.StatisticColumnLeaf;
@@ -19,7 +20,6 @@ import com.data.collection.platform.entity.statistics.StatisticRuleFlowStepSampl
 import com.data.collection.platform.entity.statistics.StatisticRuleMetricDefinition;
 import com.data.collection.platform.service.FactBuildService;
 import com.data.collection.platform.service.GitlabMirrorSyncService;
-import com.data.collection.platform.entity.RealtimeWorkspaceStatusResponse;
 import com.data.collection.platform.service.RealtimeWorkspaceService;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -33,7 +33,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.function.Predicate;
-import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -45,16 +44,10 @@ import org.springframework.util.StringUtils;
 public class SystemTestDefectSummaryBoardService extends AbstractStatisticBoardService
     implements RealtimeStatisticBoardSupport, RuleExplainableStatisticBoardSupport {
   private static final String BOARD_KEY = "system-test-defect-summary";
-  private static final String RULE_VERSION = "system-test-defect-summary@2026-04-07-v1";
+  private static final String RULE_VERSION = "system-test-defect-summary@2026-04-08-v2";
   private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
-  private static final List<String> REALTIME_REFRESH_TABLES = List.of(
-      "issues",
-      "projects",
-      "users",
-      "label_links",
-      "labels");
-  private static final List<String> EXCLUDED_LABEL_TOKENS = List.of("功能屏蔽", "已拒绝", "建议");
-  private static final List<String> CLOSED_EXCLUDED_LABEL_TOKENS = List.of("申请否决", "需求如此");
+  private static final List<String> REALTIME_REFRESH_TABLES = List.of("issues", "projects", "users", "label_links", "labels", "notes");
+
   private static final String FACT_SQL = """
       select
         issue_id as id,
@@ -67,9 +60,15 @@ public class SystemTestDefectSummaryBoardService extends AbstractStatisticBoardS
         closed_at_source as closed_at,
         coalesce(issue_state, 'opened') as issue_state,
         coalesce(severity_level, '') as severity_level,
-        coalesce(urgency, '') as urgency,
-        coalesce(category, '') as category,
-        coalesce(bug_status, '') as bug_status,
+        coalesce(is_excluded, false) as is_excluded,
+        coalesce(exclusion_reason, '') as exclusion_reason,
+        coalesce(is_fixed, false) as is_fixed,
+        coalesce(is_regression, false) as is_regression,
+        coalesce(is_crash, false) as is_crash,
+        coalesce(is_level1_other, false) as is_level1_other,
+        coalesce(is_illegal, false) as is_illegal,
+        coalesce(illegal_reason, '') as illegal_reason,
+        coalesce(is_legacy, false) as is_legacy,
         coalesce(label_names, '') as label_names
       from issue_fact
       where deleted = false
@@ -103,7 +102,7 @@ public class SystemTestDefectSummaryBoardService extends AbstractStatisticBoardS
     return new StatisticBoardDefinition(
         BOARD_KEY,
         "系统测试缺陷汇总",
-        "基于本地镜像 Issue 数据的真实聚合结果，当前先按所属项目汇总。",
+        "基于 issue_fact 中已归一化的议题事实做项目级统计。",
         "",
         "",
         "所属项目",
@@ -115,7 +114,7 @@ public class SystemTestDefectSummaryBoardService extends AbstractStatisticBoardS
                 List.of(
                     new StatisticColumnLeaf("level1_back", "回退数量", true, "count"),
                     new StatisticColumnLeaf("level1_hang", "挂机数量", true, "count"),
-                    new StatisticColumnLeaf("level1_others", "其他数量", true, "count"),
+                    new StatisticColumnLeaf("level1_others", "其他一级", true, "count"),
                     new StatisticColumnLeaf("level1_fixed", "已修复数量", true, "count"),
                     new StatisticColumnLeaf("level1_rate", "修复率", false, "ratio"))),
             new StatisticColumnGroup(
@@ -134,7 +133,7 @@ public class SystemTestDefectSummaryBoardService extends AbstractStatisticBoardS
                     new StatisticColumnLeaf("level3_rate", "修复率", false, "ratio"))),
             new StatisticColumnGroup(
                 "priority",
-                "优先级统计",
+                "严重程度",
                 List.of(
                     new StatisticColumnLeaf("p1_count", "P1 数量", true, "count"),
                     new StatisticColumnLeaf("p1_rate", "P1 修复率", false, "ratio"),
@@ -144,12 +143,12 @@ public class SystemTestDefectSummaryBoardService extends AbstractStatisticBoardS
                     new StatisticColumnLeaf("p3_rate", "P3 修复率", false, "ratio"))),
             new StatisticColumnGroup(
                 "summary",
-                "综合汇总",
+                "综合",
                 List.of(
-                    new StatisticColumnLeaf("totalDefects", "模块总缺陷数", true, "count"),
-                    new StatisticColumnLeaf("defectRatio", "模块缺陷占比", false, "ratio"),
-                    new StatisticColumnLeaf("closeRate", "缺陷关闭率", false, "ratio"),
-                    new StatisticColumnLeaf("unclosedCount", "未关闭缺陷数", true, "count")))),
+                    new StatisticColumnLeaf("totalDefects", "项目总缺陷数", true, "count"),
+                    new StatisticColumnLeaf("defectRatio", "缺陷占比", false, "ratio"),
+                    new StatisticColumnLeaf("closeRate", "关闭率", false, "ratio"),
+                    new StatisticColumnLeaf("unclosedCount", "未关闭数量", true, "count")))),
         List.of(
             new StatisticDetailColumn("iid", "议题编号", 120, 120, true),
             new StatisticDetailColumn("title", "标题", null, 260, true),
@@ -159,7 +158,7 @@ public class SystemTestDefectSummaryBoardService extends AbstractStatisticBoardS
             new StatisticDetailColumn("labels", "标签", null, 240, false),
             new StatisticDetailColumn("updatedAt", "更新时间", 180, 180, true)),
         10,
-        "当前本地镜像库下没有可展示的系统测试缺陷统计数据。");
+        "当前没有可展示的系统测试缺陷统计数据。");
   }
 
   @Override
@@ -207,7 +206,7 @@ public class SystemTestDefectSummaryBoardService extends AbstractStatisticBoardS
 
     return new StatisticDetailResponse(
         "系统测试缺陷明细",
-        "展示统计指标背后的真实 Issue 明细。",
+        "展示当前统计指标背后的 issue_fact 明细。",
         buildDefinition().detailColumns(),
         records,
         sources.size(),
@@ -272,8 +271,8 @@ public class SystemTestDefectSummaryBoardService extends AbstractStatisticBoardS
         true,
         "系统测试缺陷汇总规则说明",
         RULE_VERSION,
-        "当前一期基于 issue_fact 执行统计；支持按项目筛选，并在统计前执行标签排除规则。",
-        "统计口径、过滤步骤和指标说明全部基于事实表中的统一字段，目的是让使用者看到“事实数据 -> 过滤后 -> 指标汇总”的真实过程。",
+        "当前统计完全基于 issue_fact 中已归一化的字段执行，页面不再重复解释底层标签和评论逻辑。",
+        "你看到的数字来自三步：先加载议题事实，再剔除无效数据，最后按严重程度和修复状态聚合。",
         flowSnapshot.flowSteps(),
         buildMetricDefinitions(),
         null);
@@ -287,52 +286,42 @@ public class SystemTestDefectSummaryBoardService extends AbstractStatisticBoardS
     List<IssueSource> initial = loadedSources == null ? List.of() : List.copyOf(loadedSources);
     List<StatisticRuleFlowStep> steps = new ArrayList<>();
 
-    steps.add(
-        new StatisticRuleFlowStep(
-            "source-load",
-            "加载议题事实",
-            "从 issue_fact 中读取当前查询范围内已经归一化的议题记录。",
-            initial.size(),
-            initial.size(),
-            sampleIssues(initial)));
+    steps.add(new StatisticRuleFlowStep(
+        "source-load",
+        "加载议题事实",
+        "从 issue_fact 读取当前范围内已经归一化完成的议题记录。",
+        initial.size(),
+        initial.size(),
+        sampleIssues(initial)));
 
-    List<IssueSource> afterLabelExclusion =
-        initial.stream()
-            .filter(issue -> !issue.hasAnyLabel(EXCLUDED_LABEL_TOKENS))
-            .toList();
-    steps.add(
-        new StatisticRuleFlowStep(
-            "exclude-basic-labels",
-            "排除基础无效标签",
-            "排除携带“功能屏蔽”“已拒绝”“建议”标签的议题。",
-            initial.size(),
-            afterLabelExclusion.size(),
-            sampleIssues(afterLabelExclusion)));
+    List<IssueSource> afterExclusion = initial.stream()
+        .filter(issue -> !issue.excluded())
+        .toList();
+    steps.add(new StatisticRuleFlowStep(
+        "exclude-invalid-issues",
+        "排除无效数据",
+        "剔除功能屏蔽、已拒绝、建议，以及关闭后属于申请否决/数据异常/设计如此的议题。",
+        initial.size(),
+        afterExclusion.size(),
+        sampleIssues(afterExclusion)));
 
-    List<IssueSource> finalSources =
-        afterLabelExclusion.stream()
-            .filter(issue -> !(issue.isClosed() && issue.hasAnyLabel(CLOSED_EXCLUDED_LABEL_TOKENS)))
-            .toList();
-    steps.add(
-        new StatisticRuleFlowStep(
-            "exclude-closed-veto-and-as-designed",
-            "排除关闭且无需继续统计的议题",
-            "排除关闭状态下携带“申请否决”或“需求如此”标签的议题。",
-            afterLabelExclusion.size(),
-            finalSources.size(),
-            sampleIssues(finalSources)));
+    steps.add(new StatisticRuleFlowStep(
+        "aggregate-normalized-facts",
+        "按归一化字段统计",
+        "基于严重程度、一级缺陷分类、修复状态等事实字段生成最终统计结果。",
+        afterExclusion.size(),
+        afterExclusion.size(),
+        sampleIssues(afterExclusion)));
 
-    return new RuleFlowSnapshot(finalSources, steps);
+    return new RuleFlowSnapshot(afterExclusion, steps);
   }
 
   private List<StatisticRuleFlowStepSample> sampleIssues(List<IssueSource> issues) {
     return issues.stream()
         .limit(3)
-        .map(
-            issue ->
-                new StatisticRuleFlowStepSample(
-                    "#" + issue.iid() + " " + issue.projectName(),
-                    issue.title() + (issue.labels().isEmpty() ? "" : " | 标签: " + String.join(", ", issue.labels()))))
+        .map(issue -> new StatisticRuleFlowStepSample(
+            "#" + issue.iid() + " " + issue.projectName(),
+            issue.title() + (issue.labels().isEmpty() ? "" : " | 标签: " + String.join(", ", issue.labels()))))
         .toList();
   }
 
@@ -341,33 +330,33 @@ public class SystemTestDefectSummaryBoardService extends AbstractStatisticBoardS
         new StatisticRuleMetricDefinition(
             "level1",
             "一级缺陷",
-            "基于事实表中的严重程度和缺陷分类字段识别一级缺陷。",
+            "一级缺陷直接读取 issue_fact 中的 P1 和回退/挂机/其他一级标记。",
             "一级缺陷数量 = 回退数量 + 挂机数量 + 其他一级数量",
-            "严重程度和分类由事实构建服务统一归一化。"),
+            "已修复数量读取 is_fixed，不再临时按页面逻辑推断。"),
         new StatisticRuleMetricDefinition(
             "level2",
             "二级缺陷",
-            "基于事实表中的严重程度字段识别二级缺陷。",
+            "二级缺陷读取 severity_level = P2。",
             "二级修复率 = 二级已修复数量 / 二级总数量",
-            "当分母为 0 时返回 0.00%。"),
+            "分母为 0 时返回 0.00%。"),
         new StatisticRuleMetricDefinition(
             "level3",
             "三级缺陷",
-            "基于事实表中的严重程度字段识别三级缺陷。",
+            "三级缺陷读取 severity_level = P3。",
             "三级修复率 = 三级已修复数量 / 三级总数量",
-            "当分母为 0 时返回 0.00%。"),
+            "分母为 0 时返回 0.00%。"),
         new StatisticRuleMetricDefinition(
             "priority",
-            "优先级统计",
-            "基于事实表中的优先级字段识别 P1/P2/P3。",
-            "Pn 修复率 = Pn 已关闭数量 / Pn 总数量",
-            "优先级与严重级别相互独立。"),
+            "严重程度统计",
+            "P1/P2/P3 数量直接按 severity_level 聚合。",
+            "Pn 修复率 = Pn 已修复数量 / Pn 总数量",
+            "建议类不参与 P1/P2/P3 分组。"),
         new StatisticRuleMetricDefinition(
             "summary",
             "综合汇总",
-            "展示模块总缺陷数、缺陷占比、关闭率和未关闭数量。",
+            "综合列展示项目总缺陷数、缺陷占比、关闭率和未关闭数量。",
             "缺陷占比 = 当前项目缺陷数 / 当前统计结果中的全部缺陷数",
-            "当前实现按项目维度汇总。"));
+            "当前页面默认已经剔除无效数据。"));
   }
 
   private IssueSource mapIssueFact(ResultSet rs, int rowNum) throws SQLException {
@@ -382,9 +371,15 @@ public class SystemTestDefectSummaryBoardService extends AbstractStatisticBoardS
         rs.getTimestamp("closed_at") == null ? null : rs.getTimestamp("closed_at").toLocalDateTime(),
         defaultText(rs.getString("issue_state"), "opened"),
         defaultText(rs.getString("severity_level"), ""),
-        defaultText(rs.getString("urgency"), ""),
-        defaultText(rs.getString("category"), ""),
-        defaultText(rs.getString("bug_status"), ""),
+        rs.getBoolean("is_excluded"),
+        defaultText(rs.getString("exclusion_reason"), ""),
+        rs.getBoolean("is_fixed"),
+        rs.getBoolean("is_regression"),
+        rs.getBoolean("is_crash"),
+        rs.getBoolean("is_level1_other"),
+        rs.getBoolean("is_illegal"),
+        defaultText(rs.getString("illegal_reason"), ""),
+        rs.getBoolean("is_legacy"),
         splitLabels(rs.getString("label_names")));
   }
 
@@ -394,7 +389,7 @@ public class SystemTestDefectSummaryBoardService extends AbstractStatisticBoardS
     }
     List<String> result = new ArrayList<>();
     for (String value : labelNames.split(",")) {
-      String normalized = value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
+      String normalized = value == null ? "" : value.trim();
       if (!normalized.isEmpty()) {
         result.add(normalized);
       }
@@ -419,14 +414,14 @@ public class SystemTestDefectSummaryBoardService extends AbstractStatisticBoardS
       case "level1_back" -> IssueSource::isLevel1Back;
       case "level1_hang" -> IssueSource::isLevel1Hang;
       case "level1_others" -> IssueSource::isLevel1Other;
-      case "level1_fixed" -> issue -> issue.isLevel1() && issue.isClosed();
+      case "level1_fixed" -> issue -> issue.isLevel1() && issue.fixed();
       case "level2_total" -> IssueSource::isLevel2;
-      case "level2_fixed" -> issue -> issue.isLevel2() && issue.isClosed();
+      case "level2_fixed" -> issue -> issue.isLevel2() && issue.fixed();
       case "level3_total" -> IssueSource::isLevel3;
-      case "level3_fixed" -> issue -> issue.isLevel3() && issue.isClosed();
-      case "p1_count" -> issue -> issue.hasPriority("p1");
-      case "p2_count" -> issue -> issue.hasPriority("p2");
-      case "p3_count" -> issue -> issue.hasPriority("p3");
+      case "level3_fixed" -> issue -> issue.isLevel3() && issue.fixed();
+      case "p1_count" -> issue -> issue.isSeverity("P1");
+      case "p2_count" -> issue -> issue.isSeverity("P2");
+      case "p3_count" -> issue -> issue.isSeverity("P3");
       case "unclosedCount" -> issue -> !issue.isClosed();
       default -> issue -> true;
     };
@@ -476,10 +471,7 @@ public class SystemTestDefectSummaryBoardService extends AbstractStatisticBoardS
     return String.format(Locale.ROOT, "%.2f%%", value);
   }
 
-  private record AggregateBucket(
-      Long projectId,
-      String rowLabel,
-      List<IssueSource> issues) {
+  private record AggregateBucket(Long projectId, String rowLabel, List<IssueSource> issues) {
     private AggregateBucket(Long projectId, String rowLabel) {
       this(projectId, rowLabel, new ArrayList<>());
     }
@@ -496,17 +488,17 @@ public class SystemTestDefectSummaryBoardService extends AbstractStatisticBoardS
       long level1Hang = issues.stream().filter(IssueSource::isLevel1Hang).count();
       long level1Others = issues.stream().filter(IssueSource::isLevel1Other).count();
       long level1Total = level1Back + level1Hang + level1Others;
-      long level1Fixed = issues.stream().filter(issue -> issue.isLevel1() && issue.isClosed()).count();
+      long level1Fixed = issues.stream().filter(issue -> issue.isLevel1() && issue.fixed()).count();
       long level2Total = issues.stream().filter(IssueSource::isLevel2).count();
-      long level2Fixed = issues.stream().filter(issue -> issue.isLevel2() && issue.isClosed()).count();
+      long level2Fixed = issues.stream().filter(issue -> issue.isLevel2() && issue.fixed()).count();
       long level3Total = issues.stream().filter(IssueSource::isLevel3).count();
-      long level3Fixed = issues.stream().filter(issue -> issue.isLevel3() && issue.isClosed()).count();
-      long p1Total = issues.stream().filter(issue -> issue.hasPriority("p1")).count();
-      long p1Fixed = issues.stream().filter(issue -> issue.hasPriority("p1") && issue.isClosed()).count();
-      long p2Total = issues.stream().filter(issue -> issue.hasPriority("p2")).count();
-      long p2Fixed = issues.stream().filter(issue -> issue.hasPriority("p2") && issue.isClosed()).count();
-      long p3Total = issues.stream().filter(issue -> issue.hasPriority("p3")).count();
-      long p3Fixed = issues.stream().filter(issue -> issue.hasPriority("p3") && issue.isClosed()).count();
+      long level3Fixed = issues.stream().filter(issue -> issue.isLevel3() && issue.fixed()).count();
+      long p1Total = issues.stream().filter(issue -> issue.isSeverity("P1")).count();
+      long p1Fixed = issues.stream().filter(issue -> issue.isSeverity("P1") && issue.fixed()).count();
+      long p2Total = issues.stream().filter(issue -> issue.isSeverity("P2")).count();
+      long p2Fixed = issues.stream().filter(issue -> issue.isSeverity("P2") && issue.fixed()).count();
+      long p3Total = issues.stream().filter(issue -> issue.isSeverity("P3")).count();
+      long p3Fixed = issues.stream().filter(issue -> issue.isSeverity("P3") && issue.fixed()).count();
       double defectRatio = overallTotal <= 0 ? 0 : total * 100.0 / overallTotal;
 
       return new StatisticRowData(
@@ -558,57 +550,50 @@ public class SystemTestDefectSummaryBoardService extends AbstractStatisticBoardS
       LocalDateTime closedAt,
       String issueState,
       String severityLevel,
-      String urgency,
-      String category,
-      String bugStatus,
+      boolean excluded,
+      String exclusionReason,
+      boolean fixed,
+      boolean regression,
+      boolean crash,
+      boolean level1Other,
+      boolean illegal,
+      String illegalReason,
+      boolean legacy,
       List<String> labels) {
 
     boolean isClosed() {
-      return closedAt != null
-          || "closed".equalsIgnoreCase(issueState)
-          || "已关闭".equals(bugStatus);
+      return closedAt != null || "closed".equalsIgnoreCase(issueState);
     }
 
-    boolean hasPriority(String priority) {
-      return priority.equalsIgnoreCase(urgency);
-    }
-
-    boolean hasAnyLabel(List<String> candidates) {
-      return candidates.stream().anyMatch(this::hasLabel);
-    }
-
-    boolean hasLabel(String candidate) {
-      String safeCandidate = candidate.toLowerCase(Locale.ROOT);
-      return labels.stream().anyMatch(label -> label.contains(safeCandidate));
+    boolean isSeverity(String severity) {
+      return severity.equalsIgnoreCase(severityLevel);
     }
 
     boolean isLevel1() {
-      return isLevel1Back() || isLevel1Hang() || isLevel1Other();
+      return isSeverity("P1");
     }
 
     boolean isLevel1Back() {
-      return "一级".equals(severityLevel) && "回退".equals(category);
+      return isSeverity("P1") && regression;
     }
 
     boolean isLevel1Hang() {
-      return "一级".equals(severityLevel) && "挂机".equals(category);
+      return isSeverity("P1") && crash;
     }
 
     boolean isLevel1Other() {
-      return "一级".equals(severityLevel) && !isLevel1Back() && !isLevel1Hang();
+      return isSeverity("P1") && level1Other;
     }
 
     boolean isLevel2() {
-      return "二级".equals(severityLevel);
+      return isSeverity("P2");
     }
 
     boolean isLevel3() {
-      return "三级".equals(severityLevel);
+      return isSeverity("P3");
     }
   }
 
-  private record RuleFlowSnapshot(
-      List<IssueSource> finalSources,
-      List<StatisticRuleFlowStep> flowSteps) {
+  private record RuleFlowSnapshot(List<IssueSource> finalSources, List<StatisticRuleFlowStep> flowSteps) {
   }
 }

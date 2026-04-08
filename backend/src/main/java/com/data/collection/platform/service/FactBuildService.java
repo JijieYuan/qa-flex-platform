@@ -12,8 +12,11 @@ import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -26,18 +29,34 @@ public class FactBuildService {
   private static final String DEFAULT_SOURCE_SYSTEM = "GITLAB";
   private static final String DEFAULT_SOURCE_INSTANCE = "default";
   private static final String MIRROR_INGEST_CHANNEL = "MIRROR";
+
   private static final String ISSUE_SOURCE_SQL = """
-      with issue_labels as (
-        select ll.target_id as issue_id,
-               array_agg(distinct lower(l.title) order by lower(l.title))
-                 filter (where l.title is not null and l.title <> '') as label_titles
+      with distinct_issue_labels as (
+        select distinct
+               ll.target_id as issue_id,
+               nullif(btrim(l.title), '') as title
           from ods_gitlab_label_links ll
           join ods_gitlab_labels l
             on l.id = ll.label_id
            and coalesce(l.mirror_deleted, false) = false
          where coalesce(ll.mirror_deleted, false) = false
            and ll.target_type = 'Issue'
-         group by ll.target_id
+           and l.title is not null
+           and l.title <> ''
+      ),
+      issue_labels as (
+        select issue_id,
+               array_agg(title order by lower(title)) as label_titles
+          from distinct_issue_labels
+         group by issue_id
+      ),
+      issue_notes as (
+        select n.noteable_id as issue_id,
+               string_agg(coalesce(n.note, ''), E'\\n---\\n' order by coalesce(n.updated_at, n.created_at), n.id) as notes_text
+          from ods_gitlab_notes n
+         where coalesce(n.mirror_deleted, false) = false
+           and n.noteable_type = 'Issue'
+         group by n.noteable_id
       )
       select
         i.id as issue_id,
@@ -51,7 +70,8 @@ public class FactBuildService {
         coalesce(i.updated_at, i.created_at) as ods_updated_at,
         i.closed_at,
         i.state_id,
-        labels.label_titles
+        labels.label_titles,
+        coalesce(notes.notes_text, '') as notes_text
       from ods_gitlab_issues i
       left join ods_gitlab_projects p
         on p.id = i.project_id
@@ -61,8 +81,11 @@ public class FactBuildService {
        and coalesce(author.mirror_deleted, false) = false
       left join issue_labels labels
         on labels.issue_id = i.id
+      left join issue_notes notes
+        on notes.issue_id = i.id
       where coalesce(i.mirror_deleted, false) = false
       """;
+
   private static final String MERGE_REQUEST_SOURCE_SQL = """
       with reviewer_names as (
         select mr.merge_request_id,
@@ -209,10 +232,11 @@ public class FactBuildService {
     LocalDateTime changedSince = full ? null : getIssueFactChangedSince();
     String sql = ISSUE_SOURCE_SQL + (changedSince == null ? "" : " and coalesce(i.updated_at, i.created_at) > ?");
     try {
+      Map<PhaseCalendarKey, PhaseCalendarEntry> calendar = loadPhaseCalendar();
       List<IssueFact> facts =
           changedSince == null
-              ? jdbcTemplate.query(sql, this::mapIssueFact)
-              : jdbcTemplate.query(sql, this::mapIssueFact, Timestamp.valueOf(changedSince));
+              ? jdbcTemplate.query(sql, (rs, rowNum) -> mapIssueFact(rs, calendar))
+              : jdbcTemplate.query(sql, (rs, rowNum) -> mapIssueFact(rs, calendar), Timestamp.valueOf(changedSince));
       facts.forEach(issueFactMapper::upsert);
       return new FactBuildResponse(
           "issue",
@@ -271,36 +295,98 @@ public class FactBuildService {
         DEFAULT_SOURCE_INSTANCE);
   }
 
-  private IssueFact mapIssueFact(ResultSet rs, int rowNum) throws SQLException {
+  private Map<PhaseCalendarKey, PhaseCalendarEntry> loadPhaseCalendar() {
+    List<PhaseCalendarEntry> entries = jdbcTemplate.query(
+        """
+            select project_id, testing_phase, phase_start_at, phase_end_at, enabled
+              from testing_phase_calendar
+             where enabled = true
+            """,
+        (rs, rowNum) -> new PhaseCalendarEntry(
+            rs.getLong("project_id"),
+            defaultText(rs.getString("testing_phase"), null),
+            toLocalDateTime(rs.getTimestamp("phase_start_at")),
+            toLocalDateTime(rs.getTimestamp("phase_end_at")),
+            rs.getBoolean("enabled")));
+    Map<PhaseCalendarKey, PhaseCalendarEntry> result = new LinkedHashMap<>();
+    entries.stream()
+        .sorted(Comparator.comparing(PhaseCalendarEntry::phaseStartAt, Comparator.nullsLast(LocalDateTime::compareTo)).reversed())
+        .forEach(entry -> result.putIfAbsent(new PhaseCalendarKey(entry.projectId(), normalizeKey(entry.testingPhase())), entry));
+    return result;
+  }
+
+  private IssueFact mapIssueFact(ResultSet rs, Map<PhaseCalendarKey, PhaseCalendarEntry> calendar) throws SQLException {
     List<String> labels = readTextArray(rs.getArray("label_titles"));
     String title = defaultText(rs.getString("title"));
+    String notesText = defaultText(rs.getString("notes_text"), "");
+    boolean closed = isClosed(rs);
+    LocalDateTime createdAt = toLocalDateTime(rs.getTimestamp("created_at"));
+    String testingPhase = IssueFactNormalizationRules.normalizeTestingPhase(labels);
+    List<String> moduleNames = IssueFactNormalizationRules.normalizeModuleNames(labels);
+    String severityLevel = IssueFactNormalizationRules.normalizeSeverityLevel(labels);
+    int resolveSlaDays = IssueFactNormalizationRules.resolveSlaDays(notesText);
+    LocalDateTime resolveDeadlineAt = IssueFactNormalizationRules.resolveDeadline(createdAt, resolveSlaDays);
+    PhaseCalendarEntry phaseCalendar = calendar.get(new PhaseCalendarKey(rs.getLong("project_id"), normalizeKey(testingPhase)));
+
     IssueFact fact = new IssueFact();
     fact.setSourceSystem(DEFAULT_SOURCE_SYSTEM);
     fact.setSourceInstance(DEFAULT_SOURCE_INSTANCE);
     fact.setIngestChannel(MIRROR_INGEST_CHANNEL);
     fact.setSourceSummary("GitLab issue 镜像聚合");
-    fact.setRawPayload(null);
+    fact.setRawPayload(notesText);
     fact.setProjectId(rs.getLong("project_id"));
     fact.setProjectName(defaultText(rs.getString("project_name")));
     fact.setIssueId(rs.getLong("issue_id"));
     fact.setIssueIid(rs.getLong("issue_iid"));
     fact.setTitle(title);
-    fact.setIssueState(isClosed(rs) ? "closed" : "opened");
+    fact.setIssueState(closed ? "closed" : "opened");
     fact.setAuthorName(defaultText(rs.getString("author_name")));
-    fact.setCreatedAtSource(toLocalDateTime(rs.getTimestamp("created_at")));
+    fact.setCreatedAtSource(createdAt);
     fact.setUpdatedAtSource(toLocalDateTime(rs.getTimestamp("updated_at")));
     fact.setOdsUpdatedAt(toLocalDateTime(rs.getTimestamp("ods_updated_at")));
     fact.setClosedAtSource(toLocalDateTime(rs.getTimestamp("closed_at")));
-    fact.setModuleName(IssueFactNormalizationRules.normalizeModuleName(labels));
-    fact.setTestingPhase(IssueFactNormalizationRules.normalizeTestingPhase(labels));
-    fact.setSeverityLevel(IssueFactNormalizationRules.normalizeSeverityLevel(labels, title));
-    fact.setUrgency(IssueFactNormalizationRules.normalizeUrgency(labels, title));
-    fact.setBugStatus(isClosed(rs) ? "已关闭" : "未关闭");
-    fact.setCategory(IssueFactNormalizationRules.normalizeCategory(labels, title));
+    fact.setModuleName(moduleNames.isEmpty() ? null : moduleNames.get(0));
+    fact.setPrimaryModuleName(moduleNames.isEmpty() ? null : moduleNames.get(0));
+    fact.setModuleNames(String.join(", ", moduleNames));
+    fact.setTestingPhase(testingPhase);
+    fact.setSeverityLevel(severityLevel);
+    fact.setSeverityAlias(IssueFactNormalizationRules.normalizeSeverityAlias(labels));
+    fact.setUrgency(severityLevel);
+    fact.setBugStatus(closed ? "已关闭" : "未关闭");
+    fact.setCategory(
+        IssueFactNormalizationRules.isRegression(labels, title) ? "回退"
+            : IssueFactNormalizationRules.isCrash(labels, title) ? "挂机"
+            : IssueFactNormalizationRules.isLevel1Other(labels, title) ? "其他一级"
+            : null);
+    fact.setReasonCategory(IssueFactNormalizationRules.normalizeReasonCategory(labels, notesText));
     fact.setSystemTestLabel(IssueFactNormalizationRules.normalizeSystemTestLabel(labels));
     fact.setLabelNames(String.join(", ", labels));
-    fact.setDelayIssue(IssueFactNormalizationRules.hasDelayFlag(labels, title));
-    fact.setDelayCause(IssueFactNormalizationRules.inferDelayCause(labels, title));
+    fact.setExcluded(IssueFactNormalizationRules.isExcluded(labels, closed));
+    fact.setExclusionReason(IssueFactNormalizationRules.exclusionReason(labels, closed));
+    fact.setFixed(IssueFactNormalizationRules.isFixed(labels, closed));
+    fact.setDelayIssue(IssueFactNormalizationRules.hasDelayFlag(labels, notesText));
+    fact.setDelayReason(IssueFactNormalizationRules.normalizeDelayReason(labels, notesText));
+    fact.setDelayCause(IssueFactNormalizationRules.inferDelayCause(labels, notesText));
+    fact.setRegression(IssueFactNormalizationRules.isRegression(labels, title));
+    fact.setCrash(IssueFactNormalizationRules.isCrash(labels, title));
+    fact.setLevel1Other(IssueFactNormalizationRules.isLevel1Other(labels, title));
+    fact.setIllegal(IssueFactNormalizationRules.isIllegal(labels, closed, moduleNames));
+    fact.setIllegalReason(IssueFactNormalizationRules.illegalReason(labels, closed, moduleNames));
+    fact.setHasResponse(IssueFactNormalizationRules.hasResponse(notesText));
+    boolean responseDelayed = IssueFactNormalizationRules.isResponseDelayed(labels, notesText);
+    fact.setResponseOverdue(responseDelayed);
+    fact.setResponseDelayed(responseDelayed);
+    fact.setResolveSlaDays(resolveSlaDays);
+    fact.setResolveDeadlineAt(resolveDeadlineAt);
+    fact.setResolveDelayed(IssueFactNormalizationRules.isResolveDelayed(
+        labels,
+        Boolean.TRUE.equals(fact.getFixed()),
+        resolveDeadlineAt,
+        LocalDateTime.now()));
+    fact.setLegacy(IssueFactNormalizationRules.isLegacy(
+        closed,
+        createdAt,
+        phaseCalendar == null ? null : phaseCalendar.phaseStartAt()));
     fact.setDeleted(false);
     return fact;
   }
@@ -368,10 +454,14 @@ public class FactBuildService {
     for (Object value : values) {
       String normalized = defaultText(value == null ? null : String.valueOf(value), null);
       if (normalized != null) {
-        result.add(normalized.toLowerCase(Locale.ROOT));
+        result.add(normalized);
       }
     }
     return result;
+  }
+
+  private String normalizeKey(String value) {
+    return StringUtils.hasText(value) ? value.trim().toLowerCase(Locale.ROOT) : null;
   }
 
   private String defaultText(String value) {
@@ -380,5 +470,16 @@ public class FactBuildService {
 
   private String defaultText(String value, String fallback) {
     return StringUtils.hasText(value) ? value.trim() : fallback;
+  }
+
+  private record PhaseCalendarKey(Long projectId, String testingPhase) {
+  }
+
+  private record PhaseCalendarEntry(
+      Long projectId,
+      String testingPhase,
+      LocalDateTime phaseStartAt,
+      LocalDateTime phaseEndAt,
+      boolean enabled) {
   }
 }

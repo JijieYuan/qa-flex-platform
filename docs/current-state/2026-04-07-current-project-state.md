@@ -958,3 +958,121 @@
 - 已将议题字段归一化规则集中到单点映射：
   - `IssueFactNormalizationRules`
   - 当前用于统一严重程度、优先级、测试阶段、缺陷分类、延期标记、模块名等字段归一化
+
+## 17. 当前 issue_fact 全量收口状态
+
+围绕 `系统测试缺陷汇总`，当前已经确认后续要统一沉入 `issue_fact` 的完整口径范围如下：
+
+- 严重程度标准化：
+  - `P1 = 一级缺陷 / 一级严重`
+  - `P2 = 二级缺陷 / 二级严重`
+  - `P3 = 三级缺陷 / 三级严重`
+  - `SUGGESTION = 建议 / 需求 / 需求如此`
+- 公共排除口径：
+  - `功能屏蔽 / 已拒绝 / 建议`
+  - `申请否决 + Closed`
+  - `数据异常 + Closed`
+  - `设计如此 + Closed`
+- 修复状态：
+  - `已修复 / 待合并`
+  - `Closed + 未复现`
+- 缺陷原因归一化
+- 延期原因七大类
+- 标题强校验：
+  - `回退`
+  - `挂机`
+  - `其他一级`
+- 非法数据断言：
+  - 缺级别
+  - 缺模块
+  - 流程越位
+- SLA：
+  - 已响应
+  - 响应延期
+  - 解决时限
+  - 解决延期
+- 模块全量性：
+  - 单 issue 多模块
+  - 项目总数去重、模块维度展开
+- 历史遗留：
+  - `is_legacy`
+
+当前真实实现状态：
+
+- 已落地：
+  - `issue_fact` 正式表骨架
+  - `FactBuildService`
+  - `IssueFactNormalizationRules`
+  - `system-test-defect-summary` fact 优先读取
+- 已预留到 `schema.sql` 但尚未完整贯通：
+  - `severity_alias`
+  - `reason_category`
+  - `is_excluded`
+  - `exclusion_reason`
+  - `is_fixed`
+  - `delay_reason`
+  - `is_regression`
+  - `is_crash`
+  - `is_illegal`
+  - `illegal_reason`
+  - `has_response`
+  - `response_overdue`
+  - `resolve_sla_days`
+- 仍待本轮继续补齐：
+  - `IssueFact` 实体与 `IssueFactMapper` 对上述字段的完整支持
+  - `FactBuildService` 从 `ods_gitlab_notes`、标题关键词、组合标签状态中构建完整业务字段
+  - 多模块字段承接
+  - `testing_phase_calendar` 及 `is_legacy`
+  - `SystemTestDefectSummaryBoardService` 彻底退化为 fact 聚合取数器
+
+也就是说，当前项目已经进入“事实层收口”阶段，但 `issue_fact` 还没有完成你确认的全量业务口径落地。
+## 18. 2026-04-08 issue_fact 实际落地结果
+
+围绕系统测试缺陷统计，`issue_fact` 本轮已经从“方案态”进入“真实可运行”状态，当前本地工程的实际情况如下：
+
+- 已落地正式表：
+  - `issue_fact`
+  - `testing_phase_calendar`
+- 已落地构建链路：
+  - `FactBuildService`
+  - `POST /api/facts/rebuild?scope=issue&full=true|false`
+- 已落地单点归一化规则：
+  - `IssueFactNormalizationRules`
+- 已落地事实优先查询：
+  - `SystemTestDefectSummaryBoardService` 已改为优先读取 `issue_fact`
+  - 一级/二级/三级、回退/挂机/其他一级、修复状态、非法标记、历史遗留等统计不再在 BoardService 中重复写一套口径
+
+本轮已正式沉入 `issue_fact` 的业务字段包括：
+
+- 严重程度标准化：`P1 / P2 / P3 / SUGGESTION`
+- 公共排除：`is_excluded / exclusion_reason`
+- 修复状态：`is_fixed`
+- 缺陷原因归一化：`reason_category`
+- 延期归一化：`delay_issue / delay_reason / delay_cause`
+- 特殊一级分类：`is_regression / is_crash / is_level1_other`
+- 非法数据断言：`is_illegal / illegal_reason`
+- 响应与解决时效：`has_response / is_response_delayed / resolve_sla_days / resolve_deadline_at / is_resolve_delayed`
+- 模块全量字段：`primary_module_name / module_names`
+- 历史遗留：`is_legacy`
+- 来源追溯：`source_system / source_instance / ingest_channel / source_summary / raw_payload`
+
+本地运行验证结果：
+
+- 已成功执行：`POST /api/facts/rebuild?scope=issue&full=true`
+- 本地库已成功全量构建 `issue_fact = 382`
+- 规则说明接口已返回新版说明：
+  - `system-test-defect-summary@2026-04-08-v2`
+
+当前真实数据边界：
+
+- 当前本地 `ods_gitlab_issues` 中绝大部分记录仍是测试/压测生成标签，不符合真实项目标签口径
+- 因此当前构建结果里：
+  - `severity_level` 仍大量为空
+  - `is_illegal = true` 数量较高，主要原因是 `缺失严重程度`
+  - `is_excluded / is_fixed / has_response` 等字段在当前测试数据集上命中较少
+- 这说明 `issue_fact` 构建链路已打通，但“真实业务口径是否充分命中”仍取决于后续导入的真实项目标签、评论模板和阶段日历配置
+
+当前结论：
+
+- `issue_fact` 全量口径框架、字段设计、构建逻辑、接口触发链路均已落地
+- 当前剩余重点已经不再是“有没有这套架构”，而是继续补真实项目数据和阶段日历，让归一化字段在真实数据集上充分命中

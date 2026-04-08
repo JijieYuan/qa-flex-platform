@@ -74,11 +74,20 @@ public class IssueFact {
   @TableField("module_name")
   private String moduleName;
 
+  @TableField("primary_module_name")
+  private String primaryModuleName;
+
+  @TableField("module_names")
+  private String moduleNames;
+
   @TableField("testing_phase")
   private String testingPhase;
 
   @TableField("severity_level")
   private String severityLevel;
+
+  @TableField("severity_alias")
+  private String severityAlias;
 
   private String urgency;
 
@@ -87,17 +96,68 @@ public class IssueFact {
 
   private String category;
 
+  @TableField("reason_category")
+  private String reasonCategory;
+
   @TableField("system_test_label")
   private String systemTestLabel;
 
   @TableField("label_names")
   private String labelNames;
 
+  @TableField("is_excluded")
+  private Boolean excluded;
+
+  @TableField("exclusion_reason")
+  private String exclusionReason;
+
+  @TableField("is_fixed")
+  private Boolean fixed;
+
   @TableField("delay_issue")
   private Boolean delayIssue;
 
+  @TableField("delay_reason")
+  private String delayReason;
+
   @TableField("delay_cause")
   private String delayCause;
+
+  @TableField("is_regression")
+  private Boolean regression;
+
+  @TableField("is_crash")
+  private Boolean crash;
+
+  @TableField("is_level1_other")
+  private Boolean level1Other;
+
+  @TableField("is_illegal")
+  private Boolean illegal;
+
+  @TableField("illegal_reason")
+  private String illegalReason;
+
+  @TableField("has_response")
+  private Boolean hasResponse;
+
+  @TableField("response_overdue")
+  private Boolean responseOverdue;
+
+  @TableField("is_response_delayed")
+  private Boolean responseDelayed;
+
+  @TableField("resolve_sla_days")
+  private Integer resolveSlaDays;
+
+  @TableField("resolve_deadline_at")
+  private LocalDateTime resolveDeadlineAt;
+
+  @TableField("is_resolve_delayed")
+  private Boolean resolveDelayed;
+
+  @TableField("is_legacy")
+  private Boolean legacy;
 
   private Boolean deleted;
 

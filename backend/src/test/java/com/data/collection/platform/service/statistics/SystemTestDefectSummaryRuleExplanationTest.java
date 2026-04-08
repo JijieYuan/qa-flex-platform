@@ -48,12 +48,12 @@ class SystemTestDefectSummaryRuleExplanationTest {
     StatisticBoardRuleExplanationResponse response = service.getRuleExplanation(Map.of());
 
     assertThat(response.supported()).isTrue();
-    assertThat(response.version()).isEqualTo("system-test-defect-summary@2026-04-07-v1");
+    assertThat(response.version()).isEqualTo("system-test-defect-summary@2026-04-08-v2");
     assertThat(response.flowSteps()).extracting("key")
         .containsExactly(
             "source-load",
-            "exclude-basic-labels",
-            "exclude-closed-veto-and-as-designed");
+            "exclude-invalid-issues",
+            "aggregate-normalized-facts");
     assertThat(response.flowSteps()).allSatisfy(step -> {
       assertThat(step.title()).isNotBlank();
       assertThat(step.description()).isNotBlank();

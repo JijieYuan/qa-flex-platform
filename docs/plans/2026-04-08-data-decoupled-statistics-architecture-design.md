@@ -234,6 +234,93 @@
 - `last_source_sync_at`
 - `updated_at`
 
+针对当前系统测试缺陷统计，`issue_fact` 还应正式承接以下归一化业务字段：
+
+- 严重程度与别名
+  - `severity_level`
+  - `severity_alias`
+  - 统一口径：
+    - `P1` = `一级缺陷`、`一级严重`
+    - `P2` = `二级缺陷`、`二级严重`
+    - `P3` = `三级缺陷`、`三级严重`
+    - `SUGGESTION` = `建议`、`需求`、`需求如此`
+- 公共过滤与排除
+  - `is_excluded`
+  - `exclusion_reason`
+  - 统一口径：
+    - 标签含 `功能屏蔽 / 已拒绝 / 建议`
+    - `申请否决 + Closed`
+    - `数据异常 + Closed`
+    - `设计如此 + Closed`
+- 修复状态
+  - `is_fixed`
+  - 统一口径：
+    - 标签含 `已修复 / 待合并`
+    - 或 `Closed + 未复现`
+- 缺陷原因归一化
+  - `reason_category`
+  - 统一口径：
+    - `需求理解偏差` = `新增理解偏差数量 + 需求理解有误数量`
+    - `新增需求` = `新增需求数量 + 新增需求问题数量`
+    - `编码逻辑错误` = `业务逻辑错误 + 编码逻辑错误`
+    - `环境部署问题` = `编译/打包/部署问题 + 编译打包问题`
+    - `算法机制不支持` = `机制不支持 + 算法/机制不支持`
+- 延期分析
+  - `delay_issue`
+  - `delay_reason`
+  - `delay_cause`
+  - 延期原因固定七类：
+    - `技术卡点`
+    - `方案卡点`
+    - `资源卡点`
+    - `数据异常`
+    - `算法问题`
+    - `机制问题`
+    - `计算效率`
+- 一级缺陷二次分类
+  - `is_regression`
+  - `is_crash`
+  - `is_level1_other`
+  - 强校验口径：
+    - `一级缺陷 + 标题含 退 / 回退 / 倒退` => `is_regression`
+    - `一级缺陷 + 标题含 挂机` => `is_crash`
+    - `一级缺陷` 且排除上述两类 => `is_level1_other`
+- 非法数据断言
+  - `is_illegal`
+  - `illegal_reason`
+  - 统一口径：
+    - 缺失严重程度
+    - 缺失模块
+    - 流程越位：未关闭且缺失 `待合并 / 设计如此 / 建议 / 需求 / 申请延期`
+- SLA 与响应时效
+  - `has_response`
+  - `is_response_delayed`
+  - `resolve_sla_days`
+  - `resolve_deadline_at`
+  - `is_resolve_delayed`
+  - 统一口径：
+    - 评论区出现 `# 问题调研情况说明` 视为已响应
+    - 默认解决时限 18 天
+    - 模板中若存在更短的预计解决时间，则用更短值
+    - 超时且未带 `申请延期 / 数据异常 / 需求如此 / 未复现 / 已修复` 标签，标记解决延期
+- 模块全量性
+  - `primary_module_name`
+  - `module_names`
+  - 一条 issue 可以映射多个模块
+  - 项目总数按 issue 去重，按模块拆分时按 `module_names` 展开
+- 历史遗留
+  - `is_legacy`
+  - 判定：当前 Open 且创建时间早于当前测试阶段开始时间
+
+为支撑 `is_legacy` 与阶段性口径，建议补一张轻量正式配置表：
+
+- `testing_phase_calendar`
+  - `project_id`
+  - `testing_phase`
+  - `phase_start_at`
+  - `phase_end_at`
+  - `enabled`
+
 用途：
 
 - 统一承接“一级/二级/三级缺陷、P1/P2/P3、延期、修复率、遗留率”等议题类统计
@@ -297,6 +384,7 @@
 - 规则不直接绑定某张表
 - 规则面向“统一语义字段”
 - 规则输出面向业务语言
+- 统计服务不重复保存业务判定逻辑，`FactBuildService + *NormalizationRules` 才是 SSOT
 
 ### 6.2 第一阶段
 
@@ -730,3 +818,67 @@
 
 - 把严重程度、优先级、测试阶段、分类、延期等字段的归一化逻辑收敛到单点
 - 后续修改映射规则时，只改这一处，不在构建链路各处散落 if/else
+
+### 13.4 当前确认的 issue_fact 全量收口范围
+
+围绕系统测试缺陷统计，当前已确认必须一次性收口进 `issue_fact` 的范围如下：
+
+- 严重程度标准化：`P1 / P2 / P3 / SUGGESTION`
+- 公共过滤口径：`功能屏蔽 / 已拒绝 / 建议 / 申请否决+Closed / 数据异常+Closed / 设计如此+Closed`
+- 修复状态：`已修复 / 待合并 / 未复现`
+- 缺陷原因归一化
+- 延期原因七大类
+- 特殊一级分类：`回退 / 挂机 / 其他一级`
+- 非法数据断言：缺级别、缺模块、流程越位
+- SLA：已响应、响应延期、解决时限、解决延期
+- 模块全量性：支持一条 issue 关联多个模块
+- 历史遗留：`is_legacy`
+
+这部分不再按“先补部分规则”推进，而是按整套口径一次性设计和实现，避免后续再出现 BoardService 与 FactBuildService 双边维护。
+### 14. 2026-04-08 最新落地状态
+
+本方案中围绕 `issue_fact` 的第一阶段实现已经完成，当前不是“只停留在设计”，而是已经具备真实运行能力：
+
+- 已新增正式表：
+  - `issue_fact`
+  - `testing_phase_calendar`
+- 已新增事实构建服务：
+  - `FactBuildService`
+- 已新增手动构建入口：
+  - `POST /api/facts/rebuild?scope=issue&full=true|false`
+- 已新增统一归一化入口：
+  - `IssueFactNormalizationRules`
+- 已完成首个消费方改造：
+  - `SystemTestDefectSummaryBoardService` 改为优先读取 `issue_fact`
+
+当前已落地到 `issue_fact` 的字段能力：
+
+- 严重程度标准化
+- 公共排除标记
+- 修复状态判定
+- 缺陷原因归一化
+- 延期原因归一化
+- 回退 / 挂机 / 其他一级分类
+- 非法数据断言
+- 响应与解决时效
+- 多模块字段
+- 历史遗留标记
+- 来源追溯字段
+
+当前工程验证结果：
+
+- 本地已成功执行 `issue_fact` 全量构建
+- 本地库已生成 `382` 条 `issue_fact`
+- `system-test-defect-summary` 已切换到 `issue_fact` 优先读取
+
+当前边界也需要明确保留：
+
+- 当前本地 ODS 数据以测试/压测样例为主，真实业务标签覆盖不足
+- 因此 `severity_level / is_fixed / has_response / is_excluded` 等字段在当前样例库中的命中率还不代表真实生产效果
+- `is_legacy` 依赖 `testing_phase_calendar`，如果未配置阶段起始时间，则不会命中真实历史遗留判断
+
+因此，本方案的下一阶段重点不是继续讨论是否采用 `issue_fact`，而是：
+
+1. 导入真实项目标签与评论数据
+2. 配置 `testing_phase_calendar`
+3. 继续把其他统计服务改造成纯 fact 聚合
