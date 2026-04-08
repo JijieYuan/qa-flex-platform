@@ -1,0 +1,125 @@
+package com.data.collection.platform.mapper;
+
+import com.baomidou.mybatisplus.core.mapper.BaseMapper;
+import com.data.collection.platform.entity.IssueFact;
+import org.apache.ibatis.annotations.Insert;
+import org.apache.ibatis.annotations.Param;
+import org.apache.ibatis.annotations.Select;
+
+public interface IssueFactMapper extends BaseMapper<IssueFact> {
+
+  @Select("""
+      select *
+        from issue_fact
+       where source_system = #{sourceSystem}
+         and source_instance = #{sourceInstance}
+         and project_id = #{projectId}
+         and issue_id = #{issueId}
+       limit 1
+      """)
+  IssueFact selectBySourceContext(
+      @Param("sourceSystem") String sourceSystem,
+      @Param("sourceInstance") String sourceInstance,
+      @Param("projectId") Long projectId,
+      @Param("issueId") Long issueId);
+
+  @Insert("""
+      insert into issue_fact(
+        source_system,
+        source_instance,
+        ingest_channel,
+        source_summary,
+        raw_payload,
+        project_id,
+        project_name,
+        issue_id,
+        issue_iid,
+        title,
+        issue_state,
+        issue_type,
+        milestone_title,
+        author_name,
+        assignee_name,
+        created_at_source,
+        updated_at_source,
+        closed_at_source,
+        module_name,
+        testing_phase,
+        severity_level,
+        urgency,
+        bug_status,
+        category,
+        system_test_label,
+        label_names,
+        delay_issue,
+        delay_cause,
+        deleted,
+        fact_refreshed_at,
+        created_at,
+        updated_at
+      ) values (
+        #{fact.sourceSystem},
+        #{fact.sourceInstance},
+        #{fact.ingestChannel},
+        #{fact.sourceSummary},
+        #{fact.rawPayload},
+        #{fact.projectId},
+        #{fact.projectName},
+        #{fact.issueId},
+        #{fact.issueIid},
+        #{fact.title},
+        #{fact.issueState},
+        #{fact.issueType},
+        #{fact.milestoneTitle},
+        #{fact.authorName},
+        #{fact.assigneeName},
+        #{fact.createdAtSource},
+        #{fact.updatedAtSource},
+        #{fact.closedAtSource},
+        #{fact.moduleName},
+        #{fact.testingPhase},
+        #{fact.severityLevel},
+        #{fact.urgency},
+        #{fact.bugStatus},
+        #{fact.category},
+        #{fact.systemTestLabel},
+        #{fact.labelNames},
+        #{fact.delayIssue},
+        #{fact.delayCause},
+        #{fact.deleted},
+        current_timestamp,
+        current_timestamp,
+        current_timestamp
+      )
+      on conflict (source_system, source_instance, project_id, issue_id)
+      do update set
+        ingest_channel = excluded.ingest_channel,
+        source_summary = excluded.source_summary,
+        raw_payload = excluded.raw_payload,
+        project_name = excluded.project_name,
+        issue_iid = excluded.issue_iid,
+        title = excluded.title,
+        issue_state = excluded.issue_state,
+        issue_type = excluded.issue_type,
+        milestone_title = excluded.milestone_title,
+        author_name = excluded.author_name,
+        assignee_name = excluded.assignee_name,
+        created_at_source = excluded.created_at_source,
+        updated_at_source = excluded.updated_at_source,
+        closed_at_source = excluded.closed_at_source,
+        module_name = excluded.module_name,
+        testing_phase = excluded.testing_phase,
+        severity_level = excluded.severity_level,
+        urgency = excluded.urgency,
+        bug_status = excluded.bug_status,
+        category = excluded.category,
+        system_test_label = excluded.system_test_label,
+        label_names = excluded.label_names,
+        delay_issue = excluded.delay_issue,
+        delay_cause = excluded.delay_cause,
+        deleted = excluded.deleted,
+        fact_refreshed_at = current_timestamp,
+        updated_at = current_timestamp
+      """)
+  void upsert(@Param("fact") IssueFact fact);
+}

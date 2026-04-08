@@ -124,6 +124,85 @@ create table if not exists code_review_external_metrics (
     unique (project_id, merge_request_iid)
 );
 
+create table if not exists issue_fact (
+    id bigserial primary key,
+    source_system varchar(64) not null default 'GITLAB',
+    source_instance varchar(128) not null default 'default',
+    ingest_channel varchar(64) not null default 'MIRROR',
+    source_summary varchar(255),
+    raw_payload text,
+    project_id bigint not null,
+    project_name varchar(255),
+    issue_id bigint not null,
+    issue_iid bigint not null,
+    title varchar(512) not null default '',
+    issue_state varchar(64),
+    issue_type varchar(128),
+    milestone_title varchar(255),
+    author_name varchar(128),
+    assignee_name varchar(128),
+    created_at_source timestamp,
+    updated_at_source timestamp,
+    closed_at_source timestamp,
+    module_name varchar(255),
+    testing_phase varchar(128),
+    severity_level varchar(128),
+    urgency varchar(64),
+    bug_status varchar(128),
+    category varchar(255),
+    system_test_label varchar(255),
+    label_names text,
+    delay_issue boolean not null default false,
+    delay_cause varchar(255),
+    deleted boolean not null default false,
+    fact_refreshed_at timestamp not null default current_timestamp,
+    created_at timestamp not null default current_timestamp,
+    updated_at timestamp not null default current_timestamp,
+    unique (source_system, source_instance, project_id, issue_id)
+);
+
+create table if not exists merge_request_fact (
+    id bigserial primary key,
+    source_system varchar(64) not null default 'GITLAB',
+    source_instance varchar(128) not null default 'default',
+    ingest_channel varchar(64) not null default 'MIRROR',
+    source_summary varchar(255),
+    raw_payload text,
+    project_id bigint not null,
+    project_name varchar(255),
+    repository_name varchar(255),
+    merge_request_id bigint not null,
+    merge_request_iid bigint not null,
+    title varchar(512) not null default '',
+    merge_request_state varchar(64),
+    target_branch varchar(255),
+    source_branch varchar(255),
+    author_name varchar(128),
+    merge_user_name varchar(128),
+    owner_name varchar(255),
+    reviewer_names varchar(512),
+    assignee_names varchar(512),
+    module_name varchar(255),
+    label_names text,
+    created_at_source timestamp,
+    updated_at_source timestamp,
+    merged_at_source timestamp,
+    review_status varchar(128),
+    review_duration_minutes integer,
+    comment_rate numeric(8, 2),
+    comment_rate_source varchar(64),
+    defect_count integer,
+    defect_count_source varchar(64),
+    scan_status varchar(128),
+    scan_bug_count integer,
+    added_lines integer,
+    deleted boolean not null default false,
+    fact_refreshed_at timestamp not null default current_timestamp,
+    created_at timestamp not null default current_timestamp,
+    updated_at timestamp not null default current_timestamp,
+    unique (source_system, source_instance, project_id, merge_request_id)
+);
+
 create table if not exists sys_table_registry (
     id bigserial primary key,
     config_id bigint not null references gitlab_sync_configs(id) on delete cascade,
@@ -171,6 +250,12 @@ alter table sys_table_registry add column if not exists preview_enabled boolean 
 create index if not exists idx_gitlab_mirror_records_table on gitlab_mirror_records(config_id, table_name);
 create index if not exists idx_collect_form_records_context on collect_form_records(project_id, resource_type, resource_id, template_code);
 create index if not exists idx_code_review_external_metrics_context on code_review_external_metrics(project_id, merge_request_iid);
+create index if not exists idx_issue_fact_context on issue_fact(source_system, source_instance, project_id, issue_iid);
+create index if not exists idx_issue_fact_state on issue_fact(issue_state, severity_level, urgency);
+create index if not exists idx_issue_fact_module on issue_fact(module_name, testing_phase, bug_status);
+create index if not exists idx_merge_request_fact_context on merge_request_fact(source_system, source_instance, project_id, merge_request_iid);
+create index if not exists idx_merge_request_fact_owner on merge_request_fact(owner_name, module_name, merge_request_state);
+create index if not exists idx_merge_request_fact_metrics on merge_request_fact(comment_rate, defect_count, review_duration_minutes);
 create index if not exists idx_sys_table_registry_config on sys_table_registry(config_id, source_table_name);
 create index if not exists idx_sys_table_registry_preview on sys_table_registry(config_id, preview_enabled, source_table_name);
 create index if not exists idx_gitlab_sync_logs_config on gitlab_sync_logs(config_id, started_at desc);

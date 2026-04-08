@@ -1,0 +1,140 @@
+package com.data.collection.platform.mapper;
+
+import com.baomidou.mybatisplus.core.mapper.BaseMapper;
+import com.data.collection.platform.entity.MergeRequestFact;
+import org.apache.ibatis.annotations.Insert;
+import org.apache.ibatis.annotations.Param;
+import org.apache.ibatis.annotations.Select;
+
+public interface MergeRequestFactMapper extends BaseMapper<MergeRequestFact> {
+
+  @Select("""
+      select *
+        from merge_request_fact
+       where source_system = #{sourceSystem}
+         and source_instance = #{sourceInstance}
+         and project_id = #{projectId}
+         and merge_request_id = #{mergeRequestId}
+       limit 1
+      """)
+  MergeRequestFact selectBySourceContext(
+      @Param("sourceSystem") String sourceSystem,
+      @Param("sourceInstance") String sourceInstance,
+      @Param("projectId") Long projectId,
+      @Param("mergeRequestId") Long mergeRequestId);
+
+  @Insert("""
+      insert into merge_request_fact(
+        source_system,
+        source_instance,
+        ingest_channel,
+        source_summary,
+        raw_payload,
+        project_id,
+        project_name,
+        repository_name,
+        merge_request_id,
+        merge_request_iid,
+        title,
+        merge_request_state,
+        target_branch,
+        source_branch,
+        author_name,
+        merge_user_name,
+        owner_name,
+        reviewer_names,
+        assignee_names,
+        module_name,
+        label_names,
+        created_at_source,
+        updated_at_source,
+        merged_at_source,
+        review_status,
+        review_duration_minutes,
+        comment_rate,
+        comment_rate_source,
+        defect_count,
+        defect_count_source,
+        scan_status,
+        scan_bug_count,
+        added_lines,
+        deleted,
+        fact_refreshed_at,
+        created_at,
+        updated_at
+      ) values (
+        #{fact.sourceSystem},
+        #{fact.sourceInstance},
+        #{fact.ingestChannel},
+        #{fact.sourceSummary},
+        #{fact.rawPayload},
+        #{fact.projectId},
+        #{fact.projectName},
+        #{fact.repositoryName},
+        #{fact.mergeRequestId},
+        #{fact.mergeRequestIid},
+        #{fact.title},
+        #{fact.mergeRequestState},
+        #{fact.targetBranch},
+        #{fact.sourceBranch},
+        #{fact.authorName},
+        #{fact.mergeUserName},
+        #{fact.ownerName},
+        #{fact.reviewerNames},
+        #{fact.assigneeNames},
+        #{fact.moduleName},
+        #{fact.labelNames},
+        #{fact.createdAtSource},
+        #{fact.updatedAtSource},
+        #{fact.mergedAtSource},
+        #{fact.reviewStatus},
+        #{fact.reviewDurationMinutes},
+        #{fact.commentRate},
+        #{fact.commentRateSource},
+        #{fact.defectCount},
+        #{fact.defectCountSource},
+        #{fact.scanStatus},
+        #{fact.scanBugCount},
+        #{fact.addedLines},
+        #{fact.deleted},
+        current_timestamp,
+        current_timestamp,
+        current_timestamp
+      )
+      on conflict (source_system, source_instance, project_id, merge_request_id)
+      do update set
+        ingest_channel = excluded.ingest_channel,
+        source_summary = excluded.source_summary,
+        raw_payload = excluded.raw_payload,
+        project_name = excluded.project_name,
+        repository_name = excluded.repository_name,
+        merge_request_iid = excluded.merge_request_iid,
+        title = excluded.title,
+        merge_request_state = excluded.merge_request_state,
+        target_branch = excluded.target_branch,
+        source_branch = excluded.source_branch,
+        author_name = excluded.author_name,
+        merge_user_name = excluded.merge_user_name,
+        owner_name = excluded.owner_name,
+        reviewer_names = excluded.reviewer_names,
+        assignee_names = excluded.assignee_names,
+        module_name = excluded.module_name,
+        label_names = excluded.label_names,
+        created_at_source = excluded.created_at_source,
+        updated_at_source = excluded.updated_at_source,
+        merged_at_source = excluded.merged_at_source,
+        review_status = excluded.review_status,
+        review_duration_minutes = excluded.review_duration_minutes,
+        comment_rate = excluded.comment_rate,
+        comment_rate_source = excluded.comment_rate_source,
+        defect_count = excluded.defect_count,
+        defect_count_source = excluded.defect_count_source,
+        scan_status = excluded.scan_status,
+        scan_bug_count = excluded.scan_bug_count,
+        added_lines = excluded.added_lines,
+        deleted = excluded.deleted,
+        fact_refreshed_at = current_timestamp,
+        updated_at = current_timestamp
+      """)
+  void upsert(@Param("fact") MergeRequestFact fact);
+}

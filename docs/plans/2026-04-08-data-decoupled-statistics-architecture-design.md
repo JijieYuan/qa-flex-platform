@@ -72,6 +72,16 @@
 - `issue_fact`
 - `merge_request_fact`
 
+当前实现状态：
+
+- `issue_fact`
+  - 已落入 `backend/src/main/resources/schema.sql`
+  - 已补充实体 `IssueFact` 与 `IssueFactMapper`
+- `merge_request_fact`
+  - 已落入 `backend/src/main/resources/schema.sql`
+  - 已补充实体 `MergeRequestFact` 与 `MergeRequestFactMapper`
+- 数据库浏览页已补充这两张表的查看入口
+
 原则：
 
 - 事实表不是指标表
@@ -494,6 +504,17 @@
 - 需要在文档和字段设计中预留来源标识、来源摘要、原始载荷
 
 因此，现阶段文档和表设计只保留“统一外部导入口”的口子，不把某一个外部技术方案提前写死。
+
+当前实现状态：
+
+- `issue_fact` / `merge_request_fact` 已正式预留：
+  - `source_system`
+  - `source_instance`
+  - `ingest_channel`
+  - `source_summary`
+  - `raw_payload`
+- 当前尚未实现真实导入链路
+- 当前尚未把现有统计服务切换到这两张事实表
 
 ### 11.4 为什么这个方案更适合当前项目
 
