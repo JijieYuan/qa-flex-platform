@@ -274,6 +274,7 @@ const tableRenderKey = computed(
 const rowHeaderLabel = computed(() => board.value?.definition.rowHeaderLabel || '统计对象');
 const ruleExplanationSteps = computed(() => ruleExplanation.value?.flowSteps ?? []);
 const ruleExplanationMetrics = computed(() => ruleExplanation.value?.metricDefinitions ?? []);
+const ruleExclusionSteps = computed(() => ruleExplanationSteps.value.slice(1));
 const ruleFirstInputCount = computed(() => ruleExplanationSteps.value[0]?.inputCount ?? 0);
 const ruleFinalOutputCount = computed(() => {
   const steps = ruleExplanationSteps.value;
@@ -747,6 +748,10 @@ function ruleStepSummary(step: { inputCount: number; outputCount: number }, inde
   return `第 ${index + 1} 步处理后，剩余 ${step.outputCount} 条，较上一步减少 ${removed} 条，保留比例 ${ruleStepRetainedRate(step)}。`;
 }
 
+function metricFormulaSummary(metric: { label: string; definition: string; formula: string; note?: string | null }) {
+  return `${metric.label}：${metric.definition}`;
+}
+
 function removeFilterCondition(conditionId: string) {
   const index = filterDraft.conditions.findIndex((condition) => condition.id === conditionId);
   if (index >= 0) {
@@ -1168,48 +1173,57 @@ watch(
           </el-descriptions>
 
           <div class="rule-explanation-section">
-            <div class="rule-explanation-section-title">统计过程</div>
-            <el-timeline>
-              <el-timeline-item
-                v-for="(step, index) in ruleExplanationSteps"
+            <div class="rule-explanation-section-title">哪些会被排除</div>
+            <div class="rule-rule-card-grid">
+              <article
+                v-for="(step, index) in ruleExclusionSteps"
                 :key="step.key"
-                placement="top"
+                class="rule-rule-card"
               >
-                <div class="rule-flow-step">
-                  <div class="rule-flow-step-title">{{ step.title }}</div>
-                  <div class="rule-flow-step-description">{{ step.description }}</div>
-                  <div class="rule-flow-step-summary">{{ ruleStepSummary(step, index) }}</div>
-                  <div class="rule-flow-step-metrics">
-                    <el-tag effect="plain">开始时 {{ step.inputCount }} 条</el-tag>
-                    <el-tag effect="plain" type="success">处理后剩 {{ step.outputCount }} 条</el-tag>
-                    <el-tag effect="plain" type="warning">本步减少 {{ ruleStepRemovedCount(step) }} 条</el-tag>
-                    <el-tag effect="plain" type="info">保留比例 {{ ruleStepRetainedRate(step) }}</el-tag>
-                  </div>
-                  <div v-if="step.samples.length" class="rule-flow-step-samples">
-                    <div class="rule-flow-step-samples-title">示例数据</div>
-                    <el-card
-                      v-for="sample in step.samples"
-                      :key="`${step.key}-${sample.label}-${sample.detail}`"
-                      shadow="never"
-                      class="rule-flow-sample-card"
-                    >
-                      <div class="rule-flow-sample-label">{{ sample.label }}</div>
-                      <div class="rule-flow-sample-detail">{{ sample.detail }}</div>
-                    </el-card>
-                  </div>
+                <div class="rule-rule-card-title">规则 {{ index + 1 }}：{{ step.title }}</div>
+                <div class="rule-rule-card-description">{{ step.description }}</div>
+                <div class="rule-rule-card-summary">{{ ruleStepSummary(step, index + 1) }}</div>
+                <div class="rule-rule-card-stats">
+                  <span class="rule-rule-card-stat">排除 {{ ruleStepRemovedCount(step) }} 条</span>
+                  <span class="rule-rule-card-stat">剩余 {{ step.outputCount }} 条</span>
+                  <span class="rule-rule-card-stat">保留 {{ ruleStepRetainedRate(step) }}</span>
                 </div>
-              </el-timeline-item>
-            </el-timeline>
+              </article>
+            </div>
           </div>
 
           <div class="rule-explanation-section">
-            <div class="rule-explanation-section-title">这个数字怎么算</div>
-            <el-table :data="ruleExplanationMetrics" border stripe>
-              <el-table-column prop="label" label="数字名称" min-width="140" />
-              <el-table-column prop="definition" label="它表示什么" min-width="220" show-overflow-tooltip />
-              <el-table-column prop="formula" label="系统怎么算" min-width="220" show-overflow-tooltip />
-              <el-table-column prop="note" label="补充说明" min-width="180" show-overflow-tooltip />
-            </el-table>
+            <div class="rule-explanation-section-title">数据是怎么一步步变少的</div>
+            <div class="rule-process-chain">
+              <article
+                v-for="(step, index) in ruleExplanationSteps"
+                :key="`${step.key}-process`"
+                class="rule-process-card"
+              >
+                <div class="rule-process-step">第 {{ index + 1 }} 步</div>
+                <div class="rule-process-title">{{ step.title }}</div>
+                <div class="rule-process-value">{{ step.outputCount }} 条</div>
+                <div class="rule-process-note">
+                  {{ index === 0 ? '这是最开始纳入统计的原始数据。' : `这一轮处理后还剩 ${step.outputCount} 条。` }}
+                </div>
+              </article>
+            </div>
+          </div>
+
+          <div class="rule-explanation-section">
+            <div class="rule-explanation-section-title">最后这些数字怎么算</div>
+            <div class="rule-formula-card-grid">
+              <article
+                v-for="metric in ruleExplanationMetrics"
+                :key="metric.key"
+                class="rule-formula-card"
+              >
+                <div class="rule-formula-card-title">{{ metric.label }}</div>
+                <div class="rule-formula-card-definition">{{ metricFormulaSummary(metric) }}</div>
+                <div class="rule-formula-card-formula">{{ metric.formula }}</div>
+                <div v-if="metric.note" class="rule-formula-card-note">{{ metric.note }}</div>
+              </article>
+            </div>
           </div>
         </template>
       </div>
@@ -1341,66 +1355,98 @@ watch(
   border-radius: 18px;
 }
 
-.rule-flow-step {
+.rule-rule-card-grid,
+.rule-formula-card-grid {
   display: grid;
-  gap: 10px;
+  gap: 12px;
 }
 
-.rule-flow-step-title {
+.rule-rule-card,
+.rule-formula-card {
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid rgba(15, 23, 42, 0.06);
+}
+
+.rule-rule-card-title,
+.rule-formula-card-title {
   font-size: 14px;
   font-weight: 700;
   color: rgba(15, 23, 42, 0.9);
 }
 
-.rule-flow-step-description {
+.rule-rule-card-description,
+.rule-formula-card-definition,
+.rule-formula-card-note {
   font-size: 13px;
   line-height: 1.7;
   color: rgba(15, 23, 42, 0.68);
 }
 
-.rule-flow-step-summary {
+.rule-rule-card-summary,
+.rule-formula-card-formula {
   padding: 10px 12px;
   border-radius: 12px;
   background: rgba(248, 250, 252, 0.96);
   border: 1px solid rgba(15, 23, 42, 0.06);
   font-size: 13px;
   line-height: 1.7;
-  color: rgba(15, 23, 42, 0.78);
+  color: rgba(15, 23, 42, 0.8);
 }
 
-.rule-flow-step-metrics {
+.rule-rule-card-stats {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
 }
 
-.rule-flow-step-samples {
+.rule-rule-card-stat {
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(241, 245, 249, 0.95);
+  font-size: 12px;
+  color: rgba(15, 23, 42, 0.72);
+}
+
+.rule-process-chain {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+}
+
+.rule-process-card {
   display: grid;
   gap: 8px;
+  padding: 16px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(15, 23, 42, 0.06);
 }
 
-.rule-flow-step-samples-title {
+.rule-process-step {
   font-size: 12px;
+  color: rgba(15, 23, 42, 0.46);
+}
+
+.rule-process-title {
+  font-size: 14px;
   font-weight: 700;
-  color: rgba(15, 23, 42, 0.5);
+  color: rgba(15, 23, 42, 0.88);
 }
 
-.rule-flow-sample-card :deep(.el-card__body) {
-  display: grid;
-  gap: 4px;
-  padding: 12px 14px;
+.rule-process-value {
+  font-size: 26px;
+  line-height: 1;
+  color: rgba(15, 23, 42, 0.94);
 }
 
-.rule-flow-sample-label {
-  font-size: 13px;
-  font-weight: 600;
-  color: rgba(15, 23, 42, 0.82);
-}
-
-.rule-flow-sample-detail {
+.rule-process-note {
   font-size: 12px;
   line-height: 1.6;
-  color: rgba(15, 23, 42, 0.6);
+  color: rgba(15, 23, 42, 0.62);
 }
 
 @media (max-width: 960px) {
