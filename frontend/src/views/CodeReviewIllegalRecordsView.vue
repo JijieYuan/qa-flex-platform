@@ -206,7 +206,7 @@ function formatPercent(value?: number | null) {
   if (value == null) {
     return '-';
   }
-  return `${(value * 100).toFixed(2)}%`;
+  return `${value.toFixed(2)}%`;
 }
 const lastSyncedText = computed(() => formatDateTime(syncStatus.value?.lastSyncedAt));
 const ruleExplanationSteps = computed(() => ruleExplanation.value?.flowSteps || []);

@@ -711,7 +711,12 @@
 - 规则 flow 可视化：已完成一期，当前 `mirror-table-overview`、`system-test-defect-summary`、`code-review-illegal-records` 均支持只读规则说明与 Flow 展示
 - 规则说明可读性优化：统计页（`mirror-table-overview`、`system-test-defect-summary`）与 `code-review-illegal-records` 均已开始改造成面向 QA 的“先看结论 / 哪些会被排除 / 数据如何一步步变化 / 最后这些数字怎么算”卡片式展示；其中代码走查页已去掉拥挤的指标表格式说明
 - 规则版本管理：未实现完整管理能力；当前仅以上三个页面内置只读版本号，尚无统一发布、回滚、审批与审计能力
-- 代码走查外部指标正式接入：未完成（`commentRate`、`defectCount` 仍为空）
+- 代码走查外部指标正式接入：未完成真实采集链路；但后端已预留正式导入表 `code_review_external_metrics`，`code-review-illegal-records` 会优先读取其中的 `commentRate` / `defectCount`
+- 本地 GitLab 合法测试样例：已补充一批可重复执行的种子数据脚本 `scripts/seed-local-gitlab-valid-code-review-data.sql`
+  - 当前脚本会向本地库补充 3 条已合并 MR、对应 reviewer / assignee / 模块标签 / metrics / `collect_form_records`
+  - 当前脚本还会向 `code_review_external_metrics` 补充 3 条导入指标样例，用于本地验证“CC/DGM 注释率 + 代码走查缺陷数”链路
+  - 当前脚本用于验证“基础镜像链路、代码走查页面、采集表单联动数据”是否可正常读取
+  - 这些外部指标当前仍是本地导入样例，不代表真实采集链路已经完成
 
 ## 13. 当前项目的代码事实总结
 
@@ -732,6 +737,15 @@
   - 代码走查非法记录
 - 独立采集表单页已存在：
   - 代码走查表
+- 本地测试数据已补充一批可复用合法样例：
+  - 脚本：`scripts/seed-local-gitlab-valid-code-review-data.sql`
+  - 已写入 MR：`iid=101/102/103`
+  - 已写入模块标签：`支付中心 / 订单服务 / 报表平台`
+  - 已写入代码走查表单记录：`collect_form_records.request_iid = 101/102/103`
+  - 已写入导入指标：`code_review_external_metrics.merge_request_iid = 101/102/103`
+- 代码走查非法记录页当前已修正两项展示/查询口径：
+  - 列表默认只展示 `illegalTypes` 非空的记录，不再把合法 MR 混入“非法数据”表
+  - `commentRate` 前端按后端返回的百分数字面值直接展示，不再重复乘以 `100`
 - 数据库浏览页已存在，并支持 `collect_form_records` 编辑
 - 页面“最近同步”展示已统一为同一组件
 

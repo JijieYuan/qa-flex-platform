@@ -110,6 +110,24 @@ public class DatabaseBrowserService {
               new DatabaseTableColumn("deleted", "是否作废", true),
               new DatabaseTableColumn("updated_at", "更新时间", true),
               new DatabaseTableColumn("created_at", "创建时间", true)),
+          "updated_at"),
+      "code_review_external_metrics", new TableDefinition(
+          "代码走查外部指标导入表",
+          List.of("merge_request_iid", "comment_rate_source", "defect_count_source", "source_summary", "raw_payload"),
+          List.of(
+              new DatabaseTableColumn("id", "ID", true),
+              new DatabaseTableColumn("project_id", "Project ID", true),
+              new DatabaseTableColumn("merge_request_id", "MR ID", true),
+              new DatabaseTableColumn("merge_request_iid", "MR IID", true),
+              new DatabaseTableColumn("comment_rate", "代码注释率", true),
+              new DatabaseTableColumn("comment_rate_source", "注释率来源", true),
+              new DatabaseTableColumn("defect_count", "缺陷数", true),
+              new DatabaseTableColumn("defect_count_source", "缺陷来源", true),
+              new DatabaseTableColumn("source_summary", "来源说明", true),
+              new DatabaseTableColumn("raw_payload", "原始导入内容", true),
+              new DatabaseTableColumn("imported_at", "导入时间", true),
+              new DatabaseTableColumn("updated_at", "更新时间", true),
+              new DatabaseTableColumn("created_at", "创建时间", true)),
           "updated_at"));
 
   private final JdbcTemplate jdbcTemplate;

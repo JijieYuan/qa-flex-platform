@@ -107,6 +107,23 @@ create table if not exists collect_form_records (
     unique (gitlab_base_url, project_id, resource_type, resource_id, template_code)
 );
 
+create table if not exists code_review_external_metrics (
+    id bigserial primary key,
+    project_id bigint not null,
+    merge_request_id bigint,
+    merge_request_iid bigint not null,
+    comment_rate numeric(8, 2),
+    comment_rate_source varchar(64),
+    defect_count integer,
+    defect_count_source varchar(64),
+    source_summary varchar(255),
+    raw_payload text,
+    imported_at timestamp not null default current_timestamp,
+    created_at timestamp not null default current_timestamp,
+    updated_at timestamp not null default current_timestamp,
+    unique (project_id, merge_request_iid)
+);
+
 create table if not exists sys_table_registry (
     id bigserial primary key,
     config_id bigint not null references gitlab_sync_configs(id) on delete cascade,
@@ -153,6 +170,7 @@ alter table sys_table_registry add column if not exists preview_enabled boolean 
 
 create index if not exists idx_gitlab_mirror_records_table on gitlab_mirror_records(config_id, table_name);
 create index if not exists idx_collect_form_records_context on collect_form_records(project_id, resource_type, resource_id, template_code);
+create index if not exists idx_code_review_external_metrics_context on code_review_external_metrics(project_id, merge_request_iid);
 create index if not exists idx_sys_table_registry_config on sys_table_registry(config_id, source_table_name);
 create index if not exists idx_sys_table_registry_preview on sys_table_registry(config_id, preview_enabled, source_table_name);
 create index if not exists idx_gitlab_sync_logs_config on gitlab_sync_logs(config_id, started_at desc);

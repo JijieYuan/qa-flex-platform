@@ -36,7 +36,7 @@ import org.springframework.util.StringUtils;
 @Slf4j
 public class CodeReviewIllegalRecordService {
   public static final String WORKSPACE_KEY = "code-review-illegal-records";
-  private static final String RULE_VERSION = "code-review-illegal-records@2026-04-07-v1";
+  private static final String RULE_VERSION = "code-review-illegal-records@2026-04-08-v3";
 
   private static final List<String> REALTIME_REFRESH_TABLES = List.of(
       "merge_requests",
@@ -89,6 +89,14 @@ public class CodeReviewIllegalRecordService {
          where coalesce(ll.mirror_deleted, false) = false
            and ll.target_type = 'MergeRequest'
          group by ll.target_id
+      ),
+      imported_metrics as (
+        select m.project_id,
+               m.merge_request_id,
+               m.merge_request_iid,
+               m.comment_rate,
+               m.defect_count
+          from code_review_external_metrics m
       )
       select
         mr.id as merge_request_id,
@@ -104,8 +112,8 @@ public class CodeReviewIllegalRecordService {
         coalesce((labels.label_titles)[1], '') as module_name,
         labels.label_titles as label_titles,
         metrics.added_lines as added_lines,
-        cast(null as double precision) as comment_rate,
-        cast(null as integer) as defect_count
+        imported_metrics.comment_rate as comment_rate,
+        imported_metrics.defect_count as defect_count
       from ods_gitlab_merge_requests mr
       left join ods_gitlab_merge_request_metrics metrics
         on metrics.merge_request_id = mr.id
@@ -128,6 +136,9 @@ public class CodeReviewIllegalRecordService {
         on assignees.merge_request_id = mr.id
       left join merge_request_labels labels
         on labels.merge_request_id = mr.id
+      left join imported_metrics
+        on imported_metrics.project_id = mr.target_project_id
+       and (imported_metrics.merge_request_id = mr.id or imported_metrics.merge_request_iid = mr.iid)
       where coalesce(mr.mirror_deleted, false) = false
       """;
 
@@ -172,6 +183,7 @@ public class CodeReviewIllegalRecordService {
 
     List<IllegalRecordView> filtered = loadSources().stream()
         .map(this::toView)
+        .filter(row -> !row.illegalTypes().isEmpty())
         .filter(row -> matchesProjectId(row, projectId))
         .filter(row -> matchesEquals(row.repositoryName(), repositoryName))
         .filter(row -> matchesDateRange(row.mergedAt(), mergedAtStart, mergedAtEnd))
@@ -268,8 +280,8 @@ public class CodeReviewIllegalRecordService {
         List.of(
             new StatisticRuleMetricDefinition("illegalTypes", "非法类型", "系统根据规则检查结果，标记这条记录需要补充哪些信息。", "非法类型 = 缺少模块标签 / 缺少标注责任人 / 缺少外部指标", "用于告诉用户这条记录为什么需要继续处理。"),
             new StatisticRuleMetricDefinition("moduleName", "模块名称", "表示这条合并请求所属的功能模块。", "模块名称来自合并请求关联的模块标识", "如果缺少模块信息，这条记录会被判定为需要关注。"),
-            new StatisticRuleMetricDefinition("commentRate", "代码注释比例", "表示本次改动中代码注释的覆盖情况。", "代码注释比例 = 注释相关统计值", "如果缺少该指标，这条记录会被判定为需要关注。"),
-            new StatisticRuleMetricDefinition("defectCount", "缺陷数量", "表示本次改动关联的缺陷数量。", "缺陷数量 = 关联缺陷统计值", "如果缺少该指标，这条记录会被判定为需要关注。"),
+            new StatisticRuleMetricDefinition("commentRate", "代码注释比例", "表示本次改动中代码注释的覆盖情况。", "代码注释比例 = 导入表中的外部工具结果 或 MR 机器人解析结果", "如果缺少该指标，这条记录会被判定为需要关注。"),
+            new StatisticRuleMetricDefinition("defectCount", "缺陷数量", "表示本次改动关联的缺陷数量。", "缺陷数量 = 导入表中的 MR 评论 / 机器人结果 / Sonar 汇总结果", "如果缺少该指标，这条记录会被判定为需要关注。"),
             new StatisticRuleMetricDefinition("addedLines", "新增代码行数", "表示本次合并请求新增的代码规模。", "新增代码行数 = 本次改动新增代码行数", "用于辅助判断记录是否完整。")),
         null);
   }
@@ -305,9 +317,19 @@ public class CodeReviewIllegalRecordService {
         rs.getString("target_branch"),
         rs.getString("module_name"),
         readTextArray(rs.getArray("label_titles")),
-        (Double) rs.getObject("comment_rate"),
+        toDouble(rs.getObject("comment_rate")),
         (Integer) rs.getObject("defect_count"),
         (Integer) rs.getObject("added_lines"));
+  }
+
+  private Double toDouble(Object value) {
+    if (value == null) {
+      return null;
+    }
+    if (value instanceof Number number) {
+      return number.doubleValue();
+    }
+    return Double.valueOf(String.valueOf(value));
   }
 
   private List<String> readTextArray(Array array) throws SQLException {

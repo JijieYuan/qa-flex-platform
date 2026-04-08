@@ -60,7 +60,7 @@ class CodeReviewControllerTest {
             "code-review-illegal-records",
             true,
             "代码走查非法记录规则说明",
-            "code-review-illegal-records@2026-04-07-v1",
+            "code-review-illegal-records@2026-04-08-v3",
             "仅统计已接入本地镜像的 MR 相关数据。",
             "非法记录规则说明。",
             List.of(new StatisticRuleFlowStep(
