@@ -7,6 +7,7 @@ import com.data.collection.platform.service.FactBuildService;
 import com.data.collection.platform.service.GitlabMirrorSyncService;
 import com.data.collection.platform.service.IssueFactQueryService;
 import com.data.collection.platform.service.RealtimeWorkspaceService;
+import com.data.collection.platform.service.SortSupport;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDateTime;
@@ -15,7 +16,6 @@ import java.util.*;
 import java.util.function.Predicate;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataAccessException;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -46,21 +46,18 @@ public class SystemTestDefectSummaryBoardService extends AbstractStatisticBoardS
        where deleted = false
       """;
 
-  private final JdbcTemplate jdbcTemplate;
   private final GitlabMirrorSyncService gitlabMirrorSyncService;
   private final RealtimeWorkspaceService realtimeWorkspaceService;
   private final FactBuildService factBuildService;
   private final IssueFactQueryService issueFactQueryService;
 
   public SystemTestDefectSummaryBoardService(
-      JdbcTemplate jdbcTemplate,
       JsonUtils jsonUtils,
       GitlabMirrorSyncService gitlabMirrorSyncService,
       RealtimeWorkspaceService realtimeWorkspaceService,
       FactBuildService factBuildService,
       IssueFactQueryService issueFactQueryService) {
     super(jsonUtils);
-    this.jdbcTemplate = jdbcTemplate;
     this.gitlabMirrorSyncService = gitlabMirrorSyncService;
     this.realtimeWorkspaceService = realtimeWorkspaceService;
     this.factBuildService = factBuildService;
@@ -345,16 +342,16 @@ public class SystemTestDefectSummaryBoardService extends AbstractStatisticBoardS
 
   private Comparator<IssueSource> buildDetailComparator(String sortField, String sortOrder) {
     Comparator<IssueSource> c = switch (StringUtils.hasText(sortField) ? sortField.trim() : "updatedAt") {
-      case "iid" -> Comparator.comparing(IssueSource::iid);
-      case "title" -> Comparator.comparing(IssueSource::title, String.CASE_INSENSITIVE_ORDER);
-      case "moduleNames" -> Comparator.comparing(i -> String.join("、", i.moduleNames()), String.CASE_INSENSITIVE_ORDER);
-      case "projectName" -> Comparator.comparing(IssueSource::projectName, String.CASE_INSENSITIVE_ORDER);
-      case "authorName" -> Comparator.comparing(IssueSource::authorName, String.CASE_INSENSITIVE_ORDER);
-      case "state" -> Comparator.comparing(i -> i.isClosed() ? 1 : 0);
-      default -> Comparator.comparing(IssueSource::updatedAt, Comparator.nullsLast(LocalDateTime::compareTo));
+      case "iid" -> SortSupport.nullableComparable(IssueSource::iid);
+      case "title" -> SortSupport.nullableString(IssueSource::title);
+      case "moduleNames" -> SortSupport.nullableString(i -> String.join("、", i.moduleNames()));
+      case "projectName" -> SortSupport.nullableString(IssueSource::projectName);
+      case "authorName" -> SortSupport.nullableString(IssueSource::authorName);
+      case "state" -> SortSupport.nullableComparable(i -> i.isClosed() ? 1 : 0);
+      default -> SortSupport.nullableComparable(IssueSource::updatedAt);
     };
     c = c.thenComparing(IssueSource::iid);
-    return "ascending".equalsIgnoreCase(sortOrder) ? c : c.reversed();
+    return SortSupport.applyDirection(c, "ascending".equalsIgnoreCase(sortOrder));
   }
 
   private Long parseLong(String value) { try { return StringUtils.hasText(value) ? Long.parseLong(value.trim()) : null; } catch (NumberFormatException e) { return null; } }

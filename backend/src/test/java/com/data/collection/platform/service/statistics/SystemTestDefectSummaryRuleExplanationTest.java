@@ -16,12 +16,10 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 
 @ExtendWith(MockitoExtension.class)
 class SystemTestDefectSummaryRuleExplanationTest {
-  @Mock private JdbcTemplate jdbcTemplate;
   @Mock private GitlabMirrorSyncService gitlabMirrorSyncService;
   @Mock private RealtimeWorkspaceService realtimeWorkspaceService;
   @Mock private FactBuildService factBuildService;
@@ -35,7 +33,6 @@ class SystemTestDefectSummaryRuleExplanationTest {
         org.mockito.ArgumentMatchers.<RowMapper<Object>>any()))
         .thenReturn(List.of());
     SystemTestDefectSummaryBoardService service = new SystemTestDefectSummaryBoardService(
-        jdbcTemplate,
         new JsonUtils(new ObjectMapper()),
         gitlabMirrorSyncService,
         realtimeWorkspaceService,

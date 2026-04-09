@@ -12,23 +12,18 @@ import com.data.collection.platform.entity.statistics.StatisticRuleMetricDefinit
 import com.data.collection.platform.service.MergeRequestFactQueryService;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.Comparator;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.Function;
-import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataAccessException;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -77,7 +72,6 @@ public class CodeReviewIllegalRecordService {
       where deleted = false
       """;
 
-  private final JdbcTemplate jdbcTemplate;
   private final GitlabMirrorSyncService gitlabMirrorSyncService;
   private final RealtimeWorkspaceService realtimeWorkspaceService;
   private final FactBuildService factBuildService;
@@ -85,13 +79,11 @@ public class CodeReviewIllegalRecordService {
   private final String defaultGitlabBaseUrl;
 
   public CodeReviewIllegalRecordService(
-      JdbcTemplate jdbcTemplate,
       GitlabMirrorSyncService gitlabMirrorSyncService,
       RealtimeWorkspaceService realtimeWorkspaceService,
       FactBuildService factBuildService,
       MergeRequestFactQueryService mergeRequestFactQueryService,
       @Value("${gitlab-mirror.web-base-url:http://172.22.10.233}") String defaultGitlabBaseUrl) {
-    this.jdbcTemplate = jdbcTemplate;
     this.gitlabMirrorSyncService = gitlabMirrorSyncService;
     this.realtimeWorkspaceService = realtimeWorkspaceService;
     this.factBuildService = factBuildService;
@@ -395,7 +387,7 @@ public class CodeReviewIllegalRecordService {
     }
     List<String> result = new ArrayList<>();
     for (String value : labelNames.split(",")) {
-      String normalized = normalizeText(value);
+      String normalized = TextQuerySupport.trimToNull(value);
       if (normalized != null) {
         result.add(normalized);
       }
@@ -411,19 +403,19 @@ public class CodeReviewIllegalRecordService {
         source.mergeRequestId(),
         source.mergeRequestIid(),
         source.projectId(),
-        normalizeDisplay(source.mergeRequestContent()),
+        TextQuerySupport.normalizeDisplay(source.mergeRequestContent()),
         mergeRequestLink,
-        normalizeDisplay(source.owner()),
-        normalizeDisplay(source.projectName()),
-        normalizeDisplay(source.repositoryName()),
+        TextQuerySupport.normalizeDisplay(source.owner()),
+        TextQuerySupport.normalizeDisplay(source.projectName()),
+        TextQuerySupport.normalizeDisplay(source.repositoryName()),
         source.mergedAt(),
-        normalizeDisplay(source.mergedBy()),
-        normalizeDisplay(source.moduleName()),
-        normalizeDisplay(source.targetBranch()),
+        TextQuerySupport.normalizeDisplay(source.mergedBy()),
+        TextQuerySupport.normalizeDisplay(source.moduleName()),
+        TextQuerySupport.normalizeDisplay(source.targetBranch()),
         illegalTypes,
-        normalizeDisplay(source.reviewStatus()),
+        TextQuerySupport.normalizeDisplay(source.reviewStatus()),
         source.reviewDurationMinutes(),
-        normalizeDisplay(source.scanStatus()),
+        TextQuerySupport.normalizeDisplay(source.scanStatus()),
         source.scanBugCount(),
         source.commentRate(),
         source.defectCount(),
@@ -479,7 +471,7 @@ public class CodeReviewIllegalRecordService {
   }
 
   private CodeReviewIllegalRecordRowResponse toResponse(IllegalRecordView row) {
-    String link = normalizeText(row.mergeRequestLink());
+    String link = TextQuerySupport.trimToNull(row.mergeRequestLink());
     return new CodeReviewIllegalRecordRowResponse(
         row.requestType(),
         row.mergeRequestId(),
@@ -501,37 +493,27 @@ public class CodeReviewIllegalRecordService {
   }
 
   private boolean matchesEquals(String left, String right) {
-    String normalizedRight = normalizeText(right);
-    return normalizedRight == null || Objects.equals(normalizeText(left), normalizedRight);
+    return TextQuerySupport.equalsNormalized(left, right);
   }
 
   private boolean matchesRequestType(String requestType, String expected) {
-    String normalizedExpected = normalizeText(expected);
+    String normalizedExpected = TextQuerySupport.normalizeForMatch(expected);
     return normalizedExpected == null || Objects.equals(requestType, normalizedExpected);
   }
 
   private boolean matchesIllegalType(List<String> illegalTypes, String expected) {
-    String normalizedExpected = normalizeText(expected);
+    String normalizedExpected = TextQuerySupport.trimToNull(expected);
     return normalizedExpected == null || illegalTypes.contains(normalizedExpected);
   }
 
   private boolean matchesKeyword(IllegalRecordView row, String keyword) {
-    String normalizedKeyword = normalizeText(keyword);
-    if (normalizedKeyword == null) {
-      return true;
-    }
-    String lowerKeyword = normalizedKeyword.toLowerCase(Locale.ROOT);
-    return contains(row.mergeRequestContent(), lowerKeyword)
-        || contains(row.owner(), lowerKeyword)
-        || contains(row.projectName(), lowerKeyword)
-        || contains(row.repositoryName(), lowerKeyword)
-        || contains(row.moduleName(), lowerKeyword)
-        || contains(row.targetBranch(), lowerKeyword)
-        || contains(row.mergedBy(), lowerKeyword);
-  }
-
-  private boolean contains(String source, String keyword) {
-    return source != null && source.toLowerCase(Locale.ROOT).contains(keyword);
+    return TextQuerySupport.containsIgnoreCase(row.mergeRequestContent(), keyword)
+        || TextQuerySupport.containsIgnoreCase(row.owner(), keyword)
+        || TextQuerySupport.containsIgnoreCase(row.projectName(), keyword)
+        || TextQuerySupport.containsIgnoreCase(row.repositoryName(), keyword)
+        || TextQuerySupport.containsIgnoreCase(row.moduleName(), keyword)
+        || TextQuerySupport.containsIgnoreCase(row.targetBranch(), keyword)
+        || TextQuerySupport.containsIgnoreCase(row.mergedBy(), keyword);
   }
 
   private Map<String, String> buildFactFilters(
@@ -560,14 +542,15 @@ public class CodeReviewIllegalRecordService {
   }
 
   private void putIfPresent(Map<String, String> filters, String key, String value) {
-    String normalized = normalizeText(value);
+    String normalized = TextQuerySupport.trimToNull(value);
     if (normalized != null) {
       filters.put(key, normalized);
     }
   }
 
   private String normalizeSortField(String sortField) {
-    return switch (normalizeText(sortField) == null ? "mergedAt" : normalizeText(sortField)) {
+    String normalized = TextQuerySupport.trimToNull(sortField);
+    return switch (normalized == null ? "mergedAt" : normalized) {
       case "mergeRequestIid",
            "mergeRequestContent",
            "owner",
@@ -578,64 +561,42 @@ public class CodeReviewIllegalRecordService {
            "targetBranch",
            "commentRate",
            "defectCount",
-           "addedLines" -> normalizeText(sortField) == null ? "mergedAt" : normalizeText(sortField);
+           "addedLines" -> normalized == null ? "mergedAt" : normalized;
       default -> "mergedAt";
     };
   }
 
   private String normalizeSortOrder(String sortOrder) {
-    String normalized = normalizeText(sortOrder);
+    String normalized = TextQuerySupport.trimToNull(sortOrder);
     return "asc".equalsIgnoreCase(normalized) ? "asc" : "desc";
   }
 
   private Comparator<IllegalRecordView> buildComparator(String sortField, String sortOrder) {
     Comparator<IllegalRecordView> comparator = switch (sortField) {
-      case "mergeRequestIid" -> Comparator.comparing(IllegalRecordView::mergeRequestIid, Comparator.nullsLast(Integer::compareTo));
-      case "mergeRequestContent" -> Comparator.comparing(IllegalRecordView::mergeRequestContent, Comparator.nullsLast(String::compareToIgnoreCase));
-      case "owner" -> Comparator.comparing(IllegalRecordView::owner, Comparator.nullsLast(String::compareToIgnoreCase));
-      case "projectName" -> Comparator.comparing(IllegalRecordView::projectName, Comparator.nullsLast(String::compareToIgnoreCase));
-      case "mergedBy" -> Comparator.comparing(IllegalRecordView::mergedBy, Comparator.nullsLast(String::compareToIgnoreCase));
-      case "moduleName" -> Comparator.comparing(IllegalRecordView::moduleName, Comparator.nullsLast(String::compareToIgnoreCase));
-      case "targetBranch" -> Comparator.comparing(IllegalRecordView::targetBranch, Comparator.nullsLast(String::compareToIgnoreCase));
-      case "commentRate" -> Comparator.comparing(IllegalRecordView::commentRate, Comparator.nullsLast(Double::compareTo));
-      case "defectCount" -> Comparator.comparing(IllegalRecordView::defectCount, Comparator.nullsLast(Integer::compareTo));
-      case "addedLines" -> Comparator.comparing(IllegalRecordView::addedLines, Comparator.nullsLast(Integer::compareTo));
-      default -> Comparator.comparing(IllegalRecordView::mergedAt, Comparator.nullsLast(LocalDateTime::compareTo));
+      case "mergeRequestIid" -> SortSupport.nullableComparable(IllegalRecordView::mergeRequestIid);
+      case "mergeRequestContent" -> SortSupport.nullableString(IllegalRecordView::mergeRequestContent);
+      case "owner" -> SortSupport.nullableString(IllegalRecordView::owner);
+      case "projectName" -> SortSupport.nullableString(IllegalRecordView::projectName);
+      case "mergedBy" -> SortSupport.nullableString(IllegalRecordView::mergedBy);
+      case "moduleName" -> SortSupport.nullableString(IllegalRecordView::moduleName);
+      case "targetBranch" -> SortSupport.nullableString(IllegalRecordView::targetBranch);
+      case "commentRate" -> SortSupport.nullableComparable(IllegalRecordView::commentRate);
+      case "defectCount" -> SortSupport.nullableComparable(IllegalRecordView::defectCount);
+      case "addedLines" -> SortSupport.nullableComparable(IllegalRecordView::addedLines);
+      default -> SortSupport.nullableComparable(IllegalRecordView::mergedAt);
     };
-    Comparator<IllegalRecordView> tieBreaker = Comparator
-        .comparing(IllegalRecordView::mergedAt, Comparator.nullsLast(LocalDateTime::compareTo))
-        .thenComparing(IllegalRecordView::mergeRequestIid, Comparator.nullsLast(Integer::compareTo));
+    Comparator<IllegalRecordView> tieBreaker = SortSupport.nullableComparable(IllegalRecordView::mergedAt)
+        .thenComparing(SortSupport.nullableComparable(IllegalRecordView::mergeRequestIid));
     Comparator<IllegalRecordView> combined = comparator.thenComparing(tieBreaker);
-    return "asc".equalsIgnoreCase(sortOrder) ? combined : combined.reversed();
+    return SortSupport.applyDirection(combined, "asc".equalsIgnoreCase(sortOrder));
   }
 
   private List<OptionItemResponse> toOptions(List<IllegalRecordView> rows, Function<IllegalRecordView, String> extractor) {
-    return toOptions(rows.stream().map(extractor).toList());
+    return OptionItemResponseFactory.from(rows, extractor, TextQuerySupport::trimToNull);
   }
 
-  private List<OptionItemResponse> toOptions(Collection<String> values) {
-    Set<String> normalized = values.stream()
-        .map(this::normalizeText)
-        .filter(Objects::nonNull)
-        .collect(Collectors.toCollection(LinkedHashSet::new));
-    List<OptionItemResponse> options = new ArrayList<>();
-    for (String value : normalized) {
-      options.add(new OptionItemResponse(value, value));
-    }
-    options.sort(Comparator.comparing(OptionItemResponse::label, String::compareToIgnoreCase));
-    return options;
-  }
-
-  private String normalizeDisplay(String value) {
-    String normalized = normalizeText(value);
-    return normalized == null ? "" : normalized;
-  }
-
-  private String normalizeText(String value) {
-    if (!StringUtils.hasText(value)) {
-      return null;
-    }
-    return value.trim();
+  private List<OptionItemResponse> toOptions(List<String> values) {
+    return OptionItemResponseFactory.from(values, TextQuerySupport::trimToNull);
   }
 
   private record IllegalRecordSource(

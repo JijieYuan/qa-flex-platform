@@ -1382,3 +1382,42 @@
 - 这还是第一版轻量落地，不是完整平台级查询框架
 - 目标是先减少重复代码、统一口径和字段定义
 - 后续确认复用价值后，再继续向统一规则上下文和 DIM 读取底座扩展
+### 19.5 本轮新增的轻量复用辅助层
+
+为了继续减少两张表里残留的细碎重复逻辑，本轮又补了两类轻量复用辅助层：
+
+- `TextQuerySupport`
+  - 统一处理：
+    - `trimToNull`
+    - `normalizeForMatch`
+    - `normalizeDisplay`
+    - `containsIgnoreCase`
+    - `equalsNormalized`
+  - 当前已接入 `code-review-illegal-records`
+  - 用来替换记录页零散的文本裁剪、忽略大小写匹配和等值归一化实现
+- `SortSupport`
+  - 统一处理：
+    - 可空字符串排序
+    - 可空数值排序
+    - 可空时间排序
+    - 升序 / 降序方向切换
+  - 当前已接入：
+    - `code-review-illegal-records`
+    - `system-test-defect-summary` 详情排序
+
+这一层不追求“大而全”，只解决已经在两张表里真实重复出现、并且后续大概率还会继续出现的通用问题。
+
+### 19.6 本轮自查结果
+
+本轮按“先改公共底座，再做编译和定向测试验证”的方式收口，当前自查结果：
+
+- 前端构建通过：`npm run build`
+- 后端编译通过：`tools\\maven\\apache-maven-3.9.9\\bin\\mvn.cmd -q -DskipTests compile`
+- 定向测试通过：
+  - `StatisticBoardControllerTest`
+  - `CodeReviewControllerTest`
+  - `SystemTestDefectSummaryRuleExplanationTest`
+
+补充说明：
+
+- 测试日志中仍会出现测试库缺少 `ods_gitlab_*` 表的告警，这是现有测试环境下的已知回退路径，不影响本轮这 3 个定向测试的最终通过结果。
