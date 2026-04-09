@@ -9,7 +9,6 @@ import com.data.collection.platform.entity.statistics.StatisticBoardRuleExplanat
 import com.data.collection.platform.entity.statistics.StatisticRuleFlowStep;
 import com.data.collection.platform.entity.statistics.StatisticRuleFlowStepSample;
 import com.data.collection.platform.entity.statistics.StatisticRuleMetricDefinition;
-import com.data.collection.platform.service.FactBuildService;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDate;
@@ -36,7 +35,7 @@ import org.springframework.util.StringUtils;
 @Slf4j
 public class CodeReviewIllegalRecordService {
   public static final String WORKSPACE_KEY = "code-review-illegal-records";
-  private static final String RULE_VERSION = "code-review-illegal-records@2026-04-08-v3";
+  private static final String RULE_VERSION = "code-review-illegal-records@2026-04-09-v4";
 
   private static final List<String> REALTIME_REFRESH_TABLES = List.of(
       "merge_requests",
@@ -170,53 +169,109 @@ public class CodeReviewIllegalRecordService {
   public StatisticBoardRuleExplanationResponse getRuleExplanation() {
     List<IllegalRecordSource> sources = loadSources();
     List<IllegalRecordView> views = sources.stream().map(this::toView).toList();
+    List<IllegalRecordView> illegalViews = views.stream()
+        .filter(row -> !row.illegalTypes().isEmpty())
+        .toList();
     long total = views.size();
-    long missingModule = views.stream().filter(row -> row.illegalTypes().contains("缺少模块标签")).count();
-    long missingOwner = views.stream().filter(row -> row.illegalTypes().contains("缺少标注责任人")).count();
-    long missingMetrics = views.stream().filter(row -> row.illegalTypes().stream().anyMatch(type -> type.contains("缺少代码注释比例") || type.contains("缺少缺陷数量") || type.contains("缺少新增代码行数"))).count();
+    long illegalTotal = illegalViews.size();
+    long missingModule = illegalViews.stream().filter(row -> row.illegalTypes().contains("缺少模块标签")).count();
+    long missingOwner = illegalViews.stream().filter(row -> row.illegalTypes().contains("缺少标注责任人")).count();
+    long missingMetrics = illegalViews.stream()
+        .filter(row -> row.illegalTypes().stream().anyMatch(type ->
+            type.contains("缺少代码注释比例")
+                || type.contains("缺少缺陷数量")
+                || type.contains("缺少新增代码行数")))
+        .count();
 
     return new StatisticBoardRuleExplanationResponse(
         WORKSPACE_KEY,
         true,
         "代码走查非法记录规则说明",
         RULE_VERSION,
-        "当前统计范围是已归一化到事实表中的 Merge Request 相关数据；页面查询条件在此基础上继续筛选。",
-        "非法记录明细页的核心目的是说明“哪些字段缺失、为什么被判定为非法”，当前判定基于 merge_request_fact 中的统一字段。",
+        "当前统计范围是已归一化到事实表中的 Merge Request 相关数据；页面查询条件会在这个范围上继续筛选。",
+        "这里先说明总共有多少条非法记录，再说明它们分别是因为什么被判定为非法。",
         List.of(
             new StatisticRuleFlowStep(
                 "source-load",
                 "加载合并请求事实",
-                "从 merge_request_fact 中读取已经归一化的合并请求、责任人、模块和指标数据。",
+                "从 merge_request_fact 读取已经归一化的合并请求、责任人、模块和指标数据。",
                 total,
                 total,
                 views.stream().limit(3).map(this::toIllegalRecordSample).toList()),
             new StatisticRuleFlowStep(
+                "illegal-total",
+                "汇总非法记录",
+                "只要命中任意一条非法判定规则，这条合并请求就会出现在非法记录列表里。",
+                total,
+                illegalTotal,
+                illegalViews.stream().limit(3).map(this::toIllegalRecordSample).toList()),
+            new StatisticRuleFlowStep(
                 "missing-module-check",
                 "检查模块标签",
-                "若标签数组为空，则判定为“缺少模块标签”。",
-                total,
+                "如果模块为空，就会被判定为“缺少模块标签”。",
+                illegalTotal,
                 missingModule,
-                views.stream().filter(row -> row.illegalTypes().contains("缺少模块标签")).limit(3).map(this::toIllegalRecordSample).toList()),
+                illegalViews.stream()
+                    .filter(row -> row.illegalTypes().contains("缺少模块标签"))
+                    .limit(3)
+                    .map(this::toIllegalRecordSample)
+                    .toList()),
             new StatisticRuleFlowStep(
                 "missing-owner-check",
                 "检查标注责任人",
-                "若责任人为空，则判定为“缺少标注责任人”。",
-                total,
+                "如果责任人为空，就会被判定为“缺少标注责任人”。",
+                illegalTotal,
                 missingOwner,
-                views.stream().filter(row -> row.illegalTypes().contains("缺少标注责任人")).limit(3).map(this::toIllegalRecordSample).toList()),
+                illegalViews.stream()
+                    .filter(row -> row.illegalTypes().contains("缺少标注责任人"))
+                    .limit(3)
+                    .map(this::toIllegalRecordSample)
+                    .toList()),
             new StatisticRuleFlowStep(
                 "missing-metric-check",
                 "检查外部指标",
-                "若代码注释比例、缺陷数量或新增代码行数缺失，则判定为对应非法类型。",
-                total,
+                "如果代码注释比例、缺陷数量或新增代码行数缺失，就会被判定为对应的非法类型。",
+                illegalTotal,
                 missingMetrics,
-                views.stream().filter(row -> row.illegalTypes().stream().anyMatch(type -> type.contains("缺少代码注释比例") || type.contains("缺少缺陷数量") || type.contains("缺少新增代码行数"))).limit(3).map(this::toIllegalRecordSample).toList())),
+                illegalViews.stream()
+                    .filter(row -> row.illegalTypes().stream().anyMatch(type ->
+                        type.contains("缺少代码注释比例")
+                            || type.contains("缺少缺陷数量")
+                            || type.contains("缺少新增代码行数")))
+                    .limit(3)
+                    .map(this::toIllegalRecordSample)
+                    .toList())),
         List.of(
-            new StatisticRuleMetricDefinition("illegalTypes", "非法类型", "系统根据规则检查结果，标记这条记录需要补充哪些信息。", "非法类型 = 缺少模块标签 / 缺少标注责任人 / 缺少外部指标", "用于告诉用户这条记录为什么需要继续处理。"),
-            new StatisticRuleMetricDefinition("moduleName", "模块名称", "表示这条合并请求所属的功能模块。", "模块名称来自合并请求关联的模块标识", "如果缺少模块信息，这条记录会被判定为需要关注。"),
-            new StatisticRuleMetricDefinition("commentRate", "代码注释比例", "表示本次改动中代码注释的覆盖情况。", "代码注释比例 = 导入表中的外部工具结果 或 MR 机器人解析结果", "如果缺少该指标，这条记录会被判定为需要关注。"),
-            new StatisticRuleMetricDefinition("defectCount", "缺陷数量", "表示本次改动关联的缺陷数量。", "缺陷数量 = 导入表中的 MR 评论 / 机器人结果 / Sonar 汇总结果", "如果缺少该指标，这条记录会被判定为需要关注。"),
-            new StatisticRuleMetricDefinition("addedLines", "新增代码行数", "表示本次合并请求新增的代码规模。", "新增代码行数 = 本次改动新增代码行数", "用于辅助判断记录是否完整。")),
+            new StatisticRuleMetricDefinition(
+                "illegalTypes",
+                "非法类型",
+                "系统会根据规则检查结果，标记这条记录需要补充哪些信息。",
+                "非法类型 = 缺少模块标签 / 缺少标注责任人 / 缺少外部指标",
+                "一条记录可以同时命中多种非法类型。"),
+            new StatisticRuleMetricDefinition(
+                "moduleName",
+                "模块名称",
+                "表示这条合并请求所属的功能模块。",
+                "模块名称来自合并请求关联的模块标识。",
+                "如果缺少模块信息，这条记录会被判定为需要关注。"),
+            new StatisticRuleMetricDefinition(
+                "commentRate",
+                "代码注释比例",
+                "表示本次改动中代码注释的覆盖情况。",
+                "代码注释比例 = 外部工具结果 或 MR 机器人解析结果",
+                "如果缺少该指标，这条记录会被判定为需要关注。"),
+            new StatisticRuleMetricDefinition(
+                "defectCount",
+                "缺陷数量",
+                "表示本次改动关联的缺陷数量。",
+                "缺陷数量 = MR 评论 / 机器人结果 / Sonar 汇总结果",
+                "如果缺少该指标，这条记录会被判定为需要关注。"),
+            new StatisticRuleMetricDefinition(
+                "addedLines",
+                "新增代码行数",
+                "表示本次合并请求新增的代码规模。",
+                "新增代码行数 = 本次改动新增代码行数",
+                "如果缺少该指标，这条记录也会被判定为需要关注。")),
         null);
   }
 
@@ -553,4 +608,3 @@ public class CodeReviewIllegalRecordService {
       Integer addedLines) {
   }
 }
-

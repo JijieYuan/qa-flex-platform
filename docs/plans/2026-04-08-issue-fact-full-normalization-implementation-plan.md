@@ -257,3 +257,39 @@ mvn "-Dtest=IssueFactNormalizationRulesTest,FactBuildControllerTest,StatisticBoa
 1. 继续补真实项目标签别名
 2. 导入真实评论模板数据
 3. 用真实阶段日历验证 `is_legacy`
+## 2026-04-09 演示数据执行结果
+
+为便于验收 `issue_fact` 当前规则，本地已经补入正式种子脚本：
+
+- `scripts/seed-local-statistic-board-demo-data.sql`
+
+这批样例直接验证了当前 `issue_fact` 归一化链路能够命中：
+
+- 严重程度：`LEVEL1 / LEVEL2 / LEVEL3 / SUGGESTION`
+- 优先级：`P1 / P2 / P3`
+- 排除规则：`建议`、`申请否决 + Closed`
+- 修复状态：`已修复/完成`、`待合并`
+- 特殊一级：回退、挂机
+- 非法规则：缺失严重程度、未按模板回复
+- 历史遗留：基于 `testing_phase_calendar`
+
+当前本地样例编号：
+
+- 系统测试 issue：`801 ~ 809`
+- 代码走查 MR：`101 ~ 107`
+
+本轮真实重建结果：
+
+- `issue_fact` 全量重建后总数：`391`
+- `merge_request_fact` 全量重建后总数：`9`
+
+其中，新增 issue 样例在 `issue_fact` 中的典型命中结果为：
+
+- `801`：`LEVEL1 + P1 + 已修复`
+- `802`：`LEVEL1 + P2 + 挂机`
+- `803`：`LEVEL2 + P3 + 待合并 + is_legacy`
+- `805`：`is_excluded = true`
+- `806`：`申请否决+Closed -> is_excluded = true`
+- `807`：`is_illegal = true, illegal_reason = 缺失严重程度`
+- `808`：`is_illegal = true, illegal_reason = 未按照模板回复`
+- `809`：`is_legacy = true`

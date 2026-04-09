@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { computed, ref } from 'vue';
 import { ElMessage } from 'element-plus';
 import { InfoFilled } from '@element-plus/icons-vue';
@@ -212,7 +212,11 @@ const lastSyncedText = computed(() => formatDateTime(syncStatus.value?.lastSynce
 const ruleExplanationSteps = computed(() => ruleExplanation.value?.flowSteps || []);
 const ruleExplanationMetrics = computed(() => ruleExplanation.value?.metricDefinitions || []);
 const ruleFirstInputCount = computed(() => ruleExplanationSteps.value[0]?.inputCount || 0);
+const illegalTotalStep = computed(() => ruleExplanationSteps.value.find((step) => step.key === 'illegal-total') || null);
 const ruleFinalOutputCount = computed(() => {
+  if (illegalTotalStep.value) {
+    return illegalTotalStep.value.outputCount;
+  }
   const steps = ruleExplanationSteps.value;
   return steps.length ? steps[steps.length - 1].outputCount : 0;
 });
@@ -382,12 +386,11 @@ function ruleStepRetainedRate(step: { inputCount: number; outputCount: number })
   return `${((step.outputCount / step.inputCount) * 100).toFixed(1)}%`;
 }
 
-function ruleStepSummary(step: { inputCount: number; outputCount: number }, index: number) {
-  const changed = ruleStepRemovedCount(step);
-  if (changed <= 0) {
-    return `第 ${index + 1} 步检查后，数据没有变化，仍命中 ${step.outputCount} 条。`;
+function ruleStepSummary(step: { key?: string; inputCount: number; outputCount: number }, index: number) {
+  if (step.key === 'illegal-total') {
+    return `第 ${index + 1} 步检查后，识别出 ${step.outputCount} 条需要关注的记录，占原始数据的 ${ruleStepRetainedRate(step)}。`;
   }
-  return `第 ${index + 1} 步检查后，识别出 ${step.outputCount} 条需要关注的记录，较上一步变化 ${changed} 条，占当前输入数据的 ${ruleStepRetainedRate(step)}。`;
+  return `在已经命中的非法记录里，有 ${step.outputCount} 条命中第 ${index} 项检查规则，占全部非法记录的 ${ruleStepRetainedRate(step)}。`;
 }
 
 function metricFormulaSummary(metric: { label: string; definition: string; formula: string; note?: string | null }) {
@@ -620,9 +623,9 @@ function metricFormulaSummary(metric: { label: string; definition: string; formu
                 <div class="record-rule-card-description">{{ step.description }}</div>
                 <div class="record-rule-card-summary">{{ ruleStepSummary(step, index + 1) }}</div>
                 <div class="record-rule-card-stats">
-                  <span class="record-rule-card-stat">识别 {{ ruleStepRemovedCount(step) }} 条</span>
-                  <span class="record-rule-card-stat">累计命中 {{ step.outputCount }} 条</span>
-                  <span class="record-rule-card-stat">占比 {{ ruleStepRetainedRate(step) }}</span>
+                  <span class="record-rule-card-stat">{{ step.key === 'illegal-total' ? '识别' : '命中该类' }} {{ step.outputCount }} 条</span>
+                  <span class="record-rule-card-stat">{{ step.key === 'illegal-total' ? '占原始' : '占全部非法' }} {{ ruleStepRetainedRate(step) }}</span>
+                  <span class="record-rule-card-stat">检查基数 {{ step.inputCount }} 条</span>
                 </div>
               </article>
             </div>

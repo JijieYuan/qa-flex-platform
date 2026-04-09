@@ -1120,3 +1120,67 @@
 
 - 后续 `rebuild` 时数据库往返次数明显减少，更适合持续增量构建
 - 规则扩展时不再继续向一个超大类堆逻辑，后续补充真实项目别名时更安全
+## 2026-04-09 本地演示数据
+
+- 已新增正式种子脚本：`scripts/seed-local-statistic-board-demo-data.sql`
+- 本轮没有引入任何临时表，数据全部写入现有正式表与 ODS 镜像表：
+  - `ods_gitlab_issues`
+  - `ods_gitlab_notes`
+  - `ods_gitlab_labels`
+  - `ods_gitlab_label_links`
+  - `ods_gitlab_merge_requests`
+  - `ods_gitlab_merge_request_metrics`
+  - `ods_gitlab_merge_request_reviewers`
+  - `ods_gitlab_merge_request_assignees`
+  - `collect_form_records`
+  - `code_review_external_metrics`
+  - `testing_phase_calendar`
+
+### 系统测试缺陷汇总样例
+
+- 新增 issue 样例 `iid = 801 ~ 809`
+- 覆盖类型：
+  - 合法一级回退：`801`
+  - 合法一级挂机：`802`
+  - 合法二级待合并：`803`
+  - 合法三级关闭：`804`
+  - 排除样例-建议：`805`
+  - 排除样例-申请否决+Closed：`806`
+  - 非法样例-缺失严重程度：`807`
+  - 非法样例-已修复完成但未按模板回复：`808`
+  - 合法样例-历史遗留+申请延期：`809`
+- 已同步写入测试阶段日历：
+  - `CC2026R1第一轮系统测试`
+  - `CC2026R1回归测试`
+
+### 代码走查非法记录样例
+
+- 合法 MR 样例：`101 ~ 103`
+- 非法 MR 样例：`104 ~ 107`
+- 覆盖非法类型：
+  - `104`：缺失模块标签
+  - `105`：缺失标注责任人
+  - `106`：缺失代码注释比例、缺失缺陷数量
+  - `107`：缺失新增代码行数
+
+### 已完成验证
+
+- 已执行脚本到本地 PostgreSQL 容器 `qa-flex-postgres`
+- 已全量重建事实表：
+  - `POST /api/facts/rebuild?scope=issue&full=true` -> `391`
+  - `POST /api/facts/rebuild?scope=merge-request&full=true` -> `9`
+- 已验证 `issue_fact` 新样例命中：
+  - `801 ~ 809` 均已生成
+  - `805/806` 被正确标记为排除
+  - `807/808` 被正确标记为非法
+  - `803/809` 被正确标记为 `is_legacy = true`
+- 已验证代码走查非法记录接口命中：
+  - 新增非法 MR `104 ~ 107` 可通过 `/api/code-review/illegal-records` 查到
+
+### 当前注意点
+
+- `system-test-defect-summary` 当前只排除 `is_excluded = true`，并不会再额外排除 `is_illegal = true`
+- 因此样例 `807/808` 会继续参与系统测试缺陷汇总的项目统计；这是当前页面既有行为，不是本轮种子脚本问题
+- `code-review-illegal-records` 规则说明已修正为先展示“非法总记录数”，再展示各类非法原因命中数；当前本地总非法 MR 为 `6`，包含老样例 `MR 1/2`
+
+- 2026-04-09 补充：code-review-illegal-records 前端规则说明已修正为优先展示 illegal-total，因此‘先看结论 / 最终命中’现在与后端返回的非法总数一致；当前本地应显示为 6，而不是最后一类规则命中的 4。

@@ -934,3 +934,39 @@
 - 构建时强调增量与批处理
 - 规则按领域拆分，但不引入重型规则引擎
 - 查询层只消费事实字段，不重复做复杂业务判定
+## 2026-04-09 本地样例落地补充
+
+为了让现有两张已实现页面可以直接验收，本方案已补一套可重复执行的本地正式种子数据，脚本为：
+
+- `scripts/seed-local-statistic-board-demo-data.sql`
+
+设计原则：
+
+- 不新增任何临时表
+- 只写入当前正式 ODS / 导入 / 配置表
+- 写完后通过 `FactBuildService` 重建 `issue_fact` 与 `merge_request_fact`
+
+本轮落地范围：
+
+- 系统测试缺陷汇总：
+  - 新增 `801 ~ 809` 号 issue 样例
+  - 同时覆盖合法、排除、非法、历史遗留、延期等场景
+- 代码走查非法记录：
+  - 保留 `101 ~ 103` 合法 MR
+  - 新增 `104 ~ 107` 非法 MR
+  - 覆盖缺失模块、缺失责任人、缺失外部指标、缺失新增代码行数
+
+验证路径：
+
+1. 执行 `seed-local-statistic-board-demo-data.sql`
+2. 调用：
+   - `POST /api/facts/rebuild?scope=issue&full=true`
+   - `POST /api/facts/rebuild?scope=merge-request&full=true`
+3. 验证：
+   - `GET /api/statistic-boards/system-test-defect-summary`
+   - `GET /api/code-review/illegal-records`
+
+已知边界：
+
+- 当前 `system-test-defect-summary` 仍然只过滤 `is_excluded`，不额外过滤 `is_illegal`
+- 因此系统测试样例里的非法 issue 会进入汇总统计，这属于当前页面规则边界，不是种子脚本异常
