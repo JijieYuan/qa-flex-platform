@@ -1,5 +1,5 @@
 import { computed, ref, type ComputedRef } from 'vue';
-import type { StatisticColumnGroup } from '../api';
+import { flattenStatisticColumnLeavesFromGroup, type StatisticColumnGroup } from '../api';
 
 export function useStatisticViewSettings(
   columnGroups: ComputedRef<StatisticColumnGroup[]>,
@@ -9,7 +9,9 @@ export function useStatisticViewSettings(
   const draftVisibleColumnKeys = ref<string[]>([]);
   const expandedViewSettingGroups = ref<string[]>([]);
 
-  const allColumnKeys = computed(() => columnGroups.value.flatMap((group) => group.columns.map((column) => column.key)));
+  const allColumnKeys = computed(() =>
+    columnGroups.value.flatMap((group) => flattenStatisticColumnLeavesFromGroup(group).map((column) => column.key)),
+  );
   const currentVisibleColumnCount = computed(() => visibleColumnKeys.value.length);
 
   const allColumnsSelected = computed(
@@ -23,7 +25,8 @@ export function useStatisticViewSettings(
     Object.fromEntries(
       columnGroups.value.map((group) => [
         group.key,
-        group.columns.length > 0 && group.columns.every((column) => draftVisibleColumnKeys.value.includes(column.key)),
+        flattenStatisticColumnLeavesFromGroup(group).length > 0
+          && flattenStatisticColumnLeavesFromGroup(group).every((column) => draftVisibleColumnKeys.value.includes(column.key)),
       ]),
     ),
   );
@@ -31,8 +34,9 @@ export function useStatisticViewSettings(
   const groupIndeterminateStates = computed<Record<string, boolean>>(() =>
     Object.fromEntries(
       columnGroups.value.map((group) => {
-        const selectedCount = group.columns.filter((column) => draftVisibleColumnKeys.value.includes(column.key)).length;
-        return [group.key, selectedCount > 0 && selectedCount < group.columns.length];
+        const leafColumns = flattenStatisticColumnLeavesFromGroup(group);
+        const selectedCount = leafColumns.filter((column) => draftVisibleColumnKeys.value.includes(column.key)).length;
+        return [group.key, selectedCount > 0 && selectedCount < leafColumns.length];
       }),
     ),
   );
@@ -56,7 +60,7 @@ export function useStatisticViewSettings(
   }
 
   function toggleGroupColumns(group: StatisticColumnGroup, checked: boolean | string | number) {
-    const groupKeys = new Set(group.columns.map((column) => column.key));
+    const groupKeys = new Set(flattenStatisticColumnLeavesFromGroup(group).map((column) => column.key));
     if (checked) {
       draftVisibleColumnKeys.value = [...new Set([...draftVisibleColumnKeys.value, ...groupKeys])];
       return;

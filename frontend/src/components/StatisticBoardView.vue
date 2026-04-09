@@ -7,6 +7,8 @@ import BaseStatisticTable from './base/BaseStatisticTable.vue';
 import SyncMetaBadge from './realtime/SyncMetaBadge.vue';
 import {
   api,
+  flattenStatisticColumnLeaves,
+  flattenStatisticColumnLeavesFromGroup,
   type StatisticBoardRuleExplanationResponse,
   type RealtimeWorkspaceStatusResponse,
   type StatisticBoardResponse,
@@ -196,6 +198,20 @@ const activeFilterFields = computed(() => board.value?.definition.filters ?? [])
 
 const visibleColumnKeySet = computed(() => new Set(boardViewPrefs.value.visibleColumnKeys));
 
+function applyOrderedColumnsToChildren(children: StatisticColumnGroup[], orderedLeafColumns: StatisticColumnLeaf[]): StatisticColumnGroup[] {
+  return children
+    .map((child) => {
+      const childLeafKeys = new Set(flattenStatisticColumnLeavesFromGroup(child).map((column) => column.key));
+      const childColumns = orderedLeafColumns.filter((column) => childLeafKeys.has(column.key));
+      return {
+        ...child,
+        children: applyOrderedColumnsToChildren(child.children ?? [], childColumns),
+        columns: (child.columns ?? []).filter((leaf) => childColumns.some((column) => column.key === leaf.key)),
+      };
+    })
+    .filter((child) => flattenStatisticColumnLeavesFromGroup(child).length > 0);
+}
+
 const orderedColumnGroups = computed(() => {
   if (!board.value) {
     return [];
@@ -205,22 +221,25 @@ const orderedColumnGroups = computed(() => {
     .map((groupKey) => groupMap.get(groupKey))
     .filter((group): group is StatisticColumnGroup => Boolean(group))
     .map((group) => {
-      const columnOrder = boardViewPrefs.value.columnOrderByGroup[group.key] ?? group.columns.map((column) => column.key);
-      const columnMap = new Map(group.columns.map((column) => [column.key, column]));
+      const leafColumns = flattenStatisticColumnLeavesFromGroup(group);
+      const columnOrder = boardViewPrefs.value.columnOrderByGroup[group.key] ?? leafColumns.map((column) => column.key);
+      const columnMap = new Map(leafColumns.map((column) => [column.key, column]));
+      const orderedLeafColumns = columnOrder
+        .map((columnKey) => columnMap.get(columnKey))
+        .filter((column): column is StatisticColumnLeaf => Boolean(column))
+        .filter((column) => visibleColumnKeySet.value.has(column.key));
       return {
         ...group,
-        columns: columnOrder
-          .map((columnKey) => columnMap.get(columnKey))
-          .filter((column): column is StatisticColumnLeaf => Boolean(column))
-          .filter((column) => visibleColumnKeySet.value.has(column.key)),
+        children: applyOrderedColumnsToChildren(group.children ?? [], orderedLeafColumns),
+        columns: orderedLeafColumns,
       };
     })
-    .filter((group) => group.columns.length > 0);
+    .filter((group) => flattenStatisticColumnLeavesFromGroup(group).length > 0);
 });
 
 const sortedRows = computed(() => {
   const rows = board.value?.rows ?? [];
-  const columns = board.value?.definition.columnGroups.flatMap((group) => group.columns) ?? [];
+  const columns = board.value?.definition.columnGroups ? flattenStatisticColumnLeaves(board.value.definition.columnGroups) : [];
   return sortRowsFromSource(rows, columns, boardViewPrefs.value);
 });
 const totalTableRows = computed(() => sortedRows.value.length);
@@ -241,7 +260,7 @@ const currentSortColumn = computed(() => {
   }
   return (
     board.value.definition.columnGroups
-      .flatMap((group) => group.columns)
+      .flatMap((group) => flattenStatisticColumnLeavesFromGroup(group))
       .find((column) => column.key === boardViewPrefs.value.sortColumnKey) ?? null
   );
 });
@@ -504,7 +523,7 @@ function restoreDefaultView() {
     visibleColumnKeys: defaultVisibleColumnKeys(board.value.definition),
     groupOrder: board.value.definition.columnGroups.map((group) => group.key),
     columnOrderByGroup: Object.fromEntries(
-      board.value.definition.columnGroups.map((group) => [group.key, group.columns.map((column) => column.key)]),
+      board.value.definition.columnGroups.map((group) => [group.key, flattenStatisticColumnLeavesFromGroup(group).map((column) => column.key)]),
     ),
     sortColumnKey: '',
     sortDirection: 'default',

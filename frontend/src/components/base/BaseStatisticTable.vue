@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { Component } from 'vue';
 import { ArrowRight } from '@element-plus/icons-vue';
+import StatisticTableColumnGroup from './StatisticTableColumnGroup.vue';
 import type {
   StatisticBoardResponse,
   StatisticCellData,
@@ -8,6 +9,7 @@ import type {
   StatisticColumnLeaf,
   StatisticRowData,
 } from '../../api';
+import { flattenStatisticColumnLeavesFromGroup } from '../../api';
 import type { StatisticBoardUiHooks } from '../statistic-board-ui';
 import { ROW_LABEL_SORT_KEY, type SortDirection } from '../statistic-board-sorting';
 
@@ -73,7 +75,7 @@ const props = withDefaults(
 
 <template>
   <div v-if="currentSortSummary" class="stat-board-sortbar">
-    <span class="stat-board-sortbar-label">当前排序</span>
+    <span class="stat-board-sortbar-label">褰撳墠鎺掑簭</span>
     <el-tag size="small" type="primary" effect="plain">{{ currentSortSummary }}</el-tag>
   </div>
 
@@ -114,7 +116,7 @@ const props = withDefaults(
                   <component :is="sortIconForDirection(sortDirectionForColumn(ROW_LABEL_SORT_KEY))" />
                 </el-icon>
                 <span class="sort-trigger-state">
-                  {{ sortDirectionForColumn(ROW_LABEL_SORT_KEY) === 'asc' ? '升序' : sortDirectionForColumn(ROW_LABEL_SORT_KEY) === 'desc' ? '降序' : '排序' }}
+                  {{ sortDirectionForColumn(ROW_LABEL_SORT_KEY) === 'asc' ? '鍗囧簭' : sortDirectionForColumn(ROW_LABEL_SORT_KEY) === 'desc' ? '闄嶅簭' : '鎺掑簭' }}
                 </span>
               </button>
             </span>
@@ -152,69 +154,24 @@ const props = withDefaults(
           </div>
         </template>
 
-        <el-table-column
-          v-for="column in group.columns"
-          :key="column.key"
-          align="center"
-          :min-width="columnMinWidth(column)"
-          :resizable="columnResizable(column)"
-        >
-          <template #header>
-            <div
-              class="stat-column-header"
-              :class="{
-                dragging: isColumnDragging(group.key, column.key),
-                sorting: sortDirectionForColumn(column.key) !== 'default',
-              }"
-              draggable="true"
-              @dragstart="onColumnDragStart(group.key, column.key)"
-              @dragover.prevent
-              @drop.prevent="onColumnDrop(group.key, column.key)"
-              @dragend="clearDragState"
-            >
-              <span class="stat-header-zone stat-header-zone-left" aria-hidden="true">
-                <span class="drag-handle subtle">
-                  <span></span>
-                  <span></span>
-                  <span></span>
-                  <span></span>
-                  <span></span>
-                  <span></span>
-                </span>
-              </span>
-              <span class="stat-column-header-label" :title="column.label">{{ column.label }}</span>
-              <span class="stat-header-zone stat-header-zone-right">
-                <button
-                  class="sort-trigger"
-                  :class="`is-${sortDirectionForColumn(column.key)}`"
-                  type="button"
-                  :title="sortStateLabel(sortDirectionForColumn(column.key))"
-                  @click.stop="toggleColumnSort(column.key)"
-                >
-                  <el-icon class="sort-trigger-icon">
-                    <component :is="sortIconForDirection(sortDirectionForColumn(column.key))" />
-                  </el-icon>
-                  <span class="sort-trigger-state">
-                    {{ sortDirectionForColumn(column.key) === 'asc' ? '升序' : sortDirectionForColumn(column.key) === 'desc' ? '降序' : '排序' }}
-                  </span>
-                </button>
-              </span>
-            </div>
-          </template>
-
-          <template #default="{ row }">
-            <button
-              v-if="cellForColumn(row, column.key)?.drilldown"
-              class="stat-cell drilldown"
-              @click="openDetail(row, cellForColumn(row, column.key)!)"
-            >
-              {{ cellForColumn(row, column.key)?.displayValue || '-' }}
-            </button>
-            <span v-else class="stat-cell">
-              {{ cellForColumn(row, column.key)?.displayValue || '-' }}
-            </span>
-          </template>
-        </el-table-column>
+        <StatisticTableColumnGroup
+          v-for="child in group.children ?? []"
+          :key="child.key"
+          :group="child"
+          :root-group-key="group.key"
+          :sort-direction-for-column="sortDirectionForColumn"
+          :sort-state-label="sortStateLabel"
+          :sort-icon-for-direction="sortIconForDirection"
+          :toggle-column-sort="toggleColumnSort"
+          :cell-for-column="cellForColumn"
+          :open-detail="openDetail"
+          :column-min-width="columnMinWidth"
+          :column-resizable="columnResizable"
+          :is-column-dragging="isColumnDragging"
+          :on-column-drag-start="onColumnDragStart"
+          :on-column-drop="onColumnDrop"
+          :clear-drag-state="clearDragState"
+        />
       </el-table-column>
     </el-table>
   </div>
@@ -234,13 +191,13 @@ const props = withDefaults(
 
   <el-empty
     v-if="board && !sortedRowsLength"
-    :description="board?.definition.emptyText || '当前筛选条件下没有可展示的统计结果。'"
+    :description="board?.definition.emptyText || '褰撳墠绛涢€夋潯浠朵笅娌℃湁鍙睍绀虹殑缁熻缁撴灉銆?'"
     class="stat-empty"
   />
 
   <el-drawer
     :model-value="settingsVisible"
-    title="表格视图设置"
+    title="琛ㄦ牸瑙嗗浘璁剧疆"
     size="360px"
     append-to-body
     class="view-settings-drawer"
@@ -253,17 +210,17 @@ const props = withDefaults(
       </div>
 
       <div class="view-settings-strategy">
-        <div class="view-settings-group-title">列宽展示策略</div>
+        <div class="view-settings-group-title">鍒楀灞曠ず绛栫暐</div>
         <el-radio-group
           :model-value="widthStrategy"
           class="width-strategy-group"
           @update:model-value="(value) => onWidthStrategyChange(value as 'compact' | 'header' | 'content')"
         >
           <el-radio-button value="compact">统一紧凑</el-radio-button>
-          <el-radio-button value="header">按字段长度</el-radio-button>
-          <el-radio-button value="content">按内容长度</el-radio-button>
+          <el-radio-button value="header">按表头宽度</el-radio-button>
+          <el-radio-button value="content">按内容宽度</el-radio-button>
         </el-radio-group>
-        <div class="view-settings-strategy-tip">首列继续单独压缩处理，纯数字统计列保持固定宽度，但会随策略在紧凑、标准、宽松之间切换。</div>
+        <div class="view-settings-strategy-tip">首列继续单独压缩处理，纯数字统计列保持紧凑，宽度策略可在紧凑、表头优先和内容优先之间切换。</div>
       </div>
 
       <div class="view-settings-scroll">
@@ -273,7 +230,7 @@ const props = withDefaults(
             :indeterminate="partiallySelectedColumns"
             @update:model-value="toggleAllColumns"
           >
-            勾选全部列
+            鍕鹃€夊叏閮ㄥ垪
           </el-checkbox>
           <span class="view-settings-global-meta">{{ draftVisibleColumnKeysCount }}/{{ allColumnKeysCount }}</span>
         </div>
@@ -299,13 +256,13 @@ const props = withDefaults(
                     @click.stop
                     @update:model-value="(value) => toggleGroupColumns(group, value)"
                   >
-                    全选
+                    鍏ㄩ€?
                   </el-checkbox>
                 </div>
               </template>
               <div class="view-settings-group-body">
                 <el-checkbox
-                  v-for="column in group.columns"
+                  v-for="column in flattenStatisticColumnLeavesFromGroup(group)"
                   :key="column.key"
                   :model-value="isColumnSelected(column.key)"
                   class="view-settings-check"
@@ -321,9 +278,9 @@ const props = withDefaults(
 
       <div class="view-settings-actions">
         <div class="view-settings-actions-main">
-          <el-button @click="onRestoreDefaultView">重置</el-button>
-          <el-button @click="onSettingsVisibleChange(false)">取消</el-button>
-          <el-button type="primary" :icon="ArrowRight" @click="onSaveViewPrefs">保存视图</el-button>
+          <el-button @click="onRestoreDefaultView">閲嶇疆</el-button>
+          <el-button @click="onSettingsVisibleChange(false)">鍙栨秷</el-button>
+          <el-button type="primary" :icon="ArrowRight" @click="onSaveViewPrefs">淇濆瓨瑙嗗浘</el-button>
         </div>
       </div>
     </div>

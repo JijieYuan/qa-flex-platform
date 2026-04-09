@@ -184,12 +184,22 @@ export interface StatisticColumnLeaf {
   label: string;
   drilldown: boolean;
   metricType: string;
+  helpText?: string | null;
 }
 
 export interface StatisticColumnGroup {
   key: string;
   label: string;
-  columns: StatisticColumnLeaf[];
+  children?: StatisticColumnGroup[];
+  columns?: StatisticColumnLeaf[];
+}
+
+export function flattenStatisticColumnLeaves(groups: StatisticColumnGroup[]): StatisticColumnLeaf[] {
+  return groups.flatMap((group) => flattenStatisticColumnLeavesFromGroup(group));
+}
+
+export function flattenStatisticColumnLeavesFromGroup(group: StatisticColumnGroup): StatisticColumnLeaf[] {
+  return [...(group.columns ?? []), ...((group.children ?? []).flatMap((child) => flattenStatisticColumnLeavesFromGroup(child)))];
 }
 
 export interface StatisticDetailColumn {

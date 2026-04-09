@@ -89,10 +89,10 @@ public class MirrorTableOverviewBoardService extends AbstractStatisticBoardServi
     Map<String, String> appliedFilters = new LinkedHashMap<>();
     appliedFilters.put("tableName", tableName == null ? "" : tableName);
 
-    int columnCount = definition.columnGroups().stream().mapToInt(group -> group.columns().size()).sum();
+    int columnCount = definition.columnGroups().stream().mapToInt(StatisticColumnGroup::columnCount).sum();
     int drilldownColumnCount =
         definition.columnGroups().stream()
-            .flatMap(group -> group.columns().stream())
+            .flatMap(group -> group.leafColumns().stream())
             .mapToInt(column -> column.drilldown() ? 1 : 0)
             .sum();
 

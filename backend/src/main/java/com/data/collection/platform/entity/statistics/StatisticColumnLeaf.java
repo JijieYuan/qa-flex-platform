@@ -4,5 +4,10 @@ public record StatisticColumnLeaf(
     String key,
     String label,
     boolean drilldown,
-    String metricType) {
+    String metricType,
+    String helpText) {
+
+  public StatisticColumnLeaf(String key, String label, boolean drilldown, String metricType) {
+    this(key, label, drilldown, metricType, null);
+  }
 }

@@ -1,4 +1,4 @@
-import type { StatisticBoardDefinition } from '../api';
+import { flattenStatisticColumnLeavesFromGroup, type StatisticBoardDefinition } from '../api';
 
 const STORAGE_PREFIX = 'stat-board-view:';
 
@@ -30,12 +30,12 @@ function defaultGroupOrder(definition: StatisticBoardDefinition): string[] {
 
 function defaultColumnOrderByGroup(definition: StatisticBoardDefinition): Record<string, string[]> {
   return Object.fromEntries(
-    definition.columnGroups.map((group) => [group.key, group.columns.map((column) => column.key)]),
+    definition.columnGroups.map((group) => [group.key, flattenStatisticColumnLeavesFromGroup(group).map((column) => column.key)]),
   );
 }
 
 export function defaultVisibleColumnKeys(definition: StatisticBoardDefinition): string[] {
-  return definition.columnGroups.flatMap((group) => group.columns.map((column) => column.key));
+  return definition.columnGroups.flatMap((group) => flattenStatisticColumnLeavesFromGroup(group).map((column) => column.key));
 }
 
 export function loadStatisticBoardViewPrefs(

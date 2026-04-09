@@ -289,6 +289,37 @@ mvn "-Dtest=IssueFactNormalizationRulesTest,FactBuildControllerTest,StatisticBoa
 - `802`：`LEVEL1 + P2 + 挂机`
 - `803`：`LEVEL2 + P3 + 待合并 + is_legacy`
 - `805`：`is_excluded = true`
+
+## 2026-04-09 统计表抽象与系统测试表头落地补充
+
+围绕 `question-metrics/home` 对齐老平台 `ModuleTable` 的目标，本轮额外完成了两部分代码落地：
+
+- 统计表抽象层
+  - 已支持递归多级表头
+  - 已支持叶子列 `helpText`
+  - 已支持按叶子列统一处理排序、导出、列显示设置
+- 系统测试缺陷汇总
+  - 已改为模块维度聚合
+  - 第一列改为 `模块名称`
+  - 顶层分组已收口为：
+    - `一级缺陷`
+    - `二级缺陷`
+    - `三级缺陷`
+    - `建议类缺陷`
+    - `缺陷级别汇总`
+    - `新发议题`
+    - `遗留率`
+  - 当前叶子列总数：`38`
+
+这部分实现验证了两件事：
+
+1. 统计表复杂表头不需要再在单页面内特殊实现，已经能够沉入抽象层复用
+2. `system-test-defect-summary` 可以在不新增结果表的前提下，基于 `issue_fact` 输出老平台风格的模块统计表
+
+当前仍保留的诚实边界：
+
+- 表头结构和聚合主干已经落地
+- 但个别长尾列，例如“已修复/未更新”，当前还是基于现有事实字段做的第一版语义对齐
 - `806`：`申请否决+Closed -> is_excluded = true`
 - `807`：`is_illegal = true, illegal_reason = 缺失严重程度`
 - `808`：`is_illegal = true, illegal_reason = 未按照模板回复`
