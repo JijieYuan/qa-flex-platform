@@ -184,7 +184,6 @@ export interface StatisticColumnLeaf {
   label: string;
   drilldown: boolean;
   metricType: string;
-  helpText?: string | null;
 }
 
 export interface StatisticColumnGroup {

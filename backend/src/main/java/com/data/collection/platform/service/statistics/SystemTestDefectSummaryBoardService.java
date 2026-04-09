@@ -75,55 +75,55 @@ public class SystemTestDefectSummaryBoardService extends AbstractStatisticBoardS
         List.of(
             StatisticColumnGroup.withChildren("level1", "一级缺陷", List.of(
                 new StatisticColumnGroup("level1-classification", "分类", List.of(
-                    leaf("level1_back", "回退(个)", true, "count", null),
-                    leaf("level1_hang", "挂机(个)", true, "count", null),
-                    leaf("level1_other", "其他(个)", true, "count", null))),
+                    leaf("level1_back", "回退(个)", true, "count"),
+                    leaf("level1_hang", "挂机(个)", true, "count"),
+                    leaf("level1_other", "其他(个)", true, "count"))),
                 new StatisticColumnGroup("level1-status", "状态统计", List.of(
-                    leaf("level1_fixed", "一级缺陷已修复数量", true, "count", null),
-                    leaf("level1_total", "一级缺陷数量(个)", true, "count", null),
-                    leaf("level1_rate", "一级缺陷修复率%", false, "ratio", "一级缺陷修复率 = 一级缺陷已修复数量 / 一级缺陷总数"))))),
+                    leaf("level1_fixed", "一级缺陷已修复数量", true, "count"),
+                    leaf("level1_total", "一级缺陷数量(个)", true, "count"),
+                    leaf("level1_rate", "一级缺陷修复率%", false, "ratio"))))),
             new StatisticColumnGroup("level2", "二级缺陷", List.of(
-                leaf("level2_fixed", "二级缺陷已修复数量", true, "count", null),
-                leaf("level2_total", "二级缺陷(个)", true, "count", null),
-                leaf("level2_rate", "二级缺陷修复率%", false, "ratio", "二级缺陷修复率 = 二级缺陷已修复数量 / 二级缺陷总数"))),
+                leaf("level2_fixed", "二级缺陷已修复数量", true, "count"),
+                leaf("level2_total", "二级缺陷(个)", true, "count"),
+                leaf("level2_rate", "二级缺陷修复率%", false, "ratio"))),
             new StatisticColumnGroup("level3", "三级缺陷", List.of(
-                leaf("level3_fixed", "三级缺陷已修复数量", true, "count", null),
-                leaf("level3_total", "三级缺陷(个)", true, "count", null),
-                leaf("level3_rate", "三级缺陷修复率%", false, "ratio", "三级缺陷修复率 = 三级缺陷已修复数量 / 三级缺陷总数"))),
+                leaf("level3_fixed", "三级缺陷已修复数量", true, "count"),
+                leaf("level3_total", "三级缺陷(个)", true, "count"),
+                leaf("level3_rate", "三级缺陷修复率%", false, "ratio"))),
             new StatisticColumnGroup("suggestion", "建议类缺陷", List.of(
-                leaf("suggestion_total", "建议类缺陷(个)", true, "count", null))),
+                leaf("suggestion_total", "建议类缺陷(个)", true, "count"))),
             StatisticColumnGroup.withChildren("priority-summary", "缺陷级别汇总", List.of(
                 new StatisticColumnGroup("p1", "P1", List.of(
-                    leaf("p1_count", "P1级别缺陷", true, "count", null),
-                    leaf("p1_fix_rate", "P1缺陷修复率(%)", false, "ratio", "已修复 P1 / P1 总数"),
-                    leaf("p1_close_rate", "P1缺陷关闭率(%)", false, "ratio", "已关闭 P1 / P1 总数"))),
+                    leaf("p1_count", "P1级别缺陷", true, "count"),
+                    leaf("p1_fix_rate", "P1缺陷修复率(%)", false, "ratio"),
+                    leaf("p1_close_rate", "P1缺陷关闭率(%)", false, "ratio"))),
                 new StatisticColumnGroup("p2", "P2", List.of(
-                    leaf("p2_count", "P2级别缺陷", true, "count", null),
-                    leaf("p2_fix_rate", "P2缺陷修复率(%)", false, "ratio", "已修复 P2 / P2 总数"),
-                    leaf("p2_close_rate", "P2缺陷关闭率(%)", false, "ratio", "已关闭 P2 / P2 总数"))),
+                    leaf("p2_count", "P2级别缺陷", true, "count"),
+                    leaf("p2_fix_rate", "P2缺陷修复率(%)", false, "ratio"),
+                    leaf("p2_close_rate", "P2缺陷关闭率(%)", false, "ratio"))),
                 new StatisticColumnGroup("p3", "P3", List.of(
-                    leaf("p3_count", "P3级别缺陷", true, "count", null),
-                    leaf("p3_fix_rate", "P3缺陷修复率(%)", false, "ratio", "已修复 P3 / P3 总数"))),
+                    leaf("p3_count", "P3级别缺陷", true, "count"),
+                    leaf("p3_fix_rate", "P3缺陷修复率(%)", false, "ratio"))),
                 new StatisticColumnGroup("summary", "综合汇总", List.of(
-                    leaf("module_total", "模块总缺陷数(个)", true, "count", null),
-                    leaf("defect_ratio", "缺陷占比(%)", false, "ratio", "当前模块缺陷数 / 当前范围全部缺陷数"),
-                    leaf("delay_defect_ratio", "延期缺陷占比(%)", false, "ratio", "当前模块延期缺陷数 / 当前模块缺陷总数"),
-                    leaf("solved_count", "已修复/未更新", true, "count", "当前按已修复数量展示"),
-                    leaf("fix_rate", "修复率(%)", false, "ratio", "已修复数量 / 当前模块缺陷总数"),
-                    leaf("close_rate", "关闭率(%)", false, "ratio", "已关闭数量 / 当前模块缺陷总数"),
-                    leaf("open_count", "未关闭缺陷数(个)", true, "count", null),
-                    leaf("extension_count", "申请延期(个)", true, "count", null),
-                    leaf("retest_failed_count", "复测未通过缺陷数(个)", true, "count", null))))),
+                    leaf("module_total", "模块总缺陷数(个)", true, "count"),
+                    leaf("defect_ratio", "缺陷占比(%)", false, "ratio"),
+                    leaf("delay_defect_ratio", "延期缺陷占比(%)", false, "ratio"),
+                    leaf("solved_count", "已修复/未更新", true, "count"),
+                    leaf("fix_rate", "修复率(%)", false, "ratio"),
+                    leaf("close_rate", "关闭率(%)", false, "ratio"),
+                    leaf("open_count", "未关闭缺陷数(个)", true, "count"),
+                    leaf("extension_count", "申请延期(个)", true, "count"),
+                    leaf("retest_failed_count", "复测未通过缺陷数(个)", true, "count"))))),
             new StatisticColumnGroup("new-issue", "新发议题", List.of(
-                leaf("new_issue_fixed", "新发议题修复数量", true, "count", null),
-                leaf("new_issue_total", "新发议题数量", true, "count", null),
-                leaf("new_issue_fix_rate", "新发议题修复率(%)", false, "ratio", "已修复新发议题 / 新发议题总数"),
-                leaf("new_issue_close_rate", "新发议题关闭率(%)", false, "ratio", "已关闭新发议题 / 新发议题总数"))),
+                leaf("new_issue_fixed", "新发议题修复数量", true, "count"),
+                leaf("new_issue_total", "新发议题数量", true, "count"),
+                leaf("new_issue_fix_rate", "新发议题修复率(%)", false, "ratio"),
+                leaf("new_issue_close_rate", "新发议题关闭率(%)", false, "ratio"))),
             new StatisticColumnGroup("legacy", "遗留率", List.of(
-                leaf("level1_legacy_rate", "一级缺陷遗留率(%)", false, "ratio", "一级缺陷未关闭数量 / 一级缺陷总数"),
-                leaf("level2_legacy_count", "二级缺陷遗留数量", true, "count", null),
-                leaf("level3_legacy_count", "三级缺陷遗留数量", true, "count", null),
-                leaf("level23_legacy_rate", "二三级缺陷遗留率(%)", false, "ratio", "二三级未关闭数量 / 二三级缺陷总数")))),
+                leaf("level1_legacy_rate", "一级缺陷遗留率(%)", false, "ratio"),
+                leaf("level2_legacy_count", "二级缺陷遗留数量", true, "count"),
+                leaf("level3_legacy_count", "三级缺陷遗留数量", true, "count"),
+                leaf("level23_legacy_rate", "二三级缺陷遗留率(%)", false, "ratio")))),
         List.of(
             new StatisticDetailColumn("iid", "议题编号", 120, 120, true),
             new StatisticDetailColumn("title", "标题", null, 260, true),
@@ -136,8 +136,8 @@ public class SystemTestDefectSummaryBoardService extends AbstractStatisticBoardS
         10, "当前没有可展示的系统测试缺陷统计数据。");
   }
 
-  private StatisticColumnLeaf leaf(String key, String label, boolean drilldown, String metricType, String helpText) {
-    return new StatisticColumnLeaf(key, label, drilldown, metricType, helpText);
+  private StatisticColumnLeaf leaf(String key, String label, boolean drilldown, String metricType) {
+    return new StatisticColumnLeaf(key, label, drilldown, metricType);
   }
 
   @Override
