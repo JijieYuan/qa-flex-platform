@@ -223,9 +223,9 @@ public class SystemTestDefectSummaryBoardService extends AbstractStatisticBoardS
     return List.of(
         new StatisticRuleMetricDefinition("level1", "一级缺陷", "一级缺陷基于 severity_level = LEVEL1，再拆分回退、挂机、其他一级。", "一级缺陷修复率 = 一级缺陷已修复数量 / 一级缺陷总数", null),
         new StatisticRuleMetricDefinition("priority-summary", "缺陷级别汇总", "P1/P2/P3 与一级/二级/三级缺陷是两套独立统计体系，直接按 priority_level 聚合。", "Pn 修复率 = 已修复 Pn 数量 / Pn 总数；Pn 关闭率 = 已关闭 Pn 数量 / Pn 总数", null),
-        new StatisticRuleMetricDefinition("summary", "综合汇总", "综合区展示模块总缺陷、缺陷占比、延期占比、修复率、关闭率、未关闭数量、申请延期和复测未通过。", "缺陷占比 = 当前模块缺陷数 / 当前范围全部缺陷数", null),
-        new StatisticRuleMetricDefinition("new-issue", "新发议题", "新发议题当前按“不是历史遗留”的议题统计。", "新发议题修复率 = 已修复新发议题数量 / 新发议题总数", null),
-        new StatisticRuleMetricDefinition("legacy", "遗留率", "遗留区展示一级缺陷遗留率、二级缺陷遗留数量、三级缺陷遗留数量、二三级缺陷遗留率。", "一级遗留率 = 一级缺陷未关闭数量 / 一级缺陷总数", null));
+        new StatisticRuleMetricDefinition("summary", "综合汇总", "综合区展示模块总缺陷、缺陷占比、延期占比、已修复/未更新、修复率、关闭率、未关闭数量、申请延期和复测未通过。", "修复率 = 已修复/未更新数量 / 模块总缺陷数；缺陷占比 = 当前模块缺陷数 / 当前范围全部缺陷数", null),
+        new StatisticRuleMetricDefinition("new-issue", "新发议题", "新发议题按“排除历史遗留”后的议题统计。", "新发议题修复率 = 已修复/未更新的新发议题数量 / 新发议题总数", null),
+        new StatisticRuleMetricDefinition("legacy", "遗留率", "遗留区按 issue_fact.is_legacy 字段统计，不再用“未关闭”直接代替历史遗留。", "一级遗留率 = 一级缺陷历史遗留数量 / 一级缺陷总数；二三级遗留率 = (二级历史遗留 + 三级历史遗留) / (二级总数 + 三级总数)", null));
   }
 
   private List<IssueSource> loadSources(Map<String, String> filters) {
@@ -285,24 +285,24 @@ public class SystemTestDefectSummaryBoardService extends AbstractStatisticBoardS
       case "level1_back" -> IssueSource::isLevel1Back;
       case "level1_hang" -> IssueSource::isLevel1Hang;
       case "level1_other" -> IssueSource::isLevel1Other;
-      case "level1_fixed" -> i -> i.isLevel1() && i.fixed();
+      case "level1_fixed" -> i -> i.isLevel1() && i.isSolvedLike();
       case "level1_total" -> IssueSource::isLevel1;
-      case "level2_fixed" -> i -> i.isLevel2() && i.fixed();
+      case "level2_fixed" -> i -> i.isLevel2() && i.isSolvedLike();
       case "level2_total" -> IssueSource::isLevel2;
-      case "level3_fixed" -> i -> i.isLevel3() && i.fixed();
+      case "level3_fixed" -> i -> i.isLevel3() && i.isSolvedLike();
       case "level3_total" -> IssueSource::isLevel3;
       case "suggestion_total" -> IssueSource::isSuggestion;
       case "p1_count" -> i -> i.isPriority("P1");
       case "p2_count" -> i -> i.isPriority("P2");
       case "p3_count" -> i -> i.isPriority("P3");
-      case "solved_count" -> IssueSource::fixed;
+      case "solved_count" -> IssueSource::isSolvedLike;
       case "open_count" -> i -> !i.isClosed();
       case "extension_count" -> IssueSource::hasExtensionLabel;
       case "retest_failed_count" -> IssueSource::isRetestFailed;
-      case "new_issue_fixed" -> i -> i.isNewIssue() && i.fixed();
+      case "new_issue_fixed" -> i -> i.isNewIssue() && i.isSolvedLike();
       case "new_issue_total" -> IssueSource::isNewIssue;
-      case "level2_legacy_count" -> i -> i.isLevel2() && !i.isClosed();
-      case "level3_legacy_count" -> i -> i.isLevel3() && !i.isClosed();
+      case "level2_legacy_count" -> i -> i.isLevel2() && i.legacy();
+      case "level3_legacy_count" -> i -> i.isLevel3() && i.legacy();
       default -> i -> true;
     };
   }
@@ -344,17 +344,17 @@ public class SystemTestDefectSummaryBoardService extends AbstractStatisticBoardS
     void accept(IssueSource issue) { issues.add(issue); }
     StatisticRowData toRowData(long overall) { return toRowData(overall, rowLabel); }
     StatisticRowData toRowData(long overall, String rowKey) {
-      long total = issues.size(), fixed = issues.stream().filter(IssueSource::fixed).count(), closed = issues.stream().filter(IssueSource::isClosed).count(), open = total - closed;
+      long total = issues.size(), solved = issues.stream().filter(IssueSource::isSolvedLike).count(), closed = issues.stream().filter(IssueSource::isClosed).count(), open = total - closed;
       long delayed = issues.stream().filter(IssueSource::delayIssue).count(), extension = issues.stream().filter(IssueSource::hasExtensionLabel).count(), retest = issues.stream().filter(IssueSource::isRetestFailed).count();
-      long l1b = issues.stream().filter(IssueSource::isLevel1Back).count(), l1h = issues.stream().filter(IssueSource::isLevel1Hang).count(), l1o = issues.stream().filter(IssueSource::isLevel1Other).count(), l1 = issues.stream().filter(IssueSource::isLevel1).count(), l1f = issues.stream().filter(i -> i.isLevel1() && i.fixed()).count(), l1open = issues.stream().filter(i -> i.isLevel1() && !i.isClosed()).count();
-      long l2 = issues.stream().filter(IssueSource::isLevel2).count(), l2f = issues.stream().filter(i -> i.isLevel2() && i.fixed()).count(), l2open = issues.stream().filter(i -> i.isLevel2() && !i.isClosed()).count();
-      long l3 = issues.stream().filter(IssueSource::isLevel3).count(), l3f = issues.stream().filter(i -> i.isLevel3() && i.fixed()).count(), l3open = issues.stream().filter(i -> i.isLevel3() && !i.isClosed()).count();
+      long l1b = issues.stream().filter(IssueSource::isLevel1Back).count(), l1h = issues.stream().filter(IssueSource::isLevel1Hang).count(), l1o = issues.stream().filter(IssueSource::isLevel1Other).count(), l1 = issues.stream().filter(IssueSource::isLevel1).count(), l1f = issues.stream().filter(i -> i.isLevel1() && i.isSolvedLike()).count(), l1legacy = issues.stream().filter(i -> i.isLevel1() && i.legacy()).count();
+      long l2 = issues.stream().filter(IssueSource::isLevel2).count(), l2f = issues.stream().filter(i -> i.isLevel2() && i.isSolvedLike()).count(), l2legacy = issues.stream().filter(i -> i.isLevel2() && i.legacy()).count();
+      long l3 = issues.stream().filter(IssueSource::isLevel3).count(), l3f = issues.stream().filter(i -> i.isLevel3() && i.isSolvedLike()).count(), l3legacy = issues.stream().filter(i -> i.isLevel3() && i.legacy()).count();
       long sug = issues.stream().filter(IssueSource::isSuggestion).count();
-      long p1 = issues.stream().filter(i -> i.isPriority("P1")).count(), p1f = issues.stream().filter(i -> i.isPriority("P1") && i.fixed()).count(), p1c = issues.stream().filter(i -> i.isPriority("P1") && i.isClosed()).count();
-      long p2 = issues.stream().filter(i -> i.isPriority("P2")).count(), p2f = issues.stream().filter(i -> i.isPriority("P2") && i.fixed()).count(), p2c = issues.stream().filter(i -> i.isPriority("P2") && i.isClosed()).count();
-      long p3 = issues.stream().filter(i -> i.isPriority("P3")).count(), p3f = issues.stream().filter(i -> i.isPriority("P3") && i.fixed()).count();
-      long newTotal = issues.stream().filter(IssueSource::isNewIssue).count(), newFixed = issues.stream().filter(i -> i.isNewIssue() && i.fixed()).count(), newClosed = issues.stream().filter(i -> i.isNewIssue() && i.isClosed()).count();
-      long l23open = l2open + l3open, l23 = l2 + l3; double defectRatio = overall <= 0 ? 0 : total * 100.0 / overall, delayRatio = total <= 0 ? 0 : delayed * 100.0 / total;
+      long p1 = issues.stream().filter(i -> i.isPriority("P1")).count(), p1f = issues.stream().filter(i -> i.isPriority("P1") && i.isSolvedLike()).count(), p1c = issues.stream().filter(i -> i.isPriority("P1") && i.isClosed()).count();
+      long p2 = issues.stream().filter(i -> i.isPriority("P2")).count(), p2f = issues.stream().filter(i -> i.isPriority("P2") && i.isSolvedLike()).count(), p2c = issues.stream().filter(i -> i.isPriority("P2") && i.isClosed()).count();
+      long p3 = issues.stream().filter(i -> i.isPriority("P3")).count(), p3f = issues.stream().filter(i -> i.isPriority("P3") && i.isSolvedLike()).count();
+      long newTotal = issues.stream().filter(IssueSource::isNewIssue).count(), newFixed = issues.stream().filter(i -> i.isNewIssue() && i.isSolvedLike()).count(), newClosed = issues.stream().filter(i -> i.isNewIssue() && i.isClosedResolved()).count();
+      long l23legacy = l2legacy + l3legacy, l23 = l2 + l3; double defectRatio = overall <= 0 ? 0 : total * 100.0 / overall, delayRatio = total <= 0 ? 0 : delayed * 100.0 / total;
       return new StatisticRowData(rowKey, rowLabel, List.of(
           cell("level1_back", l1b, count(l1b), true, rowKey), cell("level1_hang", l1h, count(l1h), true, rowKey), cell("level1_other", l1o, count(l1o), true, rowKey),
           cell("level1_fixed", l1f, count(l1f), true, rowKey), cell("level1_total", l1, count(l1), true, rowKey), cell("level1_rate", l1f, rate(l1f, l1), false, rowKey),
@@ -364,11 +364,11 @@ public class SystemTestDefectSummaryBoardService extends AbstractStatisticBoardS
           cell("p1_close_rate", p1c, rate(p1c, p1), false, rowKey), cell("p2_count", p2, count(p2), true, rowKey), cell("p2_fix_rate", p2f, rate(p2f, p2), false, rowKey),
           cell("p2_close_rate", p2c, rate(p2c, p2), false, rowKey), cell("p3_count", p3, count(p3), true, rowKey), cell("p3_fix_rate", p3f, rate(p3f, p3), false, rowKey),
           cell("module_total", total, count(total), true, rowKey), cell("defect_ratio", Math.round(defectRatio), percent(defectRatio), false, rowKey), cell("delay_defect_ratio", Math.round(delayRatio), percent(delayRatio), false, rowKey),
-          cell("solved_count", fixed, count(fixed), true, rowKey), cell("fix_rate", fixed, rate(fixed, total), false, rowKey), cell("close_rate", closed, rate(closed, total), false, rowKey),
+          cell("solved_count", solved, count(solved), true, rowKey), cell("fix_rate", solved, rate(solved, total), false, rowKey), cell("close_rate", closed, rate(closed, total), false, rowKey),
           cell("open_count", open, count(open), true, rowKey), cell("extension_count", extension, count(extension), true, rowKey), cell("retest_failed_count", retest, count(retest), true, rowKey),
           cell("new_issue_fixed", newFixed, count(newFixed), true, rowKey), cell("new_issue_total", newTotal, count(newTotal), true, rowKey), cell("new_issue_fix_rate", newFixed, rate(newFixed, newTotal), false, rowKey),
-          cell("new_issue_close_rate", newClosed, rate(newClosed, newTotal), false, rowKey), cell("level1_legacy_rate", l1open, rate(l1open, l1), false, rowKey), cell("level2_legacy_count", l2open, count(l2open), true, rowKey),
-          cell("level3_legacy_count", l3open, count(l3open), true, rowKey), cell("level23_legacy_rate", l23open, rate(l23open, l23), false, rowKey)));
+          cell("new_issue_close_rate", newClosed, rate(newClosed, newTotal), false, rowKey), cell("level1_legacy_rate", l1legacy, rate(l1legacy, l1), false, rowKey), cell("level2_legacy_count", l2legacy, count(l2legacy), true, rowKey),
+          cell("level3_legacy_count", l3legacy, count(l3legacy), true, rowKey), cell("level23_legacy_rate", l23legacy, rate(l23legacy, l23), false, rowKey)));
     }
     private StatisticCellData cell(String key, long numericValue, String displayValue, boolean drilldown, String rowKey) {
       return new StatisticCellData(key, numericValue, displayValue, drilldown, drilldown ? "issue-list" : null, Map.of("rowKey", rowKey));
@@ -388,6 +388,8 @@ public class SystemTestDefectSummaryBoardService extends AbstractStatisticBoardS
     boolean isLevel3() { return isSeverity("LEVEL3"); }
     boolean isSuggestion() { return isSeverity("SUGGESTION"); }
     boolean isNewIssue() { return !legacy; }
+    boolean isSolvedLike() { return fixed || isClosed(); }
+    boolean isClosedResolved() { return fixed && isClosed(); }
     boolean hasExtensionLabel() { return labels.contains("申请延期"); }
     boolean isRetestFailed() { return labels.contains("复测未通过"); }
     private boolean hasScope(String value) { return StringUtils.hasText(value) && (value.contains("系统测试") || value.contains("回归测试")); }

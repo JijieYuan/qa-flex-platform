@@ -65,6 +65,10 @@ public class CodeReviewIllegalRecordService {
         target_branch,
         module_name,
         coalesce(label_names, '') as label_names,
+        review_status,
+        review_duration_minutes,
+        scan_status,
+        scan_bug_count,
         comment_rate,
         defect_count,
         added_lines
@@ -145,6 +149,7 @@ public class CodeReviewIllegalRecordService {
   public CodeReviewIllegalRecordFilterOptionsResponse getFilterOptions(Long projectId) {
     List<IllegalRecordView> rows = loadSources().stream()
         .map(this::toView)
+        .filter(row -> !row.illegalTypes().isEmpty())
         .filter(row -> matchesProjectId(row, projectId))
         .toList();
 
@@ -176,6 +181,11 @@ public class CodeReviewIllegalRecordService {
     long illegalTotal = illegalViews.size();
     long missingModule = illegalViews.stream().filter(row -> row.illegalTypes().contains("缺少模块标签")).count();
     long missingOwner = illegalViews.stream().filter(row -> row.illegalTypes().contains("缺少标注责任人")).count();
+    long missingReview = illegalViews.stream().filter(row -> row.illegalTypes().contains("无代码走查")).count();
+    long scanIssue = illegalViews.stream()
+        .filter(row -> row.illegalTypes().stream().anyMatch(type ->
+            type.contains("未代码扫描") || type.contains("静态扫描问题未关闭")))
+        .count();
     long missingMetrics = illegalViews.stream()
         .filter(row -> row.illegalTypes().stream().anyMatch(type ->
             type.contains("缺少代码注释比例")
@@ -228,6 +238,29 @@ public class CodeReviewIllegalRecordService {
                     .map(this::toIllegalRecordSample)
                     .toList()),
             new StatisticRuleFlowStep(
+                "review-check",
+                "检查代码走查记录",
+                "如果还没有形成有效的代码走查记录，就会被判定为“无代码走查”。",
+                illegalTotal,
+                missingReview,
+                illegalViews.stream()
+                    .filter(row -> row.illegalTypes().contains("无代码走查"))
+                    .limit(3)
+                    .map(this::toIllegalRecordSample)
+                    .toList()),
+            new StatisticRuleFlowStep(
+                "scan-check",
+                "检查代码扫描结果",
+                "如果明确标记为未代码扫描，或者静态扫描问题数大于 0，就会被判定为对应的非法类型。",
+                illegalTotal,
+                scanIssue,
+                illegalViews.stream()
+                    .filter(row -> row.illegalTypes().stream().anyMatch(type ->
+                        type.contains("未代码扫描") || type.contains("静态扫描问题未关闭")))
+                    .limit(3)
+                    .map(this::toIllegalRecordSample)
+                    .toList()),
+            new StatisticRuleFlowStep(
                 "missing-metric-check",
                 "检查外部指标",
                 "如果代码注释比例、缺陷数量或新增代码行数缺失，就会被判定为对应的非法类型。",
@@ -246,14 +279,26 @@ public class CodeReviewIllegalRecordService {
                 "illegalTypes",
                 "非法类型",
                 "系统会根据规则检查结果，标记这条记录需要补充哪些信息。",
-                "非法类型 = 缺少模块标签 / 缺少标注责任人 / 缺少外部指标",
+                "非法类型 = 缺少模块标签 / 缺少标注责任人 / 无代码走查 / 未代码扫描 / 静态扫描问题未关闭 / 缺少外部指标",
                 "一条记录可以同时命中多种非法类型。"),
+            new StatisticRuleMetricDefinition(
+                "reviewStatus",
+                "代码走查记录",
+                "表示这条合并请求是否已经形成可识别的代码走查记录。",
+                "代码走查记录 = 评审表单时长或走查状态已形成有效值",
+                "如果当前还没有形成有效走查记录，这条记录会被判定为“无代码走查”。"),
             new StatisticRuleMetricDefinition(
                 "moduleName",
                 "模块名称",
                 "表示这条合并请求所属的功能模块。",
                 "模块名称来自合并请求关联的模块标识。",
                 "如果缺少模块信息，这条记录会被判定为需要关注。"),
+            new StatisticRuleMetricDefinition(
+                "scanStatus",
+                "代码扫描结果",
+                "表示这条合并请求是否已经完成静态扫描，以及静态扫描问题是否已经清理。",
+                "未代码扫描 = 明确标记为未扫描；静态扫描问题未关闭 = 扫描问题数大于 0",
+                "只有事实层中已经带出扫描状态时，才会命中这类非法规则。"),
             new StatisticRuleMetricDefinition(
                 "commentRate",
                 "代码注释比例",
@@ -320,6 +365,10 @@ public class CodeReviewIllegalRecordService {
         rs.getString("target_branch"),
         rs.getString("module_name"),
         splitLabels(rs.getString("label_names")),
+        rs.getString("review_status"),
+        (Integer) rs.getObject("review_duration_minutes"),
+        rs.getString("scan_status"),
+        (Integer) rs.getObject("scan_bug_count"),
         toDouble(rs.getObject("comment_rate")),
         (Integer) rs.getObject("defect_count"),
         (Integer) rs.getObject("added_lines"));
@@ -367,6 +416,10 @@ public class CodeReviewIllegalRecordService {
         normalizeDisplay(source.moduleName()),
         normalizeDisplay(source.targetBranch()),
         illegalTypes,
+        normalizeDisplay(source.reviewStatus()),
+        source.reviewDurationMinutes(),
+        normalizeDisplay(source.scanStatus()),
+        source.scanBugCount(),
         source.commentRate(),
         source.defectCount(),
         source.addedLines());
@@ -385,6 +438,17 @@ public class CodeReviewIllegalRecordService {
     }
     if (!StringUtils.hasText(source.owner())) {
       result.add("缺少标注责任人");
+    }
+    if (!StringUtils.hasText(source.reviewStatus()) || source.reviewDurationMinutes() == null) {
+      result.add("无代码走查");
+    }
+    if (StringUtils.hasText(source.scanStatus())
+        && Set.of("NOT_SCANNED", "UNSCANNED", "未扫描", "未代码扫描", "未进行代码扫描")
+            .contains(source.scanStatus().trim().toUpperCase(Locale.ROOT))) {
+      result.add("未代码扫描");
+    }
+    if (source.scanBugCount() != null && source.scanBugCount() > 0) {
+      result.add("静态扫描问题未关闭");
     }
     if (source.commentRate() == null) {
       result.add("缺少代码注释比例");
@@ -467,7 +531,10 @@ public class CodeReviewIllegalRecordService {
     return contains(row.mergeRequestContent(), lowerKeyword)
         || contains(row.owner(), lowerKeyword)
         || contains(row.projectName(), lowerKeyword)
-        || contains(row.repositoryName(), lowerKeyword);
+        || contains(row.repositoryName(), lowerKeyword)
+        || contains(row.moduleName(), lowerKeyword)
+        || contains(row.targetBranch(), lowerKeyword)
+        || contains(row.mergedBy(), lowerKeyword);
   }
 
   private boolean contains(String source, String keyword) {
@@ -583,6 +650,10 @@ public class CodeReviewIllegalRecordService {
       String targetBranch,
       String moduleName,
       List<String> labelTitles,
+      String reviewStatus,
+      Integer reviewDurationMinutes,
+      String scanStatus,
+      Integer scanBugCount,
       Double commentRate,
       Integer defectCount,
       Integer addedLines) {
@@ -603,6 +674,10 @@ public class CodeReviewIllegalRecordService {
       String moduleName,
       String targetBranch,
       List<String> illegalTypes,
+      String reviewStatus,
+      Integer reviewDurationMinutes,
+      String scanStatus,
+      Integer scanBugCount,
       Double commentRate,
       Integer defectCount,
       Integer addedLines) {

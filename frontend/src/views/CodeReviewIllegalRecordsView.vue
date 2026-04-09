@@ -237,6 +237,20 @@ const qaFriendlyRuleSummary = computed(() => {
 });
 const ruleExclusionSteps = computed(() => ruleExplanationSteps.value.slice(1));
 
+function createFallbackRuleExplanation(reason: string): StatisticBoardRuleExplanationResponse {
+  return {
+    boardKey: 'code-review-illegal-records',
+    supported: false,
+    title: '代码走查非法记录规则说明',
+    version: null,
+    scopeDescription: null,
+    summary: null,
+    flowSteps: [],
+    metricDefinitions: [],
+    unsupportedReason: reason,
+  };
+}
+
 function openDetailDrawer(row: Record<string, unknown>) {
   selectedRow.value = (row.__raw as CodeReviewIllegalRecordRowResponse) ?? null;
   detailVisible.value = true;
@@ -259,7 +273,7 @@ async function loadRuleExplanation() {
   try {
     ruleExplanation.value = await api.getCodeReviewIllegalRecordRuleExplanation();
   } catch {
-    ruleExplanation.value = null;
+    ruleExplanation.value = createFallbackRuleExplanation('规则说明加载失败，请稍后重试。');
   } finally {
     ruleExplanationLoading.value = false;
   }
@@ -368,9 +382,11 @@ async function handleClearFilter(key: string) {
 }
 
 function openRuleExplanation() {
-  if (!ruleExplanation.value?.supported) {
-    ElMessage.warning(ruleExplanation.value?.unsupportedReason || '当前页面暂不支持规则说明');
-    return;
+  if (!ruleExplanation.value) {
+    ruleExplanation.value = createFallbackRuleExplanation('规则说明暂未加载完成，请稍后再试。');
+  }
+  if (!ruleExplanation.value.supported) {
+    ElMessage.warning(ruleExplanation.value.unsupportedReason || '当前页面暂不支持规则说明');
   }
   ruleExplanationVisible.value = true;
 }
@@ -436,7 +452,6 @@ function metricFormulaSummary(metric: { label: string; definition: string; formu
         <div class="record-page-summary">
           <SyncMetaBadge :value="lastSyncedText" />
           <el-button
-            v-if="ruleExplanation?.supported"
             plain
             size="small"
             :icon="InfoFilled"

@@ -316,6 +316,20 @@ const qaFriendlyRuleSummary = computed(() => {
   }
   return `当前结果一共基于 ${ruleFirstInputCount.value} 条原始数据逐步筛选，最后保留 ${ruleFinalOutputCount.value} 条，最终保留比例为 ${ruleFinalRetainedRate.value}。`;
 });
+
+function createFallbackRuleExplanation(reason: string): StatisticBoardRuleExplanationResponse {
+  return {
+    boardKey: props.boardKey,
+    supported: false,
+    title: '规则说明',
+    version: null,
+    scopeDescription: null,
+    summary: null,
+    flowSteps: [],
+    metricDefinitions: [],
+    unsupportedReason: reason,
+  };
+}
 const {
   tableCurrentPage,
   tablePageSize,
@@ -443,7 +457,7 @@ async function loadRuleExplanation() {
       filterGroup: buildFilterPayload(),
     });
   } catch {
-    ruleExplanation.value = null;
+    ruleExplanation.value = createFallbackRuleExplanation('规则说明加载失败，请稍后重试。');
   } finally {
     ruleExplanationLoading.value = false;
   }
@@ -739,9 +753,11 @@ async function refreshBoard() {
 }
 
 function openRuleExplanation() {
-  if (!ruleExplanation.value?.supported) {
-    ElMessage.warning(ruleExplanation.value?.unsupportedReason || '当前统计表暂不支持规则说明');
-    return;
+  if (!ruleExplanation.value) {
+    ruleExplanation.value = createFallbackRuleExplanation('规则说明暂未加载完成，请稍后再试。');
+  }
+  if (!ruleExplanation.value.supported) {
+    ElMessage.warning(ruleExplanation.value.unsupportedReason || '当前统计表暂不支持规则说明');
   }
   ruleExplanationVisible.value = true;
 }
@@ -1057,7 +1073,6 @@ watch(
             <el-button @click="resetFilters">重置</el-button>
             <el-button :icon="RefreshRight" @click="refreshBoard">刷新</el-button>
             <el-button
-              v-if="ruleExplanation?.supported"
               plain
               :icon="InfoFilled"
               :loading="ruleExplanationLoading"
