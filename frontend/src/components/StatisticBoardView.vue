@@ -198,18 +198,24 @@ const activeFilterFields = computed(() => board.value?.definition.filters ?? [])
 
 const visibleColumnKeySet = computed(() => new Set(boardViewPrefs.value.visibleColumnKeys));
 
-function applyOrderedColumnsToChildren(children: StatisticColumnGroup[], orderedLeafColumns: StatisticColumnLeaf[]): StatisticColumnGroup[] {
-  return children
+function applyOrderedColumnsToGroup(group: StatisticColumnGroup, orderedLeafColumns: StatisticColumnLeaf[]): StatisticColumnGroup | null {
+  const directColumnKeys = new Set((group.columns ?? []).map((leaf) => leaf.key));
+  const directColumns = orderedLeafColumns.filter((column) => directColumnKeys.has(column.key));
+  const children = (group.children ?? [])
     .map((child) => {
       const childLeafKeys = new Set(flattenStatisticColumnLeavesFromGroup(child).map((column) => column.key));
       const childColumns = orderedLeafColumns.filter((column) => childLeafKeys.has(column.key));
-      return {
-        ...child,
-        children: applyOrderedColumnsToChildren(child.children ?? [], childColumns),
-        columns: (child.columns ?? []).filter((leaf) => childColumns.some((column) => column.key === leaf.key)),
-      };
+      return applyOrderedColumnsToGroup(child, childColumns);
     })
-    .filter((child) => flattenStatisticColumnLeavesFromGroup(child).length > 0);
+    .filter((child): child is StatisticColumnGroup => Boolean(child));
+  if (!directColumns.length && !children.length) {
+    return null;
+  }
+  return {
+    ...group,
+    children,
+    columns: directColumns,
+  };
 }
 
 const orderedColumnGroups = computed(() => {
@@ -228,13 +234,9 @@ const orderedColumnGroups = computed(() => {
         .map((columnKey) => columnMap.get(columnKey))
         .filter((column): column is StatisticColumnLeaf => Boolean(column))
         .filter((column) => visibleColumnKeySet.value.has(column.key));
-      return {
-        ...group,
-        children: applyOrderedColumnsToChildren(group.children ?? [], orderedLeafColumns),
-        columns: orderedLeafColumns,
-      };
+      return applyOrderedColumnsToGroup(group, orderedLeafColumns);
     })
-    .filter((group) => flattenStatisticColumnLeavesFromGroup(group).length > 0);
+    .filter((group): group is StatisticColumnGroup => Boolean(group));
 });
 
 const sortedRows = computed(() => {

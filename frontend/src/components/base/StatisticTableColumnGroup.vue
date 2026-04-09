@@ -1,12 +1,15 @@
 <script setup lang="ts">
 import type { Component } from 'vue';
-import { QuestionFilled } from '@element-plus/icons-vue';
 import type { StatisticCellData, StatisticColumnGroup, StatisticColumnLeaf, StatisticRowData } from '../../api';
 import type { SortDirection } from '../statistic-board-sorting';
 
 defineProps<{
   group: StatisticColumnGroup;
   rootGroupKey: string;
+  draggableGroupHeader?: boolean;
+  isGroupDragging?: (groupKey: string) => boolean;
+  onGroupDragStart?: (groupKey: string) => void;
+  onGroupDrop?: (groupKey: string) => void;
   sortDirectionForColumn: (columnKey: string) => SortDirection;
   sortStateLabel: (direction: SortDirection) => string;
   sortIconForDirection: (direction: SortDirection) => Component;
@@ -23,12 +26,43 @@ defineProps<{
 </script>
 
 <template>
-  <el-table-column :label="group.label" align="center">
+  <el-table-column align="center">
+    <template #header>
+      <div
+        v-if="draggableGroupHeader"
+        class="stat-group-header"
+        :class="{ dragging: isGroupDragging?.(group.key) }"
+        draggable="true"
+        @dragstart="onGroupDragStart?.(group.key)"
+        @dragover.prevent
+        @drop.prevent="onGroupDrop?.(group.key)"
+        @dragend="clearDragState"
+      >
+        <span class="stat-header-zone stat-header-zone-left" aria-hidden="true">
+          <span class="drag-handle group">
+            <span></span>
+            <span></span>
+            <span></span>
+            <span></span>
+            <span></span>
+            <span></span>
+          </span>
+        </span>
+        <span class="stat-group-header-label" :title="group.label">{{ group.label }}</span>
+        <span class="stat-header-zone stat-header-zone-right stat-header-zone-placeholder" aria-hidden="true"></span>
+      </div>
+      <span v-else class="stat-group-header-label" :title="group.label">{{ group.label }}</span>
+    </template>
+
     <StatisticTableColumnGroup
       v-for="child in group.children ?? []"
       :key="child.key"
       :group="child"
       :root-group-key="rootGroupKey"
+      :draggable-group-header="false"
+      :is-group-dragging="isGroupDragging"
+      :on-group-drag-start="onGroupDragStart"
+      :on-group-drop="onGroupDrop"
       :sort-direction-for-column="sortDirectionForColumn"
       :sort-state-label="sortStateLabel"
       :sort-icon-for-direction="sortIconForDirection"
@@ -74,11 +108,6 @@ defineProps<{
             </span>
           </span>
           <span class="stat-column-header-label" :title="column.label">{{ column.label }}</span>
-          <el-tooltip v-if="column.helpText" effect="dark" placement="top" :content="column.helpText">
-            <el-icon class="stat-column-help">
-              <QuestionFilled />
-            </el-icon>
-          </el-tooltip>
           <span class="stat-header-zone stat-header-zone-right">
             <button
               class="sort-trigger"

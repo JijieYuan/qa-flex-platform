@@ -34,6 +34,12 @@ function defaultColumnOrderByGroup(definition: StatisticBoardDefinition): Record
   );
 }
 
+function mergeOrderedKeys(persisted: string[], fallback: string[]) {
+  const persistedValid = persisted.filter((key) => fallback.includes(key));
+  const missing = fallback.filter((key) => !persistedValid.includes(key));
+  return [...persistedValid, ...missing];
+}
+
 export function defaultVisibleColumnKeys(definition: StatisticBoardDefinition): string[] {
   return definition.columnGroups.flatMap((group) => flattenStatisticColumnLeavesFromGroup(group).map((column) => column.key));
 }
@@ -65,12 +71,12 @@ export function loadStatisticBoardViewPrefs(
 
     const visibleColumnKeys = (parsed.visibleColumnKeys ?? []).filter((key) => allowedColumnKeys.has(key));
     const groupOrder = (parsed.groupOrder ?? []).filter((key) => allowedGroupKeys.has(key));
-    const resolvedGroupOrder = groupOrder.length ? groupOrder : fallbackGroupOrder;
+    const resolvedGroupOrder = groupOrder.length ? mergeOrderedKeys(groupOrder, fallbackGroupOrder) : fallbackGroupOrder;
     const columnOrderByGroup = Object.fromEntries(
       resolvedGroupOrder.map((groupKey) => {
         const fallbackColumns = fallbackColumnOrderByGroup[groupKey] ?? [];
         const persisted = (parsed.columnOrderByGroup?.[groupKey] ?? []).filter((key) => allowedColumnKeys.has(key));
-        return [groupKey, persisted.length ? persisted : fallbackColumns];
+        return [groupKey, persisted.length ? mergeOrderedKeys(persisted, fallbackColumns) : fallbackColumns];
       }),
     );
 
