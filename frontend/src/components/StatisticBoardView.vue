@@ -13,8 +13,6 @@ import {
   type RealtimeWorkspaceStatusResponse,
   type StatisticBoardResponse,
   type StatisticCellData,
-  type StatisticColumnGroup,
-  type StatisticColumnLeaf,
   type StatisticDetailColumn,
   type StatisticDetailResponse,
   type StatisticFilterField,
@@ -49,6 +47,33 @@ import {
   type StatisticFilterConditionDraft,
   type StatisticFilterDraftGroup,
 } from './statistic-board-filters';
+import {
+  buildFilterGroupFromRouteQuery,
+  buildFilterQueryPatch,
+  mergeRouteQuery,
+  routeBoardSortColumn,
+  routeBoardSortDirection,
+  routeDetailPage,
+  routeDetailPageSize,
+  routeDetailSortBy,
+  routeDetailSortOrder,
+  routeDetailVisible,
+} from './statistic-board-route-query';
+import {
+  columnMinWidth as resolveColumnMinWidth,
+  columnResizable as resolveColumnResizable,
+  computeFirstColumnMinWidth,
+  computeFirstColumnWidth,
+  resolveOrderedColumnGroups,
+} from './statistic-board-column-layout';
+import { useStatisticBoardColumnDrag } from './useStatisticBoardColumnDrag';
+import {
+  createFallbackRuleExplanation,
+  metricFormulaSummary,
+  ruleStepRemovedCount,
+  ruleStepRetainedRate,
+  ruleStepSummary,
+} from './statistic-board-rule-explanation';
 
 const props = withDefaults(
   defineProps<{
@@ -64,91 +89,8 @@ const route = useRoute();
 const router = useRouter();
 const syncStatus = ref<RealtimeWorkspaceStatusResponse | null>(null);
 
-function parsePositiveInteger(rawValue: unknown, fallback: number) {
-  const parsed = Number.parseInt(String(rawValue ?? ''), 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
-}
-
-function parseSortDirection(rawValue: unknown, fallback: SortDirection) {
-  return rawValue === 'asc' || rawValue === 'desc' || rawValue === 'default' ? rawValue : fallback;
-}
-
-function routeBoardSortColumn() {
-  return String(route.query.sortBy ?? '');
-}
-
-function routeBoardSortDirection() {
-  return parseSortDirection(route.query.sortOrder, 'default');
-}
-
-function routeDetailPage() {
-  return parsePositiveInteger(route.query.detailPage, 1);
-}
-
-function routeDetailPageSize() {
-  return parsePositiveInteger(route.query.detailPageSize, board.value?.definition.defaultPageSize ?? 10);
-}
-
-function routeDetailSortBy() {
-  return String(route.query.detailSortBy ?? 'syncedAt');
-}
-
-function routeDetailSortOrder() {
-  const value = String(route.query.detailSortOrder ?? 'descending');
-  return value === 'ascending' || value === 'descending' ? value : 'descending';
-}
-
-function routeDetailVisible() {
-  return String(route.query.detailVisible ?? '') === '1';
-}
-
-function buildFilterGroupFromRoute() {
-  const draftGroup = createEmptyFilterGroup();
-  draftGroup.logic = route.query.filterLogic === 'OR' ? 'OR' : 'AND';
-  const keyedConditions = new Map<number, StatisticFilterConditionDraft>();
-
-  for (const [key, rawValue] of Object.entries(route.query)) {
-    const match = /^filters\.(\d+)\.(field|operator|value|value2)$/.exec(key);
-    if (!match) {
-      continue;
-    }
-    const index = Number.parseInt(match[1], 10);
-    const nextValue = Array.isArray(rawValue) ? String(rawValue[0] ?? '') : String(rawValue ?? '');
-    const currentCondition =
-      keyedConditions.get(index) ?? {
-        id: crypto.randomUUID(),
-        fieldKey: '',
-        operator: '' as StatisticFilterOperator | '',
-        value: '',
-        secondaryValue: '',
-      };
-    if (match[2] === 'field') {
-      currentCondition.fieldKey = nextValue;
-    } else if (match[2] === 'operator') {
-      currentCondition.operator = nextValue as StatisticFilterOperator;
-    } else if (match[2] === 'value') {
-      currentCondition.value = nextValue;
-    } else {
-      currentCondition.secondaryValue = nextValue;
-    }
-    keyedConditions.set(index, currentCondition);
-  }
-
-  draftGroup.conditions.push(
-    ...[...keyedConditions.entries()].sort((left, right) => left[0] - right[0]).map(([, condition]) => condition),
-  );
-  return draftGroup;
-}
-
 async function replaceRouteQuery(patch: Record<string, string | number | null | undefined>) {
-  const nextQuery = { ...route.query } as Record<string, string>;
-  for (const [key, value] of Object.entries(patch)) {
-    if (value == null || value === '') {
-      delete nextQuery[key];
-    } else {
-      nextQuery[key] = String(value);
-    }
-  }
+  const nextQuery = mergeRouteQuery(route.query, patch);
   await router.replace({
     path: route.path,
     query: nextQuery,
@@ -184,59 +126,13 @@ const detailPagination = reactive({
   sortOrder: 'descending',
 });
 
-const dragState = reactive<{
-  type: 'group' | 'column' | '';
-  sourceGroupKey: string;
-  sourceColumnKey: string;
-}>({
-  type: '',
-  sourceGroupKey: '',
-  sourceColumnKey: '',
-});
-
 const activeFilterFields = computed(() => board.value?.definition.filters ?? []);
-
-const visibleColumnKeySet = computed(() => new Set(boardViewPrefs.value.visibleColumnKeys));
-
-function applyOrderedColumnsToGroup(group: StatisticColumnGroup, orderedLeafColumns: StatisticColumnLeaf[]): StatisticColumnGroup | null {
-  const directColumnKeys = new Set((group.columns ?? []).map((leaf) => leaf.key));
-  const directColumns = orderedLeafColumns.filter((column) => directColumnKeys.has(column.key));
-  const children = (group.children ?? [])
-    .map((child) => {
-      const childLeafKeys = new Set(flattenStatisticColumnLeavesFromGroup(child).map((column) => column.key));
-      const childColumns = orderedLeafColumns.filter((column) => childLeafKeys.has(column.key));
-      return applyOrderedColumnsToGroup(child, childColumns);
-    })
-    .filter((child): child is StatisticColumnGroup => Boolean(child));
-  if (!directColumns.length && !children.length) {
-    return null;
-  }
-  return {
-    ...group,
-    children,
-    columns: directColumns,
-  };
-}
 
 const orderedColumnGroups = computed(() => {
   if (!board.value) {
     return [];
   }
-  const groupMap = new Map(board.value.definition.columnGroups.map((group) => [group.key, group]));
-  return boardViewPrefs.value.groupOrder
-    .map((groupKey) => groupMap.get(groupKey))
-    .filter((group): group is StatisticColumnGroup => Boolean(group))
-    .map((group) => {
-      const leafColumns = flattenStatisticColumnLeavesFromGroup(group);
-      const columnOrder = boardViewPrefs.value.columnOrderByGroup[group.key] ?? leafColumns.map((column) => column.key);
-      const columnMap = new Map(leafColumns.map((column) => [column.key, column]));
-      const orderedLeafColumns = columnOrder
-        .map((columnKey) => columnMap.get(columnKey))
-        .filter((column): column is StatisticColumnLeaf => Boolean(column))
-        .filter((column) => visibleColumnKeySet.value.has(column.key));
-      return applyOrderedColumnsToGroup(group, orderedLeafColumns);
-    })
-    .filter((group): group is StatisticColumnGroup => Boolean(group));
+  return resolveOrderedColumnGroups(board.value.definition.columnGroups, boardViewPrefs.value);
 });
 
 const sortedRows = computed(() => {
@@ -317,19 +213,6 @@ const qaFriendlyRuleSummary = computed(() => {
   return `当前结果一共基于 ${ruleFirstInputCount.value} 条原始数据逐步筛选，最后保留 ${ruleFinalOutputCount.value} 条，最终保留比例为 ${ruleFinalRetainedRate.value}。`;
 });
 
-function createFallbackRuleExplanation(reason: string): StatisticBoardRuleExplanationResponse {
-  return {
-    boardKey: props.boardKey,
-    supported: false,
-    title: '规则说明',
-    version: null,
-    scopeDescription: null,
-    summary: null,
-    flowSteps: [],
-    metricDefinitions: [],
-    unsupportedReason: reason,
-  };
-}
 const {
   tableCurrentPage,
   tablePageSize,
@@ -360,41 +243,22 @@ const {
   computed(() => board.value?.definition.columnGroups ?? []),
   computed(() => boardViewPrefs.value.visibleColumnKeys),
 );
+const {
+  onGroupDragStart,
+  isGroupDragging,
+  onGroupDrop,
+  onColumnDragStart,
+  isColumnDragging,
+  onColumnDrop,
+  clearDragState,
+} = useStatisticBoardColumnDrag(boardViewPrefs, persistViewPrefs);
 
-const firstColumnWidth = computed(() => {
-  if (!board.value) {
-    return 132;
-  }
-  const longestLabelLength = board.value.rows.reduce((max, row) => Math.max(max, row.rowLabel.length), 4);
-  if (boardViewPrefs.value.widthStrategy === 'compact') {
-    return Math.min(148, Math.max(112, longestLabelLength * 14 + 24));
-  }
-  if (boardViewPrefs.value.widthStrategy === 'header') {
-    return Math.min(176, Math.max(120, longestLabelLength * 16 + 30));
-  }
-  return Math.min(220, Math.max(128, longestLabelLength * 18 + 42));
-});
+const firstColumnWidth = computed(() => computeFirstColumnWidth(board.value?.rows ?? [], boardViewPrefs.value.widthStrategy));
 
-function visualTextUnits(text: string) {
-  return Array.from(text).reduce((total, character) => total + (/[\u0000-\u00ff]/.test(character) ? 1 : 2), 0);
-}
-
-function headerLabelMinimumWidth(label: string, reservePx: number) {
-  return Math.max(96, visualTextUnits(label) * 7 + reservePx);
-}
-
-const firstColumnMinWidth = computed(() => {
-  const baseWidth =
-    boardViewPrefs.value.widthStrategy === 'compact'
-      ? 108
-      : boardViewPrefs.value.widthStrategy === 'header'
-        ? 120
-        : 132;
-  return Math.max(baseWidth, headerLabelMinimumWidth(rowHeaderLabel.value, 96));
-});
+const firstColumnMinWidth = computed(() => computeFirstColumnMinWidth(rowHeaderLabel.value, boardViewPrefs.value.widthStrategy));
 
 function initializeFilters(fields: StatisticFilterField[]) {
-  const routeFilterGroup = buildFilterGroupFromRoute();
+  const routeFilterGroup = buildFilterGroupFromRouteQuery(route.query);
   const nextDraft = normalizeFilterDraftGroup(routeFilterGroup, fields);
   filterDraft.logic = nextDraft.logic;
   filterDraft.conditions.splice(0, filterDraft.conditions.length, ...nextDraft.conditions);
@@ -404,8 +268,8 @@ function applyStoredViewPrefs(response: StatisticBoardResponse) {
   const storedPrefs = loadStatisticBoardViewPrefs(props.boardKey, response.definition);
   boardViewPrefs.value = {
     ...storedPrefs,
-    sortColumnKey: routeBoardSortColumn(),
-    sortDirection: routeBoardSortDirection(),
+    sortColumnKey: routeBoardSortColumn(route.query),
+    sortDirection: routeBoardSortDirection(route.query),
   };
   syncDraftFromVisible();
 }
@@ -428,10 +292,10 @@ async function loadBoard(showError = true) {
     board.value = response;
     initializeFilters(response.definition.filters);
     applyStoredViewPrefs(response);
-    detailPagination.page = routeDetailPage();
-    detailPagination.size = routeDetailPageSize();
-    detailPagination.sortField = routeDetailSortBy();
-    detailPagination.sortOrder = routeDetailSortOrder();
+    detailPagination.page = routeDetailPage(route.query);
+    detailPagination.size = routeDetailPageSize(route.query, board.value?.definition.defaultPageSize ?? 10);
+    detailPagination.sortField = routeDetailSortBy(route.query);
+    detailPagination.sortOrder = routeDetailSortOrder(route.query);
   } catch (error) {
     errorMessage.value = (error as Error).message;
     if (showError) {
@@ -457,7 +321,7 @@ async function loadRuleExplanation() {
       filterGroup: buildFilterPayload(),
     });
   } catch {
-    ruleExplanation.value = createFallbackRuleExplanation('规则说明加载失败，请稍后重试。');
+    ruleExplanation.value = createFallbackRuleExplanation(props.boardKey, '规则说明加载失败，请稍后重试。');
   } finally {
     ruleExplanationLoading.value = false;
   }
@@ -666,6 +530,14 @@ function cellForColumn(row: StatisticRowData, columnKey: string) {
   return row.cells.find((item) => item.columnKey === columnKey);
 }
 
+function columnMinWidth(column: Parameters<typeof resolveColumnMinWidth>[0]) {
+  return resolveColumnMinWidth(column, boardViewPrefs.value.widthStrategy, board.value?.rows ?? []);
+}
+
+function columnResizable(column: Parameters<typeof resolveColumnResizable>[0]) {
+  return resolveColumnResizable(column);
+}
+
 function sortDirectionForColumn(columnKey: string) {
   return resolveSortDirectionForColumn(boardViewPrefs.value, columnKey);
 }
@@ -708,27 +580,9 @@ function addFilterCondition() {
   filterDraft.conditions.push(createFilterConditionDraft(field));
 }
 
-function buildFilterQueryPatch() {
-  const patch: Record<string, string | number | null> = {
-    filterLogic: filterDraft.conditions.length ? filterDraft.logic : null,
-  };
-  for (const key of Object.keys(route.query)) {
-    if (key.startsWith('filters.')) {
-      patch[key] = null;
-    }
-  }
-  filterDraft.conditions.forEach((condition, index) => {
-    patch[`filters.${index}.field`] = condition.fieldKey || null;
-    patch[`filters.${index}.operator`] = condition.operator || null;
-    patch[`filters.${index}.value`] = condition.value || null;
-    patch[`filters.${index}.value2`] = condition.secondaryValue || null;
-  });
-  return patch;
-}
-
 async function applyFiltersToRoute() {
   await replaceRouteQuery({
-    ...buildFilterQueryPatch(),
+    ...buildFilterQueryPatch(route.query, filterDraft),
     detailVisible: '',
     detailRowKey: '',
     detailColumnKey: '',
@@ -754,7 +608,7 @@ async function refreshBoard() {
 
 function openRuleExplanation() {
   if (!ruleExplanation.value) {
-    ruleExplanation.value = createFallbackRuleExplanation('规则说明暂未加载完成，请稍后再试。');
+    ruleExplanation.value = createFallbackRuleExplanation(props.boardKey, '规则说明暂未加载完成，请稍后再试。');
   }
   if (!ruleExplanation.value.supported) {
     ElMessage.warning(ruleExplanation.value.unsupportedReason || '当前统计表暂不支持规则说明');
@@ -764,29 +618,6 @@ function openRuleExplanation() {
 
 function handleRuleExplanationVisibleChange(visible: boolean) {
   ruleExplanationVisible.value = visible;
-}
-
-function ruleStepRemovedCount(step: { inputCount: number; outputCount: number }) {
-  return Math.max(step.inputCount - step.outputCount, 0);
-}
-
-function ruleStepRetainedRate(step: { inputCount: number; outputCount: number }) {
-  if (!step.inputCount) {
-    return '0%';
-  }
-  return `${((step.outputCount / step.inputCount) * 100).toFixed(1)}%`;
-}
-
-function ruleStepSummary(step: { inputCount: number; outputCount: number }, index: number) {
-  const removed = ruleStepRemovedCount(step);
-  if (removed <= 0) {
-    return `第 ${index + 1} 步处理后，数据没有减少，仍保留 ${step.outputCount} 条。`;
-  }
-  return `第 ${index + 1} 步处理后，剩余 ${step.outputCount} 条，较上一步减少 ${removed} 条，保留比例 ${ruleStepRetainedRate(step)}。`;
-}
-
-function metricFormulaSummary(metric: { label: string; definition: string; formula: string; note?: string | null }) {
-  return `${metric.label}：${metric.definition}`;
 }
 
 function removeFilterCondition(conditionId: string) {
@@ -856,135 +687,6 @@ function fieldOptions(condition: StatisticFilterConditionDraft) {
   return fieldForCondition(condition.fieldKey)?.options ?? [];
 }
 
-function onGroupDragStart(groupKey: string) {
-  dragState.type = 'group';
-  dragState.sourceGroupKey = groupKey;
-  dragState.sourceColumnKey = '';
-}
-
-function isGroupDragging(groupKey: string) {
-  return dragState.type === 'group' && dragState.sourceGroupKey === groupKey;
-}
-
-function onGroupDrop(targetGroupKey: string) {
-  if (dragState.type !== 'group' || dragState.sourceGroupKey === targetGroupKey) {
-    clearDragState();
-    return;
-  }
-
-  const nextOrder = [...boardViewPrefs.value.groupOrder];
-  const sourceIndex = nextOrder.indexOf(dragState.sourceGroupKey);
-  const targetIndex = nextOrder.indexOf(targetGroupKey);
-  if (sourceIndex < 0 || targetIndex < 0) {
-    clearDragState();
-    return;
-  }
-  const [moved] = nextOrder.splice(sourceIndex, 1);
-  nextOrder.splice(targetIndex, 0, moved);
-  boardViewPrefs.value = {
-    ...boardViewPrefs.value,
-    groupOrder: nextOrder,
-  };
-  persistViewPrefs();
-  clearDragState();
-}
-
-function onColumnDragStart(groupKey: string, columnKey: string) {
-  dragState.type = 'column';
-  dragState.sourceGroupKey = groupKey;
-  dragState.sourceColumnKey = columnKey;
-}
-
-function isColumnDragging(groupKey: string, columnKey: string) {
-  return (
-    dragState.type === 'column' &&
-    dragState.sourceGroupKey === groupKey &&
-    dragState.sourceColumnKey === columnKey
-  );
-}
-
-function onColumnDrop(targetGroupKey: string, targetColumnKey: string) {
-  if (
-    dragState.type !== 'column' ||
-    dragState.sourceGroupKey !== targetGroupKey ||
-    dragState.sourceColumnKey === targetColumnKey
-  ) {
-    clearDragState();
-    return;
-  }
-
-  const nextColumns = [...(boardViewPrefs.value.columnOrderByGroup[targetGroupKey] ?? [])];
-  const sourceIndex = nextColumns.indexOf(dragState.sourceColumnKey);
-  const targetIndex = nextColumns.indexOf(targetColumnKey);
-  if (sourceIndex < 0 || targetIndex < 0) {
-    clearDragState();
-    return;
-  }
-  const [moved] = nextColumns.splice(sourceIndex, 1);
-  nextColumns.splice(targetIndex, 0, moved);
-  boardViewPrefs.value = {
-    ...boardViewPrefs.value,
-    columnOrderByGroup: {
-      ...boardViewPrefs.value.columnOrderByGroup,
-      [targetGroupKey]: nextColumns,
-    },
-  };
-  persistViewPrefs();
-  clearDragState();
-}
-
-function clearDragState() {
-  dragState.type = '';
-  dragState.sourceGroupKey = '';
-  dragState.sourceColumnKey = '';
-}
-
-function columnWidth(column: StatisticColumnLeaf) {
-  if (column.metricType.includes('count') || column.metricType.includes('ratio') || column.metricType.includes('number')) {
-    return boardViewPrefs.value.widthStrategy === 'compact' ? 96 : boardViewPrefs.value.widthStrategy === 'header' ? 124 : 156;
-  }
-  if (boardViewPrefs.value.widthStrategy === 'compact') {
-    return compactColumnWidth(column);
-  }
-  if (boardViewPrefs.value.widthStrategy === 'header') {
-    return headerBasedWidth(column);
-  }
-  return contentBasedWidth(column);
-}
-
-function columnMinWidth(column: StatisticColumnLeaf) {
-  return Math.max(columnWidth(column), headerLabelMinimumWidth(column.label, 98));
-}
-
-function columnResizable(column: StatisticColumnLeaf) {
-  return !(column.metricType.includes('count') || column.metricType.includes('ratio') || column.metricType.includes('number'));
-}
-
-function compactColumnWidth(column: StatisticColumnLeaf) {
-  if (column.metricType.includes('time') || column.metricType.includes('date')) {
-    return 132;
-  }
-  return Math.min(136, Math.max(88, column.label.length * 11 + 24));
-}
-
-function headerBasedWidth(column: StatisticColumnLeaf) {
-  return Math.min(196, Math.max(116, column.label.length * 16 + 34));
-}
-
-function contentBasedWidth(column: StatisticColumnLeaf) {
-  if (!board.value) {
-    return headerBasedWidth(column);
-  }
-  const maxLength = board.value.rows.reduce((current, row) => {
-    const valueLength = (cellForColumn(row, column.key)?.displayValue ?? '').length;
-    return Math.max(current, valueLength);
-  }, column.label.length);
-  if (column.metricType.includes('time') || column.metricType.includes('date')) {
-    return Math.min(240, Math.max(156, maxLength * 9 + 34));
-  }
-  return Math.min(280, Math.max(132, maxLength * 13 + 26));
-}
-
 watch(detailVisible, (visible) => {
   if (!visible) {
     detail.value = null;
@@ -1010,7 +712,7 @@ watch(
       await loadBoard(false);
       await loadRealtimeStatus();
       await loadRuleExplanation();
-      detailVisible.value = routeDetailVisible();
+      detailVisible.value = routeDetailVisible(route.query);
       if (detailVisible.value) {
         activeRow.value = board.value?.rows.find((row) => row.rowKey === String(route.query.detailRowKey ?? '')) ?? null;
         activeCell.value = activeRow.value?.cells.find((cell) => cell.columnKey === String(route.query.detailColumnKey ?? '')) ?? null;

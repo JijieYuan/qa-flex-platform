@@ -1,231 +1,52 @@
 package com.data.collection.platform.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.data.collection.platform.common.JsonUtils;
 import com.data.collection.platform.common.exception.BizException;
 import com.data.collection.platform.entity.GitlabMirrorTableRegistry;
-import com.data.collection.platform.entity.SourceTableColumn;
-import com.data.collection.platform.entity.database.DatabaseTableColumn;
 import com.data.collection.platform.entity.database.DatabaseTableOption;
 import com.data.collection.platform.entity.database.DatabaseTableRowsResponse;
 import com.data.collection.platform.mapper.GitlabMirrorTableRegistryMapper;
-import com.fasterxml.jackson.core.type.TypeReference;
-import java.sql.SQLException;
-import java.time.LocalDateTime;
-import java.time.temporal.TemporalAccessor;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
-import java.util.stream.Collectors;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Service;
-import org.springframework.util.StringUtils;
 
 @Service
 public class DatabaseBrowserService {
 
-  private static final int DEFAULT_PAGE = 1;
-  private static final int DEFAULT_SIZE = 20;
-  private static final int MAX_SIZE = 100;
-  private static final TypeReference<List<SourceTableColumn>> COLUMN_LIST_TYPE = new TypeReference<>() {};
-
-  private static final Map<String, TableDefinition> TABLE_DEFINITIONS = Map.of(
-      "gitlab_sync_configs", new TableDefinition(
-          "同步配置",
-          List.of("name", "source_mode", "whitelist_mode", "db_name", "db_username", "docker_container_name"),
-          List.of(
-              new DatabaseTableColumn("id", "ID", true),
-              new DatabaseTableColumn("name", "数据源名称", true),
-              new DatabaseTableColumn("source_mode", "读取方式", true),
-              new DatabaseTableColumn("whitelist_mode", "白名单模式", true),
-              new DatabaseTableColumn("updated_at", "更新时间", true),
-              new DatabaseTableColumn("created_at", "创建时间", true)),
-          "id"),
-      "gitlab_sync_logs", new TableDefinition(
-          "同步日志",
-          List.of("sync_type", "status", "message"),
-          List.of(
-              new DatabaseTableColumn("id", "ID", true),
-              new DatabaseTableColumn("sync_type", "同步类型", true),
-              new DatabaseTableColumn("status", "状态", true),
-              new DatabaseTableColumn("table_count", "表数", true),
-              new DatabaseTableColumn("record_count", "记录数", true),
-              new DatabaseTableColumn("started_at", "开始时间", true),
-              new DatabaseTableColumn("finished_at", "结束时间", true)),
-          "id"),
-      "gitlab_sync_tasks", new TableDefinition(
-          "同步任务",
-          List.of("run_id", "task_type", "trigger_type", "scope_key", "status", "finished_reason"),
-          List.of(
-              new DatabaseTableColumn("id", "ID", true),
-              new DatabaseTableColumn("task_type", "任务类型", true),
-              new DatabaseTableColumn("trigger_type", "触发方式", true),
-              new DatabaseTableColumn("status", "任务状态", true),
-              new DatabaseTableColumn("queued_at", "排队时间", true),
-              new DatabaseTableColumn("started_at", "开始时间", true),
-              new DatabaseTableColumn("finished_at", "结束时间", true)),
-          "id"),
-      "gitlab_webhook_events", new TableDefinition(
-          "Webhook 事件",
-          List.of("event_type", "project_path", "event_id", "delivery_id"),
-          List.of(
-              new DatabaseTableColumn("id", "ID", true),
-              new DatabaseTableColumn("event_type", "事件类型", true),
-              new DatabaseTableColumn("project_path", "项目路径", true),
-              new DatabaseTableColumn("received_at", "接收时间", true)),
-          "id"),
-      "gitlab_mirror_records", new TableDefinition(
-          "旧镜像记录",
-          List.of("table_name", "record_key", "row_data"),
-          List.of(
-              new DatabaseTableColumn("id", "ID", true),
-              new DatabaseTableColumn("table_name", "源表名", true),
-              new DatabaseTableColumn("record_key", "主键值", true),
-              new DatabaseTableColumn("updated_at_source", "源更新时间", true),
-              new DatabaseTableColumn("synced_at", "镜像时间", true)),
-          "id"),
-      "collect_form_records", new TableDefinition(
-          "采集表单记录",
-          List.of("template_code", "resource_type", "resource_id", "reviewer", "remark"),
-          List.of(
-              new DatabaseTableColumn("id", "ID", true),
-              new DatabaseTableColumn("gitlab_base_url", "GitLab 来源地址", true),
-              new DatabaseTableColumn("project_id", "Project ID", true),
-              new DatabaseTableColumn("request_iid", "请求类型 IID", true),
-              new DatabaseTableColumn("resource_type", "资源类型", true),
-              new DatabaseTableColumn("resource_id", "资源编号", true),
-              new DatabaseTableColumn("template_code", "模板编码", true),
-              new DatabaseTableColumn("form_title", "表单标题", true),
-              new DatabaseTableColumn("reviewer", "走查人", true),
-              new DatabaseTableColumn("review_duration_minutes", "走查时间(分钟)", true),
-              new DatabaseTableColumn("specification_score", "规范", true),
-              new DatabaseTableColumn("logic_score", "逻辑", true),
-              new DatabaseTableColumn("performance_score", "性能", true),
-              new DatabaseTableColumn("design_score", "设计", true),
-              new DatabaseTableColumn("other_score", "其他", true),
-              new DatabaseTableColumn("deleted", "是否作废", true),
-              new DatabaseTableColumn("updated_at", "更新时间", true),
-              new DatabaseTableColumn("created_at", "创建时间", true)),
-          "updated_at"),
-      "code_review_external_metrics", new TableDefinition(
-          "代码走查外部指标导入表",
-          List.of("merge_request_iid", "comment_rate_source", "defect_count_source", "source_summary", "raw_payload"),
-          List.of(
-              new DatabaseTableColumn("id", "ID", true),
-              new DatabaseTableColumn("project_id", "Project ID", true),
-              new DatabaseTableColumn("merge_request_id", "MR ID", true),
-              new DatabaseTableColumn("merge_request_iid", "MR IID", true),
-              new DatabaseTableColumn("comment_rate", "代码注释率", true),
-              new DatabaseTableColumn("comment_rate_source", "注释率来源", true),
-              new DatabaseTableColumn("defect_count", "缺陷数", true),
-              new DatabaseTableColumn("defect_count_source", "缺陷来源", true),
-              new DatabaseTableColumn("source_summary", "来源说明", true),
-              new DatabaseTableColumn("raw_payload", "原始导入内容", true),
-              new DatabaseTableColumn("imported_at", "导入时间", true),
-              new DatabaseTableColumn("updated_at", "更新时间", true),
-              new DatabaseTableColumn("created_at", "创建时间", true)),
-          "updated_at"),
-      "issue_fact", new TableDefinition(
-          "议题事实表",
-          List.of("source_system", "source_instance", "issue_iid", "title", "module_name", "severity_level", "priority_level"),
-          List.of(
-              new DatabaseTableColumn("id", "ID", true),
-              new DatabaseTableColumn("source_system", "来源系统", true),
-              new DatabaseTableColumn("source_instance", "来源实例", true),
-              new DatabaseTableColumn("ingest_channel", "接入通道", true),
-              new DatabaseTableColumn("project_id", "Project ID", true),
-              new DatabaseTableColumn("project_name", "项目名称", true),
-              new DatabaseTableColumn("issue_id", "Issue ID", true),
-              new DatabaseTableColumn("issue_iid", "Issue IID", true),
-              new DatabaseTableColumn("title", "标题", true),
-              new DatabaseTableColumn("issue_state", "状态", true),
-              new DatabaseTableColumn("issue_type", "类别", true),
-              new DatabaseTableColumn("milestone_title", "里程碑", true),
-              new DatabaseTableColumn("author_name", "提交人", true),
-              new DatabaseTableColumn("assignee_name", "处理人", true),
-              new DatabaseTableColumn("module_name", "模块名", true),
-              new DatabaseTableColumn("testing_phase", "测试阶段", true),
-              new DatabaseTableColumn("severity_level", "严重程度", true),
-              new DatabaseTableColumn("priority_level", "优先级", true),
-              new DatabaseTableColumn("urgency", "优先级(兼容字段)", true),
-              new DatabaseTableColumn("bug_status", "测试状态", true),
-              new DatabaseTableColumn("category", "缺陷原因", true),
-              new DatabaseTableColumn("system_test_label", "系统测试标签", true),
-              new DatabaseTableColumn("delay_issue", "是否延期", true),
-              new DatabaseTableColumn("delay_cause", "延期原因", true),
-              new DatabaseTableColumn("source_summary", "来源说明", true),
-              new DatabaseTableColumn("raw_payload", "原始载荷", true),
-              new DatabaseTableColumn("fact_refreshed_at", "事实刷新时间", true),
-              new DatabaseTableColumn("updated_at", "更新时间", true),
-              new DatabaseTableColumn("created_at", "创建时间", true)),
-          "updated_at"),
-      "merge_request_fact", new TableDefinition(
-          "合并请求事实表",
-          List.of("source_system", "source_instance", "merge_request_iid", "title", "module_name", "owner_name"),
-          List.of(
-              new DatabaseTableColumn("id", "ID", true),
-              new DatabaseTableColumn("source_system", "来源系统", true),
-              new DatabaseTableColumn("source_instance", "来源实例", true),
-              new DatabaseTableColumn("ingest_channel", "接入通道", true),
-              new DatabaseTableColumn("project_id", "Project ID", true),
-              new DatabaseTableColumn("project_name", "项目名称", true),
-              new DatabaseTableColumn("repository_name", "仓库名称", true),
-              new DatabaseTableColumn("merge_request_id", "MR ID", true),
-              new DatabaseTableColumn("merge_request_iid", "MR IID", true),
-              new DatabaseTableColumn("title", "标题", true),
-              new DatabaseTableColumn("merge_request_state", "状态", true),
-              new DatabaseTableColumn("target_branch", "目标分支", true),
-              new DatabaseTableColumn("source_branch", "源分支", true),
-              new DatabaseTableColumn("author_name", "提交人", true),
-              new DatabaseTableColumn("merge_user_name", "合并人", true),
-              new DatabaseTableColumn("owner_name", "指派人", true),
-              new DatabaseTableColumn("reviewer_names", "评审人", true),
-              new DatabaseTableColumn("assignee_names", "处理人", true),
-              new DatabaseTableColumn("module_name", "模块名", true),
-              new DatabaseTableColumn("review_status", "走查状态", true),
-              new DatabaseTableColumn("review_duration_minutes", "走查时长(分钟)", true),
-              new DatabaseTableColumn("comment_rate", "代码注释率", true),
-              new DatabaseTableColumn("comment_rate_source", "注释率来源", true),
-              new DatabaseTableColumn("defect_count", "缺陷数", true),
-              new DatabaseTableColumn("defect_count_source", "缺陷数来源", true),
-              new DatabaseTableColumn("scan_status", "扫描状态", true),
-              new DatabaseTableColumn("scan_bug_count", "扫描问题数", true),
-              new DatabaseTableColumn("added_lines", "新增代码行数", true),
-              new DatabaseTableColumn("source_summary", "来源说明", true),
-              new DatabaseTableColumn("raw_payload", "原始载荷", true),
-              new DatabaseTableColumn("fact_refreshed_at", "事实刷新时间", true),
-              new DatabaseTableColumn("updated_at", "更新时间", true),
-              new DatabaseTableColumn("created_at", "创建时间", true)),
-          "updated_at"));
-
   private final JdbcTemplate jdbcTemplate;
   private final GitlabMirrorTableRegistryMapper registryMapper;
-  private final JsonUtils jsonUtils;
+  private final DatabaseBrowserMirrorTableDefinitionFactory mirrorTableDefinitionFactory;
 
   public DatabaseBrowserService(
       JdbcTemplate jdbcTemplate,
       GitlabMirrorTableRegistryMapper registryMapper,
-      JsonUtils jsonUtils) {
+      DatabaseBrowserMirrorTableDefinitionFactory mirrorTableDefinitionFactory) {
     this.jdbcTemplate = jdbcTemplate;
     this.registryMapper = registryMapper;
-    this.jsonUtils = jsonUtils;
+    this.mirrorTableDefinitionFactory = mirrorTableDefinitionFactory;
   }
 
   public List<DatabaseTableOption> listTables() {
     Map<String, DatabaseTableOption> allTables = new LinkedHashMap<>();
-    TABLE_DEFINITIONS.forEach((key, value) ->
-        allTables.put(key, new DatabaseTableOption(key, value.label(), "IDLE", null)));
-    listMirrorRegistries().forEach(registry -> allTables.put(
-        registry.getMirrorTableName(),
-        new DatabaseTableOption(
-            registry.getMirrorTableName(),
-            buildMirrorLabel(registry.getSourceTableName()),
-            registry.getSyncStatus(),
-            registry.getLastSyncTime())));
+    DatabaseBrowserTableCatalog.listDefinitions()
+        .forEach(
+            (tableName, definition) ->
+                allTables.put(
+                    tableName,
+                    new DatabaseTableOption(tableName, definition.label(), "IDLE", null)));
+    listMirrorRegistries()
+        .forEach(
+            registry ->
+                allTables.put(
+                    registry.getMirrorTableName(),
+                    new DatabaseTableOption(
+                        registry.getMirrorTableName(),
+                        mirrorTableDefinitionFactory.buildMirrorLabel(registry.getSourceTableName()),
+                        registry.getSyncStatus(),
+                        registry.getLastSyncTime())));
     return allTables.values().stream()
         .sorted((left, right) -> left.getTableName().compareToIgnoreCase(right.getTableName()))
         .toList();
@@ -238,22 +59,33 @@ public class DatabaseBrowserService {
       String keyword,
       String sortField,
       String sortOrder) {
-    TableContext context = resolveTableContext(tableName);
-    int safePage = page == null || page < 1 ? DEFAULT_PAGE : page;
-    int safeSize = size == null || size < 1 ? DEFAULT_SIZE : Math.min(size, MAX_SIZE);
-    String validatedSortField = normalizeSortField(context.definition(), sortField);
-    String validatedSortOrder = normalizeSortOrder(sortOrder);
-    String normalizedKeyword = StringUtils.hasText(keyword) ? keyword.trim() : null;
+    DatabaseBrowserTableContext context = resolveTableContext(tableName);
+    int safePage = DatabaseBrowserQuerySupport.normalizePage(page);
+    int safeSize = DatabaseBrowserQuerySupport.normalizeSize(size);
+    String validatedSortField =
+        DatabaseBrowserQuerySupport.normalizeSortField(context.definition(), sortField);
+    String validatedSortOrder = DatabaseBrowserQuerySupport.normalizeSortOrder(sortOrder);
+    String normalizedKeyword = DatabaseBrowserQuerySupport.normalizeKeyword(keyword);
 
-    SqlBundle sqlBundle =
-        buildSql(context.definition(), tableName, normalizedKeyword, validatedSortField, validatedSortOrder, safePage, safeSize);
-    long total = jdbcTemplate.queryForObject(sqlBundle.countSql(), Long.class, sqlBundle.arguments().toArray());
-    List<Map<String, Object>> rows = jdbcTemplate.query(sqlBundle.rowsSql(), tableRowMapper(), sqlBundle.arguments().toArray());
-
-    String statusMessage = null;
-    if (context.registry() != null && Objects.equals(context.registry().getSyncStatus(), "SYNCING")) {
-      statusMessage = "数据正在同步中，当前展示为历史稳定版本。";
-    }
+    DatabaseBrowserSqlBundle sqlBundle =
+        DatabaseBrowserQuerySupport.buildSql(
+            context.definition(),
+            tableName,
+            normalizedKeyword,
+            validatedSortField,
+            validatedSortOrder,
+            safePage,
+            safeSize);
+    long total =
+        jdbcTemplate.queryForObject(
+            sqlBundle.countSql(),
+            Long.class,
+            sqlBundle.arguments().toArray());
+    List<Map<String, Object>> rows =
+        jdbcTemplate.query(
+            sqlBundle.rowsSql(),
+            DatabaseBrowserRowMapperFactory.createTableRowMapper(),
+            sqlBundle.arguments().toArray());
 
     return new DatabaseTableRowsResponse(
         tableName,
@@ -268,178 +100,40 @@ public class DatabaseBrowserService {
         normalizedKeyword,
         context.registry() == null ? "IDLE" : context.registry().getSyncStatus(),
         context.registry() == null ? null : context.registry().getLastSyncTime(),
-        statusMessage);
+        buildStatusMessage(context.registry()));
   }
 
   private List<GitlabMirrorTableRegistry> listMirrorRegistries() {
-    return registryMapper.selectList(new LambdaQueryWrapper<GitlabMirrorTableRegistry>()
-        .eq(GitlabMirrorTableRegistry::getInitialized, true)
-        .orderByAsc(GitlabMirrorTableRegistry::getSourceTableName));
+    return registryMapper.selectList(
+        new LambdaQueryWrapper<GitlabMirrorTableRegistry>()
+            .eq(GitlabMirrorTableRegistry::getInitialized, true)
+            .orderByAsc(GitlabMirrorTableRegistry::getSourceTableName));
   }
 
-  private TableContext resolveTableContext(String tableName) {
-    TableDefinition systemDefinition = TABLE_DEFINITIONS.get(tableName);
+  private DatabaseBrowserTableContext resolveTableContext(String tableName) {
+    DatabaseBrowserTableDefinition systemDefinition =
+        DatabaseBrowserTableCatalog.findDefinition(tableName);
     if (systemDefinition != null) {
-      return new TableContext(systemDefinition, null);
+      return new DatabaseBrowserTableContext(systemDefinition, null);
     }
-    GitlabMirrorTableRegistry registry = registryMapper.selectOne(new LambdaQueryWrapper<GitlabMirrorTableRegistry>()
-        .eq(GitlabMirrorTableRegistry::getMirrorTableName, tableName)
-        .eq(GitlabMirrorTableRegistry::getInitialized, true)
-        .last("limit 1"));
+    GitlabMirrorTableRegistry registry =
+        registryMapper.selectOne(
+            new LambdaQueryWrapper<GitlabMirrorTableRegistry>()
+                .eq(GitlabMirrorTableRegistry::getMirrorTableName, tableName)
+                .eq(GitlabMirrorTableRegistry::getInitialized, true)
+                .last("limit 1"));
     if (registry == null) {
       throw new BizException("当前表不在数据库查看白名单中");
     }
-    return new TableContext(buildMirrorTableDefinition(registry), registry);
+    return new DatabaseBrowserTableContext(
+        mirrorTableDefinitionFactory.buildMirrorTableDefinition(registry),
+        registry);
   }
 
-  private TableDefinition buildMirrorTableDefinition(GitlabMirrorTableRegistry registry) {
-    List<SourceTableColumn> sourceColumns = jsonUtils.fromJson(registry.getColumnSnapshot(), COLUMN_LIST_TYPE);
-    if (sourceColumns == null || sourceColumns.isEmpty()) {
-      throw new BizException("当前镜像表注册信息缺少字段快照，无法展示数据库查看");
+  private String buildStatusMessage(GitlabMirrorTableRegistry registry) {
+    if (registry != null && Objects.equals(registry.getSyncStatus(), "SYNCING")) {
+      return "数据正在同步中，当前展示为历史稳定版本。";
     }
-    List<DatabaseTableColumn> columns = new ArrayList<>();
-    for (SourceTableColumn sourceColumn : sourceColumns) {
-      columns.add(new DatabaseTableColumn(
-          sourceColumn.columnName(),
-          prettifyColumnName(sourceColumn.columnName()),
-          true));
-    }
-    columns.add(new DatabaseTableColumn("mirror_task_id", "同步任务 ID", true));
-    columns.add(new DatabaseTableColumn("source_updated_at", "源更新时间", true));
-    columns.add(new DatabaseTableColumn("mirror_synced_at", "镜像时间", true));
-    columns.add(new DatabaseTableColumn("mirror_deleted", "是否删除", true));
-
-    List<String> searchableFields = sourceColumns.stream()
-        .map(SourceTableColumn::columnName)
-        .filter(this::isSearchableField)
-        .limit(6)
-        .toList();
-    if (searchableFields.isEmpty()) {
-      searchableFields = List.of(sourceColumns.get(0).columnName());
-    }
-
-    String defaultSortField = StringUtils.hasText(registry.getUpdatedAtColumn()) && columns.stream()
-        .anyMatch(column -> Objects.equals(column.getKey(), registry.getUpdatedAtColumn()))
-        ? registry.getUpdatedAtColumn()
-        : "mirror_synced_at";
-    return new TableDefinition(
-        buildMirrorLabel(registry.getSourceTableName()),
-        searchableFields,
-        columns,
-        defaultSortField);
-  }
-
-  private boolean isSearchableField(String columnName) {
-    return !List.of("metadata", "payload", "description_html").contains(columnName);
-  }
-
-  private String normalizeSortField(TableDefinition definition, String sortField) {
-    if (!StringUtils.hasText(sortField)) {
-      return definition.defaultSortField();
-    }
-    boolean allowed = definition.columns().stream().anyMatch(column -> column.isSortable() && Objects.equals(column.getKey(), sortField));
-    if (!allowed) {
-      throw new BizException("当前排序字段不允许使用");
-    }
-    return sortField;
-  }
-
-  private String normalizeSortOrder(String sortOrder) {
-    if (!StringUtils.hasText(sortOrder)) {
-      return "desc";
-    }
-    String normalized = sortOrder.trim().toLowerCase(Locale.ROOT);
-    if (!Objects.equals(normalized, "asc") && !Objects.equals(normalized, "desc")) {
-      throw new BizException("当前排序方向不允许使用");
-    }
-    return normalized;
-  }
-
-  private SqlBundle buildSql(
-      TableDefinition definition,
-      String tableName,
-      String keyword,
-      String sortField,
-      String sortOrder,
-      int page,
-      int size) {
-    StringBuilder whereBuilder = new StringBuilder(" where 1 = 1");
-    List<Object> arguments = new ArrayList<>();
-    if (StringUtils.hasText(keyword) && !definition.searchableFields().isEmpty()) {
-      whereBuilder.append(" and (");
-      whereBuilder.append(definition.searchableFields().stream()
-          .map(field -> "cast(" + quoteIdentifier(field) + " as text) ilike ?")
-          .collect(Collectors.joining(" or ")));
-      whereBuilder.append(")");
-      String likeValue = "%" + keyword + "%";
-      definition.searchableFields().forEach(field -> arguments.add(likeValue));
-    }
-    String orderClause =
-        " order by " + quoteIdentifier(sortField) + " " + sortOrder + ", " + quoteIdentifier(definition.defaultSortField()) + " desc";
-    String countSql = "select count(*) from " + quoteIdentifier(tableName) + whereBuilder;
-    String rowsSql = "select * from " + quoteIdentifier(tableName) + whereBuilder + orderClause + " limit " + size + " offset "
-        + ((page - 1) * size);
-    return new SqlBundle(countSql, rowsSql, arguments);
-  }
-
-  private RowMapper<Map<String, Object>> tableRowMapper() {
-    return (resultSet, rowNum) -> {
-      int columnCount = resultSet.getMetaData().getColumnCount();
-      Map<String, Object> row = new LinkedHashMap<>();
-      for (int index = 1; index <= columnCount; index++) {
-        String columnName = resultSet.getMetaData().getColumnName(index);
-        row.put(columnName, normalizeValue(resultSet.getObject(index)));
-      }
-      return row;
-    };
-  }
-
-  private Object normalizeValue(Object value) throws SQLException {
-    if (value == null) {
-      return null;
-    }
-    if ("org.postgresql.util.PGobject".equals(value.getClass().getName())) {
-      return value.toString();
-    }
-    if (value instanceof TemporalAccessor) {
-      return value.toString();
-    }
-    return value;
-  }
-
-  private String buildMirrorLabel(String sourceTableName) {
-    return "镜像表 / " + sourceTableName;
-  }
-
-  private String prettifyColumnName(String columnName) {
-    String[] parts = columnName.split("_");
-    StringBuilder builder = new StringBuilder();
-    for (String part : parts) {
-      if (!builder.isEmpty()) {
-        builder.append(' ');
-      }
-      builder.append(part.substring(0, 1).toUpperCase(Locale.ROOT));
-      if (part.length() > 1) {
-        builder.append(part.substring(1));
-      }
-    }
-    return builder.toString();
-  }
-
-  private String quoteIdentifier(String identifier) {
-    return "\"" + identifier.replace("\"", "\"\"") + "\"";
-  }
-
-  private record TableDefinition(
-      String label,
-      List<String> searchableFields,
-      List<DatabaseTableColumn> columns,
-      String defaultSortField) {
-  }
-
-  private record SqlBundle(String countSql, String rowsSql, List<Object> arguments) {
-  }
-
-  private record TableContext(TableDefinition definition, GitlabMirrorTableRegistry registry) {
+    return null;
   }
 }
