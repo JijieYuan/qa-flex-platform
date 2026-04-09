@@ -1339,6 +1339,44 @@
 - `code-review-illegal-records`
   - 已开始使用 `MergeRequestFactQueryService`
 
+### 19.3 当前规则说明与后续规则编辑的边界
+
+当前规则说明属于“半写死、半实时”的实现：
+
+- 写死在代码里的部分：
+  - 规则文案
+  - Flow 步骤名称
+  - 指标定义说明
+  - 规则版本号
+- 会随事实数据变化的部分：
+  - 当前样本数
+  - 过滤后数量
+  - 命中比例
+  - 示例记录
+
+因此，当前实现适合“统一口径、统一解释、统一 QA 展示”，但**不利于直接上规则编辑功能**。  
+后续更合理的演进顺序是：
+
+1. 先继续把规则集中在少数规则类和服务里，确保事实层是唯一真相源。
+2. 再把规则说明文案、Flow 步骤、指标公式说明抽成规则元数据。
+3. 最后才进入真正的规则编辑、版本管理、生效与回滚。
+
+### 19.4 本轮继续消掉的重复代码
+
+这轮继续把前面 3 个地基往里推进，重点不再是“接上”，而是“真正消掉重复代码”：
+
+- 已新增 `AbstractFactQueryService`
+  - 把 `appendEq / appendContains / 日期范围过滤 / trimToNull` 等公共查询拼装能力从具体事实查询服务里抽出来
+- `MergeRequestFactQueryService`
+  - 已补上 `mergedAtStart / mergedAtEnd` 的事实层日期过滤支持
+- `code-review-illegal-records`
+  - `projectId / repositoryName / mergedAtStart / mergedAtEnd / projectName / targetBranch / moduleName / mergeRequestIid / owner`
+  - 这批基础筛选已前推到事实查询层
+  - 记录页只保留关键字、非法类型、请求类型和部分派生字段的运行时过滤
+- `system-test-defect-summary`
+  - 缺陷占比、延期缺陷占比继续收敛到 `StatisticMetricCalculator`
+  - 不再在聚合桶里手写分母保护和百分比换算
+
 当前说明：
 
 - 这还是第一版轻量落地，不是完整平台级查询框架

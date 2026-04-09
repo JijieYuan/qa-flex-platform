@@ -254,9 +254,10 @@ public class SystemTestDefectSummaryBoardService extends AbstractStatisticBoardS
   }
 
   private List<IssueSource> loadSources(Map<String, String> filters) {
-    Long projectId = parseLong(withoutReservedFilters(filters).get("projectId"));
+    Map<String, String> queryFilters = withoutReservedFilters(filters);
+    Long projectId = parseLong(queryFilters.get("projectId"));
     try {
-      List<IssueSource> facts = ensureFactsReady(projectId, withoutReservedFilters(filters));
+      List<IssueSource> facts = ensureFactsReady(projectId, queryFilters);
       return facts.isEmpty() ? List.of() : facts;
     } catch (DataAccessException e) {
       log.warn("Failed to load issue facts", e);
@@ -385,7 +386,9 @@ public class SystemTestDefectSummaryBoardService extends AbstractStatisticBoardS
       long p2 = issues.stream().filter(i -> i.isPriority("P2")).count(), p2f = issues.stream().filter(i -> i.isPriority("P2") && i.isSolvedLike()).count(), p2c = issues.stream().filter(i -> i.isPriority("P2") && i.isClosed()).count();
       long p3 = issues.stream().filter(i -> i.isPriority("P3")).count(), p3f = issues.stream().filter(i -> i.isPriority("P3") && i.isSolvedLike()).count();
       long newTotal = issues.stream().filter(IssueSource::isNewIssue).count(), newFixed = issues.stream().filter(i -> i.isNewIssue() && i.isSolvedLike()).count(), newClosed = issues.stream().filter(i -> i.isNewIssue() && i.isClosedResolved()).count();
-      long l23legacy = l2legacy + l3legacy, l23 = l2 + l3; double defectRatio = overall <= 0 ? 0 : total * 100.0 / overall, delayRatio = total <= 0 ? 0 : delayed * 100.0 / total;
+      long l23legacy = l2legacy + l3legacy, l23 = l2 + l3;
+      double defectRatio = StatisticMetricCalculator.percentageOf(total, overall);
+      double delayRatio = StatisticMetricCalculator.percentageOf(delayed, total);
       return new StatisticRowData(rowKey, rowLabel, List.of(
           cell("level1_back", l1b, count(l1b), true, rowKey), cell("level1_hang", l1h, count(l1h), true, rowKey), cell("level1_other", l1o, count(l1o), true, rowKey),
           cell("level1_fixed", l1f, count(l1f), true, rowKey), cell("level1_total", l1, count(l1), true, rowKey), cell("level1_rate", l1f, rate(l1f, l1), false, rowKey),

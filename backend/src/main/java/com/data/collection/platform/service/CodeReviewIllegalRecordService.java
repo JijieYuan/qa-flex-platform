@@ -121,22 +121,24 @@ public class CodeReviewIllegalRecordService {
     int safeSize = size <= 0 ? 20 : Math.min(size, 100);
     String safeSortField = normalizeSortField(sortField);
     String safeSortOrder = normalizeSortOrder(sortOrder);
+    Map<String, String> factFilters = buildFactFilters(
+        projectId,
+        repositoryName,
+        mergedAtStart,
+        mergedAtEnd,
+        projectName,
+        targetBranch,
+        moduleName,
+        mergeRequestIid,
+        owner);
 
-    List<IllegalRecordView> filtered = loadSources().stream()
+    List<IllegalRecordView> filtered = loadSources(factFilters).stream()
         .map(this::toView)
         .filter(row -> !row.illegalTypes().isEmpty())
-        .filter(row -> matchesProjectId(row, projectId))
-        .filter(row -> matchesEquals(row.repositoryName(), repositoryName))
-        .filter(row -> matchesDateRange(row.mergedAt(), mergedAtStart, mergedAtEnd))
         .filter(row -> matchesKeyword(row, keyword))
-        .filter(row -> matchesEquals(row.projectName(), projectName))
         .filter(row -> matchesRequestType(row.requestType(), requestType))
-        .filter(row -> matchesEquals(row.targetBranch(), targetBranch))
         .filter(row -> matchesEquals(row.mergedBy(), mergedBy))
-        .filter(row -> matchesEquals(row.moduleName(), moduleName))
         .filter(row -> matchesIllegalType(row.illegalTypes(), illegalType))
-        .filter(row -> matchesNumeric(row.mergeRequestIid(), mergeRequestIid))
-        .filter(row -> matchesEquals(row.owner(), owner))
         .sorted(buildComparator(safeSortField, safeSortOrder))
         .toList();
 
@@ -151,10 +153,9 @@ public class CodeReviewIllegalRecordService {
   }
 
   public CodeReviewIllegalRecordFilterOptionsResponse getFilterOptions(Long projectId) {
-    List<IllegalRecordView> rows = loadSources().stream()
+    List<IllegalRecordView> rows = loadSources(buildFactFilters(projectId, null, null, null, null, null, null, null, null)).stream()
         .map(this::toView)
         .filter(row -> !row.illegalTypes().isEmpty())
-        .filter(row -> matchesProjectId(row, projectId))
         .toList();
 
     return new CodeReviewIllegalRecordFilterOptionsResponse(
@@ -176,7 +177,7 @@ public class CodeReviewIllegalRecordService {
   }
 
   public StatisticBoardRuleExplanationResponse getRuleExplanation() {
-    List<IllegalRecordSource> sources = loadSources();
+    List<IllegalRecordSource> sources = loadSources(Map.of());
     List<IllegalRecordView> views = sources.stream().map(this::toView).toList();
     List<IllegalRecordView> illegalViews = views.stream()
         .filter(row -> !row.illegalTypes().isEmpty())
@@ -333,9 +334,9 @@ public class CodeReviewIllegalRecordService {
     }
   }
 
-  private List<IllegalRecordSource> loadSources() {
+  private List<IllegalRecordSource> loadSources(Map<String, String> filters) {
     try {
-      List<IllegalRecordSource> facts = ensureFactsReady();
+      List<IllegalRecordSource> facts = ensureFactsReady(filters);
       if (!facts.isEmpty()) {
         return facts;
       }
@@ -346,13 +347,13 @@ public class CodeReviewIllegalRecordService {
     return List.of();
   }
 
-  private List<IllegalRecordSource> ensureFactsReady() {
-    List<IllegalRecordSource> facts = mergeRequestFactQueryService.query(FACT_SQL, Map.of(), this::mapFactSource);
+  private List<IllegalRecordSource> ensureFactsReady(Map<String, String> filters) {
+    List<IllegalRecordSource> facts = mergeRequestFactQueryService.query(FACT_SQL, filters, this::mapFactSource);
     if (!facts.isEmpty()) {
       return facts;
     }
     factBuildService.rebuildMergeRequestFacts(true);
-    return mergeRequestFactQueryService.query(FACT_SQL, Map.of(), this::mapFactSource);
+    return mergeRequestFactQueryService.query(FACT_SQL, filters, this::mapFactSource);
   }
 
   private IllegalRecordSource mapFactSource(ResultSet rs, int rowNum) throws SQLException {
@@ -499,10 +500,6 @@ public class CodeReviewIllegalRecordService {
         row.addedLines());
   }
 
-  private boolean matchesProjectId(IllegalRecordView row, Long projectId) {
-    return projectId == null || Objects.equals(row.projectId(), projectId);
-  }
-
   private boolean matchesEquals(String left, String right) {
     String normalizedRight = normalizeText(right);
     return normalizedRight == null || Objects.equals(normalizeText(left), normalizedRight);
@@ -516,14 +513,6 @@ public class CodeReviewIllegalRecordService {
   private boolean matchesIllegalType(List<String> illegalTypes, String expected) {
     String normalizedExpected = normalizeText(expected);
     return normalizedExpected == null || illegalTypes.contains(normalizedExpected);
-  }
-
-  private boolean matchesNumeric(Integer value, String expected) {
-    String normalizedExpected = normalizeText(expected);
-    if (normalizedExpected == null) {
-      return true;
-    }
-    return value != null && normalizedExpected.equals(String.valueOf(value));
   }
 
   private boolean matchesKeyword(IllegalRecordView row, String keyword) {
@@ -545,28 +534,36 @@ public class CodeReviewIllegalRecordService {
     return source != null && source.toLowerCase(Locale.ROOT).contains(keyword);
   }
 
-  private boolean matchesDateRange(LocalDateTime mergedAt, String mergedAtStart, String mergedAtEnd) {
-    LocalDate start = parseDate(mergedAtStart);
-    LocalDate end = parseDate(mergedAtEnd);
-    if (start == null && end == null) {
-      return true;
+  private Map<String, String> buildFactFilters(
+      Long projectId,
+      String repositoryName,
+      String mergedAtStart,
+      String mergedAtEnd,
+      String projectName,
+      String targetBranch,
+      String moduleName,
+      String mergeRequestIid,
+      String owner) {
+    Map<String, String> filters = new java.util.LinkedHashMap<>();
+    if (projectId != null) {
+      filters.put("projectId", String.valueOf(projectId));
     }
-    if (mergedAt == null) {
-      return false;
-    }
-    LocalDate date = mergedAt.toLocalDate();
-    if (start != null && date.isBefore(start)) {
-      return false;
-    }
-    if (end != null && date.isAfter(end)) {
-      return false;
-    }
-    return true;
+    putIfPresent(filters, "repositoryName", repositoryName);
+    putIfPresent(filters, "mergedAtStart", mergedAtStart);
+    putIfPresent(filters, "mergedAtEnd", mergedAtEnd);
+    putIfPresent(filters, "projectName", projectName);
+    putIfPresent(filters, "targetBranch", targetBranch);
+    putIfPresent(filters, "moduleName", moduleName);
+    putIfPresent(filters, "mergeRequestIid", mergeRequestIid);
+    putIfPresent(filters, "owner", owner);
+    return filters;
   }
 
-  private LocalDate parseDate(String value) {
+  private void putIfPresent(Map<String, String> filters, String key, String value) {
     String normalized = normalizeText(value);
-    return normalized == null ? null : LocalDate.parse(normalized);
+    if (normalized != null) {
+      filters.put(key, normalized);
+    }
   }
 
   private String normalizeSortField(String sortField) {

@@ -6,10 +6,9 @@ import java.util.Map;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Service;
-import org.springframework.util.StringUtils;
 
 @Service
-public class MergeRequestFactQueryService {
+public class MergeRequestFactQueryService extends AbstractFactQueryService {
   private final JdbcTemplate jdbcTemplate;
 
   public MergeRequestFactQueryService(JdbcTemplate jdbcTemplate) {
@@ -24,40 +23,14 @@ public class MergeRequestFactQueryService {
   }
 
   private void applyCommonFilters(StringBuilder sql, List<Object> args, Map<String, String> filters) {
-    appendEq(sql, args, "projectId", "project_id", filters.get("projectId"), Long::parseLong);
-    appendContains(sql, args, "projectName", "project_name", filters.get("projectName"));
-    appendContains(sql, args, "repositoryName", "repository_name", filters.get("repositoryName"));
-    appendContains(sql, args, "targetBranch", "target_branch", filters.get("targetBranch"));
-    appendContains(sql, args, "moduleName", "module_name", filters.get("moduleName"));
-    appendContains(sql, args, "owner", "owner_name", filters.get("owner"));
-    appendEq(sql, args, "mergeRequestIid", "merge_request_iid", filters.get("mergeRequestIid"), Long::parseLong);
-  }
-
-  private <T> void appendEq(
-      StringBuilder sql,
-      List<Object> args,
-      String filterKey,
-      String column,
-      String rawValue,
-      java.util.function.Function<String, T> mapper) {
-    String value = trimToNull(rawValue);
-    if (value == null) {
-      return;
-    }
-    sql.append(" and ").append(column).append(" = ?");
-    args.add(mapper.apply(value));
-  }
-
-  private void appendContains(StringBuilder sql, List<Object> args, String filterKey, String column, String rawValue) {
-    String value = trimToNull(rawValue);
-    if (value == null) {
-      return;
-    }
-    sql.append(" and ").append(column).append(" like ?");
-    args.add("%" + value + "%");
-  }
-
-  private String trimToNull(String value) {
-    return StringUtils.hasText(value) ? value.trim() : null;
+    appendEq(sql, args, "project_id", filters.get("projectId"), Long::parseLong);
+    appendContains(sql, args, "project_name", filters.get("projectName"));
+    appendContains(sql, args, "repository_name", filters.get("repositoryName"));
+    appendContains(sql, args, "target_branch", filters.get("targetBranch"));
+    appendContains(sql, args, "module_name", filters.get("moduleName"));
+    appendContains(sql, args, "owner_name", filters.get("owner"));
+    appendEq(sql, args, "merge_request_iid", filters.get("mergeRequestIid"), Long::parseLong);
+    appendDateFrom(sql, args, "merged_at_source", filters.get("mergedAtStart"));
+    appendDateTo(sql, args, "merged_at_source", filters.get("mergedAtEnd"));
   }
 }

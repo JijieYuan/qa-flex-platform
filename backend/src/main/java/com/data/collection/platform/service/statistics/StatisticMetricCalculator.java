@@ -16,4 +16,8 @@ public final class StatisticMetricCalculator {
   public static String percent(double value) {
     return String.format(Locale.ROOT, "%.2f%%", value);
   }
+
+  public static double percentageOf(long numerator, long denominator) {
+    return denominator <= 0 ? 0D : numerator * 100.0 / denominator;
+  }
 }
