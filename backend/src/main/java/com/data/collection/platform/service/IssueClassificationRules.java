@@ -92,6 +92,6 @@ final class IssueClassificationRules {
   }
 
   private static boolean isLevel1(List<String> labels) {
-    return "P1".equals(IssueLabelRules.normalizeSeverityLevel(labels));
+    return "LEVEL1".equals(IssueLabelRules.normalizeSeverityLevel(labels));
   }
 }

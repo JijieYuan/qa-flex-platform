@@ -15,6 +15,10 @@ public final class IssueFactNormalizationRules {
     return IssueLabelRules.normalizeSeverityAlias(labels);
   }
 
+  public static String normalizePriorityLevel(List<String> labels) {
+    return IssueLabelRules.normalizePriorityLevel(labels);
+  }
+
   public static boolean isExcluded(List<String> labels, boolean closed) {
     return IssueLabelRules.isExcluded(labels, closed);
   }

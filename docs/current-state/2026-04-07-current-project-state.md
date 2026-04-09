@@ -828,9 +828,10 @@
 - 需要修改
   - 不建议把所有解析结果直接写回镜像表
   - 建议未来新增 `issue_fact`
-  - 其中保存：
-  - `severity_level`
-  - `urgency`
+- 其中保存：
+- `severity_level`
+- `priority_level`
+- `urgency`（兼容字段，逐步退场）
   - `testing_phase`
   - `bug_status`
   - `delay_issue`
@@ -964,10 +965,13 @@
 围绕 `系统测试缺陷汇总`，当前已经确认后续要统一沉入 `issue_fact` 的完整口径范围如下：
 
 - 严重程度标准化：
-  - `P1 = 一级缺陷 / 一级严重`
-  - `P2 = 二级缺陷 / 二级严重`
-  - `P3 = 三级缺陷 / 三级严重`
+  - `LEVEL1 = 一级缺陷 / 一级严重`
+  - `LEVEL2 = 二级缺陷 / 二级严重`
+  - `LEVEL3 = 三级缺陷 / 三级严重`
   - `SUGGESTION = 建议 / 需求 / 需求如此`
+- 优先级标准化：
+  - `P1 / P2 / P3` 只由真实优先级标签判定
+  - 不再由一级/二级/三级缺陷自动推导
 - 公共排除口径：
   - `功能屏蔽 / 已拒绝 / 建议`
   - `申请否决 + Closed`
@@ -1044,7 +1048,8 @@
 
 本轮已正式沉入 `issue_fact` 的业务字段包括：
 
-- 严重程度标准化：`P1 / P2 / P3 / SUGGESTION`
+- 严重程度标准化：`LEVEL1 / LEVEL2 / LEVEL3 / SUGGESTION`
+- 优先级标准化：`P1 / P2 / P3`
 - 公共排除：`is_excluded / exclusion_reason`
 - 修复状态：`is_fixed`
 - 缺陷原因归一化：`reason_category`
@@ -1068,8 +1073,19 @@
 - 当前本地 `ods_gitlab_issues` 中绝大部分记录仍是测试/压测生成标签，不符合真实项目标签口径
 - 因此当前构建结果里：
   - `severity_level` 仍大量为空
+  - `priority_level` 也未必充分命中
   - `is_illegal = true` 数量较高，主要原因是 `缺失严重程度`
   - `is_excluded / is_fixed / has_response` 等字段在当前测试数据集上命中较少
+
+### 2026-04-09 规则纠偏
+
+- 已根据《数据采集平台议题统计规则》和交接材料修正建模：
+  - `severity_level` 与 `priority_level` 为两套独立体系
+  - 一级/二级/三级缺陷不再与 `P1/P2/P3` 一一对应
+  - `system-test-defect-summary` 中：
+    - 一级/二级/三级缺陷统计读取 `severity_level`
+    - `P1/P2/P3` 统计读取 `priority_level`
+- `urgency` 字段目前仅保留为兼容字段，真实统计口径以后以 `priority_level` 为准
 - 这说明 `issue_fact` 构建链路已打通，但“真实业务口径是否充分命中”仍取决于后续导入的真实项目标签、评论模板和阶段日历配置
 
 当前结论：

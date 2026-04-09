@@ -151,6 +151,7 @@ create table if not exists issue_fact (
     testing_phase varchar(128),
     severity_level varchar(128),
     severity_alias varchar(128),
+    priority_level varchar(64),
     urgency varchar(64),
     bug_status varchar(128),
     category varchar(255),
@@ -286,6 +287,7 @@ alter table issue_fact add column if not exists primary_module_name varchar(255)
 alter table issue_fact add column if not exists module_names text;
 alter table merge_request_fact add column if not exists ods_updated_at timestamp;
 alter table issue_fact add column if not exists severity_alias varchar(128);
+alter table issue_fact add column if not exists priority_level varchar(64);
 alter table issue_fact add column if not exists reason_category varchar(255);
 alter table issue_fact add column if not exists is_excluded boolean not null default false;
 alter table issue_fact add column if not exists exclusion_reason varchar(255);
@@ -308,9 +310,9 @@ create index if not exists idx_gitlab_mirror_records_table on gitlab_mirror_reco
 create index if not exists idx_collect_form_records_context on collect_form_records(project_id, resource_type, resource_id, template_code);
 create index if not exists idx_code_review_external_metrics_context on code_review_external_metrics(project_id, merge_request_iid);
 create index if not exists idx_issue_fact_context on issue_fact(source_system, source_instance, project_id, issue_iid);
-create index if not exists idx_issue_fact_state on issue_fact(issue_state, severity_level, urgency);
+create index if not exists idx_issue_fact_state on issue_fact(issue_state, severity_level, priority_level);
 create index if not exists idx_issue_fact_module on issue_fact(module_name, testing_phase, bug_status);
-create index if not exists idx_issue_fact_filters on issue_fact(project_id, severity_level, is_excluded, is_fixed);
+create index if not exists idx_issue_fact_filters on issue_fact(project_id, severity_level, priority_level, is_excluded, is_fixed);
 create index if not exists idx_issue_fact_legacy on issue_fact(issue_state, is_legacy, testing_phase);
 create index if not exists idx_merge_request_fact_context on merge_request_fact(source_system, source_instance, project_id, merge_request_iid);
 create index if not exists idx_merge_request_fact_owner on merge_request_fact(owner_name, module_name, merge_request_state);

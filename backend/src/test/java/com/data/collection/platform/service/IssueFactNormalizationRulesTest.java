@@ -9,12 +9,17 @@ import org.junit.jupiter.api.Test;
 class IssueFactNormalizationRulesTest {
 
   @Test
-  void shouldNormalizeSeverityAndSuggestionAliases() {
-    assertThat(IssueFactNormalizationRules.normalizeSeverityLevel(List.of("一级缺陷"))).isEqualTo("P1");
-    assertThat(IssueFactNormalizationRules.normalizeSeverityLevel(List.of("二级严重"))).isEqualTo("P2");
-    assertThat(IssueFactNormalizationRules.normalizeSeverityLevel(List.of("三级缺陷"))).isEqualTo("P3");
+  void shouldNormalizeSeverityAndPriorityIndependently() {
+    assertThat(IssueFactNormalizationRules.normalizeSeverityLevel(List.of("一级缺陷"))).isEqualTo("LEVEL1");
+    assertThat(IssueFactNormalizationRules.normalizeSeverityLevel(List.of("二级严重"))).isEqualTo("LEVEL2");
+    assertThat(IssueFactNormalizationRules.normalizeSeverityLevel(List.of("三级缺陷"))).isEqualTo("LEVEL3");
     assertThat(IssueFactNormalizationRules.normalizeSeverityLevel(List.of("需求如此"))).isEqualTo("SUGGESTION");
     assertThat(IssueFactNormalizationRules.normalizeSeverityAlias(List.of("一级严重"))).isEqualTo("一级严重");
+
+    assertThat(IssueFactNormalizationRules.normalizePriorityLevel(List.of("P1"))).isEqualTo("P1");
+    assertThat(IssueFactNormalizationRules.normalizePriorityLevel(List.of("P2"))).isEqualTo("P2");
+    assertThat(IssueFactNormalizationRules.normalizePriorityLevel(List.of("P3"))).isEqualTo("P3");
+    assertThat(IssueFactNormalizationRules.normalizePriorityLevel(List.of("一级缺陷"))).isNull();
   }
 
   @Test
@@ -35,11 +40,11 @@ class IssueFactNormalizationRulesTest {
 
   @Test
   void shouldRecognizeSpecialLevelOneAndIllegalCases() {
-    List<String> p1 = List.of("一级缺陷", "模块A");
-    assertThat(IssueFactNormalizationRules.isRegression(p1, "模型回退导致显示错误")).isTrue();
-    assertThat(IssueFactNormalizationRules.isCrash(p1, "启动后出现挂机问题")).isTrue();
-    assertThat(IssueFactNormalizationRules.isLevel1Other(p1, "一级缺陷但不属于回退")).isFalse();
-    assertThat(IssueFactNormalizationRules.isLevel1Other(p1, "一级缺陷但属于渲染错误")).isTrue();
+    List<String> level1 = List.of("一级缺陷", "模块A");
+    assertThat(IssueFactNormalizationRules.isRegression(level1, "模型回退导致显示错误")).isTrue();
+    assertThat(IssueFactNormalizationRules.isCrash(level1, "启动后出现挂机问题")).isTrue();
+    assertThat(IssueFactNormalizationRules.isLevel1Other(level1, "一级缺陷但不属于回退")).isFalse();
+    assertThat(IssueFactNormalizationRules.isLevel1Other(level1, "一级缺陷但属于渲染错误")).isTrue();
 
     assertThat(IssueFactNormalizationRules.illegalReason(List.of("模块A"), false, List.of("模块A"))).isEqualTo("缺失严重程度");
     assertThat(IssueFactNormalizationRules.illegalReason(List.of("一级缺陷"), false, List.of())).isEqualTo("缺失模块");

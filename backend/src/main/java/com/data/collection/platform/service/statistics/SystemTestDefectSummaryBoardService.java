@@ -44,7 +44,7 @@ import org.springframework.util.StringUtils;
 public class SystemTestDefectSummaryBoardService extends AbstractStatisticBoardService
     implements RealtimeStatisticBoardSupport, RuleExplainableStatisticBoardSupport {
   private static final String BOARD_KEY = "system-test-defect-summary";
-  private static final String RULE_VERSION = "system-test-defect-summary@2026-04-08-v2";
+  private static final String RULE_VERSION = "system-test-defect-summary@2026-04-09-v3";
   private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
   private static final List<String> REALTIME_REFRESH_TABLES = List.of("issues", "projects", "users", "label_links", "labels", "notes");
 
@@ -60,6 +60,7 @@ public class SystemTestDefectSummaryBoardService extends AbstractStatisticBoardS
         closed_at_source as closed_at,
         coalesce(issue_state, 'opened') as issue_state,
         coalesce(severity_level, '') as severity_level,
+        coalesce(priority_level, '') as priority_level,
         coalesce(is_excluded, false) as is_excluded,
         coalesce(exclusion_reason, '') as exclusion_reason,
         coalesce(is_fixed, false) as is_fixed,
@@ -133,7 +134,7 @@ public class SystemTestDefectSummaryBoardService extends AbstractStatisticBoardS
                     new StatisticColumnLeaf("level3_rate", "修复率", false, "ratio"))),
             new StatisticColumnGroup(
                 "priority",
-                "严重程度",
+                "优先级",
                 List.of(
                     new StatisticColumnLeaf("p1_count", "P1 数量", true, "count"),
                     new StatisticColumnLeaf("p1_rate", "P1 修复率", false, "ratio"),
@@ -308,7 +309,7 @@ public class SystemTestDefectSummaryBoardService extends AbstractStatisticBoardS
     steps.add(new StatisticRuleFlowStep(
         "aggregate-normalized-facts",
         "按归一化字段统计",
-        "基于严重程度、一级缺陷分类、修复状态等事实字段生成最终统计结果。",
+        "基于严重程度、优先级、一级缺陷分类、修复状态等事实字段生成最终统计结果。",
         afterExclusion.size(),
         afterExclusion.size(),
         sampleIssues(afterExclusion)));
@@ -330,25 +331,25 @@ public class SystemTestDefectSummaryBoardService extends AbstractStatisticBoardS
         new StatisticRuleMetricDefinition(
             "level1",
             "一级缺陷",
-            "一级缺陷直接读取 issue_fact 中的 P1 和回退/挂机/其他一级标记。",
+            "一级缺陷直接读取 issue_fact 中的 severity_level = LEVEL1，再结合回退/挂机/其他一级标记。",
             "一级缺陷数量 = 回退数量 + 挂机数量 + 其他一级数量",
             "已修复数量读取 is_fixed，不再临时按页面逻辑推断。"),
         new StatisticRuleMetricDefinition(
             "level2",
             "二级缺陷",
-            "二级缺陷读取 severity_level = P2。",
+            "二级缺陷读取 severity_level = LEVEL2。",
             "二级修复率 = 二级已修复数量 / 二级总数量",
             "分母为 0 时返回 0.00%。"),
         new StatisticRuleMetricDefinition(
             "level3",
             "三级缺陷",
-            "三级缺陷读取 severity_level = P3。",
+            "三级缺陷读取 severity_level = LEVEL3。",
             "三级修复率 = 三级已修复数量 / 三级总数量",
             "分母为 0 时返回 0.00%。"),
         new StatisticRuleMetricDefinition(
             "priority",
-            "严重程度统计",
-            "P1/P2/P3 数量直接按 severity_level 聚合。",
+            "优先级统计",
+            "P1/P2/P3 数量直接按 priority_level 聚合，不再和一级/二级/三级缺陷互相映射。",
             "Pn 修复率 = Pn 已修复数量 / Pn 总数量",
             "建议类不参与 P1/P2/P3 分组。"),
         new StatisticRuleMetricDefinition(
@@ -371,6 +372,7 @@ public class SystemTestDefectSummaryBoardService extends AbstractStatisticBoardS
         rs.getTimestamp("closed_at") == null ? null : rs.getTimestamp("closed_at").toLocalDateTime(),
         defaultText(rs.getString("issue_state"), "opened"),
         defaultText(rs.getString("severity_level"), ""),
+        defaultText(rs.getString("priority_level"), ""),
         rs.getBoolean("is_excluded"),
         defaultText(rs.getString("exclusion_reason"), ""),
         rs.getBoolean("is_fixed"),
@@ -419,9 +421,9 @@ public class SystemTestDefectSummaryBoardService extends AbstractStatisticBoardS
       case "level2_fixed" -> issue -> issue.isLevel2() && issue.fixed();
       case "level3_total" -> IssueSource::isLevel3;
       case "level3_fixed" -> issue -> issue.isLevel3() && issue.fixed();
-      case "p1_count" -> issue -> issue.isSeverity("P1");
-      case "p2_count" -> issue -> issue.isSeverity("P2");
-      case "p3_count" -> issue -> issue.isSeverity("P3");
+      case "p1_count" -> issue -> issue.isPriority("P1");
+      case "p2_count" -> issue -> issue.isPriority("P2");
+      case "p3_count" -> issue -> issue.isPriority("P3");
       case "unclosedCount" -> issue -> !issue.isClosed();
       default -> issue -> true;
     };
@@ -493,12 +495,12 @@ public class SystemTestDefectSummaryBoardService extends AbstractStatisticBoardS
       long level2Fixed = issues.stream().filter(issue -> issue.isLevel2() && issue.fixed()).count();
       long level3Total = issues.stream().filter(IssueSource::isLevel3).count();
       long level3Fixed = issues.stream().filter(issue -> issue.isLevel3() && issue.fixed()).count();
-      long p1Total = issues.stream().filter(issue -> issue.isSeverity("P1")).count();
-      long p1Fixed = issues.stream().filter(issue -> issue.isSeverity("P1") && issue.fixed()).count();
-      long p2Total = issues.stream().filter(issue -> issue.isSeverity("P2")).count();
-      long p2Fixed = issues.stream().filter(issue -> issue.isSeverity("P2") && issue.fixed()).count();
-      long p3Total = issues.stream().filter(issue -> issue.isSeverity("P3")).count();
-      long p3Fixed = issues.stream().filter(issue -> issue.isSeverity("P3") && issue.fixed()).count();
+      long p1Total = issues.stream().filter(issue -> issue.isPriority("P1")).count();
+      long p1Fixed = issues.stream().filter(issue -> issue.isPriority("P1") && issue.fixed()).count();
+      long p2Total = issues.stream().filter(issue -> issue.isPriority("P2")).count();
+      long p2Fixed = issues.stream().filter(issue -> issue.isPriority("P2") && issue.fixed()).count();
+      long p3Total = issues.stream().filter(issue -> issue.isPriority("P3")).count();
+      long p3Fixed = issues.stream().filter(issue -> issue.isPriority("P3") && issue.fixed()).count();
       double defectRatio = overallTotal <= 0 ? 0 : total * 100.0 / overallTotal;
 
       return new StatisticRowData(
@@ -550,6 +552,7 @@ public class SystemTestDefectSummaryBoardService extends AbstractStatisticBoardS
       LocalDateTime closedAt,
       String issueState,
       String severityLevel,
+      String priorityLevel,
       boolean excluded,
       String exclusionReason,
       boolean fixed,
@@ -569,28 +572,32 @@ public class SystemTestDefectSummaryBoardService extends AbstractStatisticBoardS
       return severity.equalsIgnoreCase(severityLevel);
     }
 
+    boolean isPriority(String priority) {
+      return priority.equalsIgnoreCase(priorityLevel);
+    }
+
     boolean isLevel1() {
-      return isSeverity("P1");
+      return isSeverity("LEVEL1");
     }
 
     boolean isLevel1Back() {
-      return isSeverity("P1") && regression;
+      return isSeverity("LEVEL1") && regression;
     }
 
     boolean isLevel1Hang() {
-      return isSeverity("P1") && crash;
+      return isSeverity("LEVEL1") && crash;
     }
 
     boolean isLevel1Other() {
-      return isSeverity("P1") && level1Other;
+      return isSeverity("LEVEL1") && level1Other;
     }
 
     boolean isLevel2() {
-      return isSeverity("P2");
+      return isSeverity("LEVEL2");
     }
 
     boolean isLevel3() {
-      return isSeverity("P3");
+      return isSeverity("LEVEL3");
     }
   }
 

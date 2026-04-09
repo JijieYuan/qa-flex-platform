@@ -89,6 +89,9 @@ public class IssueFact {
   @TableField("severity_alias")
   private String severityAlias;
 
+  @TableField("priority_level")
+  private String priorityLevel;
+
   private String urgency;
 
   @TableField("bug_status")

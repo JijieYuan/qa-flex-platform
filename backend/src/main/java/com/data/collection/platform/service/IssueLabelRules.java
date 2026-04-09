@@ -7,10 +7,14 @@ import java.util.Set;
 
 final class IssueLabelRules {
   private static final Map<String, List<String>> SEVERITY_TOKENS = IssueRuleSupport.ordered(
-      Map.entry("P1", List.of("一级缺陷", "一级严重")),
-      Map.entry("P2", List.of("二级缺陷", "二级严重")),
-      Map.entry("P3", List.of("三级缺陷", "三级严重")),
+      Map.entry("LEVEL1", List.of("一级缺陷", "一级严重")),
+      Map.entry("LEVEL2", List.of("二级缺陷", "二级严重")),
+      Map.entry("LEVEL3", List.of("三级缺陷", "三级严重")),
       Map.entry("SUGGESTION", List.of("建议", "需求", "需求如此")));
+  private static final Map<String, List<String>> PRIORITY_TOKENS = IssueRuleSupport.ordered(
+      Map.entry("P1", List.of("P1")),
+      Map.entry("P2", List.of("P2")),
+      Map.entry("P3", List.of("P3")));
   private static final List<String> EXCLUDED_LABELS = List.of("功能屏蔽", "已拒绝", "建议");
   private static final List<String> CLOSED_EXCLUSION_LABELS = List.of("申请否决", "数据异常", "设计如此");
   private static final List<String> FIXED_LABELS = List.of("已修复", "待合并");
@@ -19,8 +23,10 @@ final class IssueLabelRules {
   private static final List<String> TESTING_PHASE_TOKENS = List.of("系统测试", "联调测试", "冒烟测试", "测试");
   private static final Set<String> NON_MODULE_TOKENS = Set.of(
       "一级缺陷", "一级严重", "二级缺陷", "二级严重", "三级缺陷", "三级严重",
-      "建议", "需求", "需求如此", "功能屏蔽", "已拒绝", "申请否决", "数据异常", "设计如此",
-      "已修复", "待合并", "未复现", "申请延期", "响应已延期", "系统测试", "联调测试", "冒烟测试",
+      "建议", "需求", "需求如此", "P1", "P2", "P3",
+      "功能屏蔽", "已拒绝", "申请否决", "数据异常", "设计如此",
+      "已修复", "待合并", "未复现", "申请延期", "响应已延期",
+      "系统测试", "联调测试", "冒烟测试",
       "技术卡点", "方案卡点", "资源卡点", "算法问题", "机制问题", "计算效率",
       "新增理解偏差数量", "需求理解有误数量", "新增需求数量", "新增需求问题数量",
       "业务逻辑错误", "编码逻辑错误", "编译/打包/部署问题", "编译打包问题",
@@ -44,6 +50,15 @@ final class IssueLabelRules {
         if (IssueRuleSupport.hasLabel(labels, alias)) {
           return alias;
         }
+      }
+    }
+    return null;
+  }
+
+  static String normalizePriorityLevel(List<String> labels) {
+    for (Map.Entry<String, List<String>> entry : PRIORITY_TOKENS.entrySet()) {
+      if (IssueRuleSupport.containsAnyLabel(labels, entry.getValue())) {
+        return entry.getKey();
       }
     }
     return null;
@@ -98,6 +113,7 @@ final class IssueLabelRules {
       }
       if (isKnownReasonCategory(label, reasonCategoryTokens)
           || isKnownSeverityAlias(label)
+          || isKnownPriorityAlias(label)
           || isKnownDelayReason(label, delayReasonTokens)
           || isTestingPhase(label)) {
         continue;
@@ -109,6 +125,10 @@ final class IssueLabelRules {
 
   private static boolean isKnownSeverityAlias(String label) {
     return IssueRuleSupport.containsAny(List.of(label), "", IssueRuleSupport.flatten(SEVERITY_TOKENS));
+  }
+
+  private static boolean isKnownPriorityAlias(String label) {
+    return IssueRuleSupport.containsAny(List.of(label), "", IssueRuleSupport.flatten(PRIORITY_TOKENS));
   }
 
   private static boolean isKnownReasonCategory(String label, Map<String, List<String>> reasonCategoryTokens) {

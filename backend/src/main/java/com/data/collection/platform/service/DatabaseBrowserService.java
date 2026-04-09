@@ -131,7 +131,7 @@ public class DatabaseBrowserService {
           "updated_at"),
       "issue_fact", new TableDefinition(
           "议题事实表",
-          List.of("source_system", "source_instance", "issue_iid", "title", "module_name", "severity_level"),
+          List.of("source_system", "source_instance", "issue_iid", "title", "module_name", "severity_level", "priority_level"),
           List.of(
               new DatabaseTableColumn("id", "ID", true),
               new DatabaseTableColumn("source_system", "来源系统", true),
@@ -150,7 +150,8 @@ public class DatabaseBrowserService {
               new DatabaseTableColumn("module_name", "模块名", true),
               new DatabaseTableColumn("testing_phase", "测试阶段", true),
               new DatabaseTableColumn("severity_level", "严重程度", true),
-              new DatabaseTableColumn("urgency", "优先级", true),
+              new DatabaseTableColumn("priority_level", "优先级", true),
+              new DatabaseTableColumn("urgency", "优先级(兼容字段)", true),
               new DatabaseTableColumn("bug_status", "测试状态", true),
               new DatabaseTableColumn("category", "缺陷原因", true),
               new DatabaseTableColumn("system_test_label", "系统测试标签", true),

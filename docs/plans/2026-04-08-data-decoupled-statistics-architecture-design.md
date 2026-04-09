@@ -217,7 +217,8 @@
 - `title`
 - `status`
 - `severity_level`
-- `urgency`
+- `priority_level`
+- `urgency`（兼容字段）
 - `testing_phase`
 - `bug_status`
 - `module_name`
@@ -240,10 +241,17 @@
   - `severity_level`
   - `severity_alias`
   - 统一口径：
-    - `P1` = `一级缺陷`、`一级严重`
-    - `P2` = `二级缺陷`、`二级严重`
-    - `P3` = `三级缺陷`、`三级严重`
+    - `LEVEL1` = `一级缺陷`、`一级严重`
+    - `LEVEL2` = `二级缺陷`、`二级严重`
+    - `LEVEL3` = `三级缺陷`、`三级严重`
     - `SUGGESTION` = `建议`、`需求`、`需求如此`
+- 优先级
+  - `priority_level`
+  - 统一口径：
+    - `P1` 只识别真实 `P1` 标签
+    - `P2` 只识别真实 `P2` 标签
+    - `P3` 只识别真实 `P3` 标签
+  - 不由 `severity_level` 自动映射
 - 公共过滤与排除
   - `is_excluded`
   - `exclusion_reason`
@@ -324,6 +332,7 @@
 用途：
 
 - 统一承接“一级/二级/三级缺陷、P1/P2/P3、延期、修复率、遗留率”等议题类统计
+- 其中严重程度和优先级为两套独立业务维度
 
 ### 5.2 代码走查类
 
@@ -823,7 +832,8 @@
 
 围绕系统测试缺陷统计，当前已确认必须一次性收口进 `issue_fact` 的范围如下：
 
-- 严重程度标准化：`P1 / P2 / P3 / SUGGESTION`
+- 严重程度标准化：`LEVEL1 / LEVEL2 / LEVEL3 / SUGGESTION`
+- 优先级标准化：`P1 / P2 / P3`
 - 公共过滤口径：`功能屏蔽 / 已拒绝 / 建议 / 申请否决+Closed / 数据异常+Closed / 设计如此+Closed`
 - 修复状态：`已修复 / 待合并 / 未复现`
 - 缺陷原因归一化
@@ -874,8 +884,19 @@
 当前边界也需要明确保留：
 
 - 当前本地 ODS 数据以测试/压测样例为主，真实业务标签覆盖不足
-- 因此 `severity_level / is_fixed / has_response / is_excluded` 等字段在当前样例库中的命中率还不代表真实生产效果
+- 因此 `severity_level / priority_level / is_fixed / has_response / is_excluded` 等字段在当前样例库中的命中率还不代表真实生产效果
 - `is_legacy` 依赖 `testing_phase_calendar`，如果未配置阶段起始时间，则不会命中真实历史遗留判断
+
+### 10.1 2026-04-09 建模纠偏
+
+- 根据交接文档确认：
+  - 一级/二级/三级缺陷属于严重程度体系
+  - `P1/P2/P3` 属于优先级体系
+  - 二者不存在绝对一一对应关系
+- 因此当前正式方案调整为：
+  - `issue_fact.severity_level` 仅承接严重程度
+  - `issue_fact.priority_level` 单独承接优先级
+  - BoardService 不再使用 `severity_level` 代替 `P1/P2/P3`
 
 因此，本方案的下一阶段重点不是继续讨论是否采用 `issue_fact`，而是：
 

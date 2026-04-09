@@ -325,6 +325,7 @@ public class FactBuildService {
     String testingPhase = IssueFactNormalizationRules.normalizeTestingPhase(labels);
     List<String> moduleNames = IssueFactNormalizationRules.normalizeModuleNames(labels);
     String severityLevel = IssueFactNormalizationRules.normalizeSeverityLevel(labels);
+    String priorityLevel = IssueFactNormalizationRules.normalizePriorityLevel(labels);
     int resolveSlaDays = IssueFactNormalizationRules.resolveSlaDays(notesText);
     LocalDateTime resolveDeadlineAt = IssueFactNormalizationRules.resolveDeadline(createdAt, resolveSlaDays);
     PhaseCalendarEntry phaseCalendar = calendar.get(new PhaseCalendarKey(rs.getLong("project_id"), normalizeKey(testingPhase)));
@@ -352,7 +353,8 @@ public class FactBuildService {
     fact.setTestingPhase(testingPhase);
     fact.setSeverityLevel(severityLevel);
     fact.setSeverityAlias(IssueFactNormalizationRules.normalizeSeverityAlias(labels));
-    fact.setUrgency(severityLevel);
+    fact.setPriorityLevel(priorityLevel);
+    fact.setUrgency(priorityLevel);
     fact.setBugStatus(closed ? "已关闭" : "未关闭");
     fact.setCategory(
         IssueFactNormalizationRules.isRegression(labels, title) ? "回退"

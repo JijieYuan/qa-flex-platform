@@ -19,7 +19,8 @@
 **Step 1: Update the architecture doc**
 
 - Add the full normalized issue scope:
-  - severity aliases: `P1/P2/P3/SUGGESTION`
+  - severity aliases: `LEVEL1/LEVEL2/LEVEL3/SUGGESTION`
+  - priority aliases: `P1/P2/P3`
   - exclusion rules
   - fixed rules
   - reason-category normalization
@@ -75,7 +76,7 @@
 **Step 3: Add indexes**
 
 - Add only high-value indexes:
-  - `issue_fact(project_id, severity_level, is_excluded, is_fixed)`
+  - `issue_fact(project_id, severity_level, priority_level, is_excluded, is_fixed)`
   - `issue_fact(issue_state, is_legacy, testing_phase)`
   - `testing_phase_calendar(project_id, testing_phase, enabled)`
 
@@ -108,6 +109,7 @@
 
 - Cover:
   - severity mapping
+  - priority mapping
   - exclusion rules
   - fixed rules
   - reason category mapping
