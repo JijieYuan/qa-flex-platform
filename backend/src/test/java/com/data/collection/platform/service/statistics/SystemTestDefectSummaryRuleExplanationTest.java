@@ -7,6 +7,7 @@ import com.data.collection.platform.common.JsonUtils;
 import com.data.collection.platform.entity.statistics.StatisticBoardRuleExplanationResponse;
 import com.data.collection.platform.service.FactBuildService;
 import com.data.collection.platform.service.GitlabMirrorSyncService;
+import com.data.collection.platform.service.IssueFactQueryService;
 import com.data.collection.platform.service.RealtimeWorkspaceService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.List;
@@ -24,13 +25,22 @@ class SystemTestDefectSummaryRuleExplanationTest {
   @Mock private GitlabMirrorSyncService gitlabMirrorSyncService;
   @Mock private RealtimeWorkspaceService realtimeWorkspaceService;
   @Mock private FactBuildService factBuildService;
+  @Mock private IssueFactQueryService issueFactQueryService;
 
   @Test
   void shouldDescribeSystemTestBoardRuleFlowEvenWhenMirrorTablesAreEmpty() {
-    when(jdbcTemplate.query(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.<RowMapper<Object>>any()))
+    when(issueFactQueryService.query(
+        org.mockito.ArgumentMatchers.anyString(),
+        org.mockito.ArgumentMatchers.anyMap(),
+        org.mockito.ArgumentMatchers.<RowMapper<Object>>any()))
         .thenReturn(List.of());
     SystemTestDefectSummaryBoardService service = new SystemTestDefectSummaryBoardService(
-        jdbcTemplate, new JsonUtils(new ObjectMapper()), gitlabMirrorSyncService, realtimeWorkspaceService, factBuildService);
+        jdbcTemplate,
+        new JsonUtils(new ObjectMapper()),
+        gitlabMirrorSyncService,
+        realtimeWorkspaceService,
+        factBuildService,
+        issueFactQueryService);
 
     StatisticBoardRuleExplanationResponse response = service.getRuleExplanation(Map.of());
 

@@ -1282,3 +1282,65 @@
   - 标题异常
   - 更细的走查时长异常
   - 这些仍取决于后续事实层是否补齐稳定来源字段
+
+## 19. 五层架构下一阶段的复用地基
+
+当前重构已形成明确的五层架构：
+
+- `ODS 原始镜像层`
+- `DWD 业务事实层`
+- `DIM 维度层`
+- `规则引擎层`
+- `业务层`
+
+后续优先方向不是改变这五层，而是继续填补这五层之间的复用基础设施。
+
+### 19.1 已确定的 5 类复用地基
+
+1. 统一事实查询层
+   - `IssueFactQueryService`
+   - `MergeRequestFactQueryService`
+   - 作用：统一事实表公共过滤与读取方式
+
+2. 统一规则执行上下文
+   - `RuleContext`
+   - `RuleResult`
+   - `RuleExecutionSupport`
+   - 作用：统一规则子领域的输入输出
+
+3. 统一维表接入底座
+   - `DimensionLookupService`
+   - 第一阶段围绕 `testing_phase_calendar`
+   - 作用：统一 DIM 层读取模式
+
+4. 统一指标计算器
+   - `StatisticMetricCalculator`
+   - `RatioMetricSupport`
+   - 作用：统一 `count / rate / percent` 以及“分母为 0 显示 /”这类口径
+
+5. 统一筛选字段工厂
+   - `StatisticFilterFieldFactory`
+   - `RecordFilterFieldFactory`
+   - 作用：统一常见筛选字段定义
+
+### 19.2 当前已开始落地的 3 项
+
+- 已新增第一版 `IssueFactQueryService`
+- 已新增第一版 `MergeRequestFactQueryService`
+- 已新增第一版 `StatisticMetricCalculator`
+- 已新增第一版 `StatisticFilterFieldFactory`
+
+当前接入情况：
+
+- `system-test-defect-summary`
+  - 已开始使用 `IssueFactQueryService`
+  - 已开始使用 `StatisticMetricCalculator`
+  - 已开始使用 `StatisticFilterFieldFactory`
+- `code-review-illegal-records`
+  - 已开始使用 `MergeRequestFactQueryService`
+
+当前说明：
+
+- 这还是第一版轻量落地，不是完整平台级查询框架
+- 目标是先减少重复代码、统一口径和字段定义
+- 后续确认复用价值后，再继续向统一规则上下文和 DIM 读取底座扩展

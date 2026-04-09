@@ -9,6 +9,7 @@ import com.data.collection.platform.entity.statistics.StatisticBoardRuleExplanat
 import com.data.collection.platform.entity.statistics.StatisticRuleFlowStep;
 import com.data.collection.platform.entity.statistics.StatisticRuleFlowStepSample;
 import com.data.collection.platform.entity.statistics.StatisticRuleMetricDefinition;
+import com.data.collection.platform.service.MergeRequestFactQueryService;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDate;
@@ -80,6 +81,7 @@ public class CodeReviewIllegalRecordService {
   private final GitlabMirrorSyncService gitlabMirrorSyncService;
   private final RealtimeWorkspaceService realtimeWorkspaceService;
   private final FactBuildService factBuildService;
+  private final MergeRequestFactQueryService mergeRequestFactQueryService;
   private final String defaultGitlabBaseUrl;
 
   public CodeReviewIllegalRecordService(
@@ -87,11 +89,13 @@ public class CodeReviewIllegalRecordService {
       GitlabMirrorSyncService gitlabMirrorSyncService,
       RealtimeWorkspaceService realtimeWorkspaceService,
       FactBuildService factBuildService,
+      MergeRequestFactQueryService mergeRequestFactQueryService,
       @Value("${gitlab-mirror.web-base-url:http://172.22.10.233}") String defaultGitlabBaseUrl) {
     this.jdbcTemplate = jdbcTemplate;
     this.gitlabMirrorSyncService = gitlabMirrorSyncService;
     this.realtimeWorkspaceService = realtimeWorkspaceService;
     this.factBuildService = factBuildService;
+    this.mergeRequestFactQueryService = mergeRequestFactQueryService;
     this.defaultGitlabBaseUrl = defaultGitlabBaseUrl;
   }
 
@@ -343,12 +347,12 @@ public class CodeReviewIllegalRecordService {
   }
 
   private List<IllegalRecordSource> ensureFactsReady() {
-    List<IllegalRecordSource> facts = jdbcTemplate.query(FACT_SQL, this::mapFactSource);
+    List<IllegalRecordSource> facts = mergeRequestFactQueryService.query(FACT_SQL, Map.of(), this::mapFactSource);
     if (!facts.isEmpty()) {
       return facts;
     }
     factBuildService.rebuildMergeRequestFacts(true);
-    return jdbcTemplate.query(FACT_SQL, this::mapFactSource);
+    return mergeRequestFactQueryService.query(FACT_SQL, Map.of(), this::mapFactSource);
   }
 
   private IllegalRecordSource mapFactSource(ResultSet rs, int rowNum) throws SQLException {

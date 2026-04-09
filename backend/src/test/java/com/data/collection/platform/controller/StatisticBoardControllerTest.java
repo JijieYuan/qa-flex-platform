@@ -43,6 +43,8 @@ class StatisticBoardControllerTest {
     assertThat(response.definition().rowHeaderLabel()).isEqualTo("模块名称");
     assertThat(response.definition().columnGroups()).extracting("key")
         .containsExactly("level1", "level2", "level3", "suggestion", "priority-summary", "new-issue", "legacy");
+    assertThat(response.definition().filters()).extracting("key")
+        .containsExactly("projectName", "testingPhase", "moduleName", "severityLevel", "priorityLevel");
     assertThat(response.definition().columnGroups())
         .anySatisfy(group -> {
           assertThat(group.key()).isEqualTo("level1");

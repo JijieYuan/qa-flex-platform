@@ -5,6 +5,7 @@ import com.data.collection.platform.entity.RealtimeWorkspaceStatusResponse;
 import com.data.collection.platform.entity.statistics.*;
 import com.data.collection.platform.service.FactBuildService;
 import com.data.collection.platform.service.GitlabMirrorSyncService;
+import com.data.collection.platform.service.IssueFactQueryService;
 import com.data.collection.platform.service.RealtimeWorkspaceService;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -49,18 +50,21 @@ public class SystemTestDefectSummaryBoardService extends AbstractStatisticBoardS
   private final GitlabMirrorSyncService gitlabMirrorSyncService;
   private final RealtimeWorkspaceService realtimeWorkspaceService;
   private final FactBuildService factBuildService;
+  private final IssueFactQueryService issueFactQueryService;
 
   public SystemTestDefectSummaryBoardService(
       JdbcTemplate jdbcTemplate,
       JsonUtils jsonUtils,
       GitlabMirrorSyncService gitlabMirrorSyncService,
       RealtimeWorkspaceService realtimeWorkspaceService,
-      FactBuildService factBuildService) {
+      FactBuildService factBuildService,
+      IssueFactQueryService issueFactQueryService) {
     super(jsonUtils);
     this.jdbcTemplate = jdbcTemplate;
     this.gitlabMirrorSyncService = gitlabMirrorSyncService;
     this.realtimeWorkspaceService = realtimeWorkspaceService;
     this.factBuildService = factBuildService;
+    this.issueFactQueryService = issueFactQueryService;
   }
 
   @Override
@@ -71,7 +75,28 @@ public class SystemTestDefectSummaryBoardService extends AbstractStatisticBoardS
   @Override
   protected StatisticBoardDefinition buildDefinition() {
     return new StatisticBoardDefinition(
-        BOARD_KEY, "系统测试缺陷汇总", "基于 issue_fact 的模块维度系统测试汇总。", "", "", "模块名称", List.of(),
+        BOARD_KEY, "系统测试缺陷汇总", "基于 issue_fact 的模块维度系统测试汇总。", "", "", "模块名称",
+        List.of(
+            StatisticFilterFieldFactory.text("projectName", "项目名称", 200),
+            StatisticFilterFieldFactory.text("testingPhase", "测试阶段", 220),
+            StatisticFilterFieldFactory.text("moduleName", "模块名称", 180),
+            StatisticFilterFieldFactory.select(
+                "severityLevel",
+                "严重程度",
+                180,
+                List.of(
+                    new StatisticFilterOption("一级缺陷", "LEVEL1"),
+                    new StatisticFilterOption("二级缺陷", "LEVEL2"),
+                    new StatisticFilterOption("三级缺陷", "LEVEL3"),
+                    new StatisticFilterOption("建议类", "SUGGESTION"))),
+            StatisticFilterFieldFactory.select(
+                "priorityLevel",
+                "优先级",
+                160,
+                List.of(
+                    new StatisticFilterOption("P1", "P1"),
+                    new StatisticFilterOption("P2", "P2"),
+                    new StatisticFilterOption("P3", "P3")))),
         List.of(
             StatisticColumnGroup.withChildren("level1", "一级缺陷", List.of(
                 new StatisticColumnGroup("level1-classification", "分类", List.of(
@@ -231,7 +256,7 @@ public class SystemTestDefectSummaryBoardService extends AbstractStatisticBoardS
   private List<IssueSource> loadSources(Map<String, String> filters) {
     Long projectId = parseLong(withoutReservedFilters(filters).get("projectId"));
     try {
-      List<IssueSource> facts = ensureFactsReady(projectId);
+      List<IssueSource> facts = ensureFactsReady(projectId, withoutReservedFilters(filters));
       return facts.isEmpty() ? List.of() : facts;
     } catch (DataAccessException e) {
       log.warn("Failed to load issue facts", e);
@@ -248,16 +273,22 @@ public class SystemTestDefectSummaryBoardService extends AbstractStatisticBoardS
     }
   }
 
-  private List<IssueSource> ensureFactsReady(Long projectId) {
-    List<IssueSource> facts = loadSourcesFromFact(projectId);
+  private List<IssueSource> ensureFactsReady(Long projectId, Map<String, String> filters) {
+    List<IssueSource> facts = loadSourcesFromFact(projectId, filters);
     if (!facts.isEmpty()) return facts;
     factBuildService.rebuildIssueFacts(true);
-    return loadSourcesFromFact(projectId);
+    return loadSourcesFromFact(projectId, filters);
   }
 
-  private List<IssueSource> loadSourcesFromFact(Long projectId) {
-    String sql = FACT_SQL + (projectId == null ? "" : " and project_id = ?");
-    return projectId == null ? jdbcTemplate.query(sql, this::mapIssueFact) : jdbcTemplate.query(sql, this::mapIssueFact, projectId);
+  private List<IssueSource> loadSourcesFromFact(Long projectId, Map<String, String> filters) {
+    Map<String, String> mergedFilters = new LinkedHashMap<>();
+    if (filters != null) {
+      mergedFilters.putAll(filters);
+    }
+    if (projectId != null) {
+      mergedFilters.put("projectId", String.valueOf(projectId));
+    }
+    return issueFactQueryService.query(FACT_SQL, mergedFilters, this::mapIssueFact);
   }
 
   private IssueSource mapIssueFact(ResultSet rs, int rowNum) throws SQLException {
@@ -334,9 +365,9 @@ public class SystemTestDefectSummaryBoardService extends AbstractStatisticBoardS
     for (String value : raw.split(",")) { String t = value == null ? "" : value.trim(); if (!t.isEmpty()) values.add(t); }
     return List.copyOf(values);
   }
-  private static String count(long v) { return String.valueOf(v); }
-  private static String rate(long n, long d) { return d <= 0 ? "/" : String.format(Locale.ROOT, "%.2f%%", n * 100.0 / d); }
-  private static String percent(double value) { return String.format(Locale.ROOT, "%.2f%%", value); }
+  private static String count(long v) { return StatisticMetricCalculator.count(v); }
+  private static String rate(long n, long d) { return StatisticMetricCalculator.rate(n, d); }
+  private static String percent(double value) { return StatisticMetricCalculator.percent(value); }
 
   private record AggregateBucket(String rowLabel, List<IssueSource> issues) {
     AggregateBucket(String rowLabel) { this(rowLabel, new ArrayList<>()); }
