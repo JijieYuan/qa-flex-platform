@@ -44,7 +44,7 @@ import org.springframework.util.StringUtils;
 public class SystemTestDefectSummaryBoardService extends AbstractStatisticBoardService
     implements RealtimeStatisticBoardSupport, RuleExplainableStatisticBoardSupport {
   private static final String BOARD_KEY = "system-test-defect-summary";
-  private static final String RULE_VERSION = "system-test-defect-summary@2026-04-09-v3";
+  private static final String RULE_VERSION = "system-test-defect-summary@2026-04-09-v4";
   private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
   private static final List<String> REALTIME_REFRESH_TABLES = List.of("issues", "projects", "users", "label_links", "labels", "notes");
 
@@ -59,6 +59,8 @@ public class SystemTestDefectSummaryBoardService extends AbstractStatisticBoardS
         updated_at_source as updated_at,
         closed_at_source as closed_at,
         coalesce(issue_state, 'opened') as issue_state,
+        coalesce(testing_phase, '') as testing_phase,
+        coalesce(system_test_label, '') as system_test_label,
         coalesce(severity_level, '') as severity_level,
         coalesce(priority_level, '') as priority_level,
         coalesce(is_excluded, false) as is_excluded,
@@ -272,8 +274,8 @@ public class SystemTestDefectSummaryBoardService extends AbstractStatisticBoardS
         true,
         "系统测试缺陷汇总规则说明",
         RULE_VERSION,
-        "当前统计完全基于 issue_fact 中已归一化的字段执行，页面不再重复解释底层标签和评论逻辑。",
-        "你看到的数字来自三步：先加载议题事实，再剔除无效数据，最后按严重程度和修复状态聚合。",
+        "当前统计完全基于 issue_fact 中已归一化的字段执行，只统计带有系统测试或回归测试范围标签的议题。",
+        "你看到的数字来自三步：先加载系统测试/回归测试范围内的议题事实，再剔除无效数据，最后按严重程度、优先级和修复状态聚合。",
         flowSnapshot.flowSteps(),
         buildMetricDefinitions(),
         null);
@@ -295,14 +297,25 @@ public class SystemTestDefectSummaryBoardService extends AbstractStatisticBoardS
         initial.size(),
         sampleIssues(initial)));
 
-    List<IssueSource> afterExclusion = initial.stream()
+    List<IssueSource> afterScope = initial.stream()
+        .filter(IssueSource::inSystemTestScope)
+        .toList();
+    steps.add(new StatisticRuleFlowStep(
+        "scope-filter",
+        "限定系统测试范围",
+        "只保留带有系统测试或回归测试范围标签的议题，其余议题不进入本看板统计。",
+        initial.size(),
+        afterScope.size(),
+        sampleIssues(afterScope)));
+
+    List<IssueSource> afterExclusion = afterScope.stream()
         .filter(issue -> !issue.excluded())
         .toList();
     steps.add(new StatisticRuleFlowStep(
         "exclude-invalid-issues",
         "排除无效数据",
-        "剔除功能屏蔽、已拒绝、建议，以及关闭后属于申请否决/数据异常/设计如此的议题。",
-        initial.size(),
+        "剔除功能屏蔽、已拒绝、建议，以及关闭后属于申请否决/数据异常/需求如此的议题。",
+        afterScope.size(),
         afterExclusion.size(),
         sampleIssues(afterExclusion)));
 
@@ -339,13 +352,13 @@ public class SystemTestDefectSummaryBoardService extends AbstractStatisticBoardS
             "二级缺陷",
             "二级缺陷读取 severity_level = LEVEL2。",
             "二级修复率 = 二级已修复数量 / 二级总数量",
-            "分母为 0 时返回 0.00%。"),
+            "分母为 0 时显示 / 。"),
         new StatisticRuleMetricDefinition(
             "level3",
             "三级缺陷",
             "三级缺陷读取 severity_level = LEVEL3。",
             "三级修复率 = 三级已修复数量 / 三级总数量",
-            "分母为 0 时返回 0.00%。"),
+            "分母为 0 时显示 / 。"),
         new StatisticRuleMetricDefinition(
             "priority",
             "优先级统计",
@@ -371,6 +384,8 @@ public class SystemTestDefectSummaryBoardService extends AbstractStatisticBoardS
         rs.getTimestamp("updated_at") == null ? null : rs.getTimestamp("updated_at").toLocalDateTime(),
         rs.getTimestamp("closed_at") == null ? null : rs.getTimestamp("closed_at").toLocalDateTime(),
         defaultText(rs.getString("issue_state"), "opened"),
+        defaultText(rs.getString("testing_phase"), ""),
+        defaultText(rs.getString("system_test_label"), ""),
         defaultText(rs.getString("severity_level"), ""),
         defaultText(rs.getString("priority_level"), ""),
         rs.getBoolean("is_excluded"),
@@ -464,7 +479,7 @@ public class SystemTestDefectSummaryBoardService extends AbstractStatisticBoardS
 
   private static String displayRate(long numerator, long denominator) {
     if (denominator <= 0) {
-      return "0.00%";
+      return "/";
     }
     return String.format(Locale.ROOT, "%.2f%%", numerator * 100.0 / denominator);
   }
@@ -551,6 +566,8 @@ public class SystemTestDefectSummaryBoardService extends AbstractStatisticBoardS
       LocalDateTime updatedAt,
       LocalDateTime closedAt,
       String issueState,
+      String testingPhase,
+      String systemTestLabel,
       String severityLevel,
       String priorityLevel,
       boolean excluded,
@@ -563,6 +580,10 @@ public class SystemTestDefectSummaryBoardService extends AbstractStatisticBoardS
       String illegalReason,
       boolean legacy,
       List<String> labels) {
+
+    boolean inSystemTestScope() {
+      return containsScopeToken(testingPhase) || containsScopeToken(systemTestLabel) || labels.stream().anyMatch(this::containsScopeToken);
+    }
 
     boolean isClosed() {
       return closedAt != null || "closed".equalsIgnoreCase(issueState);
@@ -598,6 +619,14 @@ public class SystemTestDefectSummaryBoardService extends AbstractStatisticBoardS
 
     boolean isLevel3() {
       return isSeverity("LEVEL3");
+    }
+
+    private boolean containsScopeToken(String value) {
+      if (!StringUtils.hasText(value)) {
+        return false;
+      }
+      String normalized = value.trim();
+      return normalized.contains("系统测试") || normalized.contains("回归测试");
     }
   }
 

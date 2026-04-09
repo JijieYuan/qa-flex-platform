@@ -111,11 +111,16 @@
   - severity mapping
   - priority mapping
   - exclusion rules
+  - system/regression scope filtering
+  - `需求如此 + Closed` exclusion correction
   - fixed rules
   - reason category mapping
   - delay reason mapping
   - regression/crash/other-level1
   - illegal rules
+  - template reply validation
+  - latest reason-comment selection
+  - unique reason-category validation
   - response detection
   - SLA day normalization
 

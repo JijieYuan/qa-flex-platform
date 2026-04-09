@@ -79,12 +79,20 @@ public final class IssueFactNormalizationRules {
     return IssueClassificationRules.isLevel1Other(labels, title);
   }
 
-  public static boolean isIllegal(List<String> labels, boolean closed, List<String> modules) {
-    return IssueClassificationRules.isIllegal(labels, closed, modules);
+  public static boolean isIllegal(List<String> labels, boolean closed, List<String> modules, String notesText, boolean fixed) {
+    return IssueClassificationRules.isIllegal(labels, closed, modules, notesText, fixed);
   }
 
-  public static String illegalReason(List<String> labels, boolean closed, List<String> modules) {
-    return IssueClassificationRules.illegalReason(labels, closed, modules);
+  public static String illegalReason(List<String> labels, boolean closed, List<String> modules, String notesText, boolean fixed) {
+    return IssueClassificationRules.illegalReason(labels, closed, modules, notesText, fixed);
+  }
+
+  public static boolean hasTemplateReply(String notesText) {
+    return IssueClassificationRules.hasTemplateReply(notesText);
+  }
+
+  public static int latestReasonCategoryCount(String notesText) {
+    return IssueClassificationRules.latestReasonCategoryCount(notesText);
   }
 
   public static boolean hasResponse(String notesText) {

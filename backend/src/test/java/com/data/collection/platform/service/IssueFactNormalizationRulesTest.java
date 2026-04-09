@@ -26,8 +26,10 @@ class IssueFactNormalizationRulesTest {
   void shouldNormalizeExclusionAndFixedRules() {
     assertThat(IssueFactNormalizationRules.exclusionReason(List.of("功能屏蔽"), false)).isEqualTo("功能屏蔽");
     assertThat(IssueFactNormalizationRules.exclusionReason(List.of("申请否决"), true)).isEqualTo("申请否决+Closed");
+    assertThat(IssueFactNormalizationRules.exclusionReason(List.of("需求如此"), true)).isEqualTo("需求如此+Closed");
     assertThat(IssueFactNormalizationRules.isFixed(List.of("待合并"), false)).isTrue();
     assertThat(IssueFactNormalizationRules.isFixed(List.of("未复现"), true)).isTrue();
+    assertThat(IssueFactNormalizationRules.isFixed(List.of("已修复/完成"), false)).isTrue();
   }
 
   @Test
@@ -46,10 +48,32 @@ class IssueFactNormalizationRulesTest {
     assertThat(IssueFactNormalizationRules.isLevel1Other(level1, "一级缺陷但不属于回退")).isFalse();
     assertThat(IssueFactNormalizationRules.isLevel1Other(level1, "一级缺陷但属于渲染错误")).isTrue();
 
-    assertThat(IssueFactNormalizationRules.illegalReason(List.of("模块A"), false, List.of("模块A"))).isEqualTo("缺失严重程度");
-    assertThat(IssueFactNormalizationRules.illegalReason(List.of("一级缺陷"), false, List.of())).isEqualTo("缺失模块");
-    assertThat(IssueFactNormalizationRules.illegalReason(List.of("一级缺陷", "模块A"), false, List.of("模块A"))).isEqualTo("流程越位");
-    assertThat(IssueFactNormalizationRules.illegalReason(List.of("一级缺陷", "模块A", "待合并"), false, List.of("模块A"))).isNull();
+    assertThat(IssueFactNormalizationRules.illegalReason(List.of("模块A"), false, List.of("模块A"), "", false)).isEqualTo("缺失严重程度");
+    assertThat(IssueFactNormalizationRules.illegalReason(List.of("一级缺陷"), false, List.of(), "", false)).isEqualTo("缺失模块");
+    assertThat(IssueFactNormalizationRules.illegalReason(List.of("一级缺陷", "模块A"), false, List.of("模块A"), "", false)).isEqualTo("流程越位");
+    assertThat(IssueFactNormalizationRules.illegalReason(List.of("一级缺陷", "模块A", "待合并"), false, List.of("模块A"), "", false)).isNull();
+
+    String validTemplate = "# 问题调研情况说明\n业务逻辑错误";
+    assertThat(IssueFactNormalizationRules.hasTemplateReply(validTemplate)).isTrue();
+    assertThat(IssueFactNormalizationRules.latestReasonCategoryCount(validTemplate)).isEqualTo(1);
+    assertThat(IssueFactNormalizationRules.illegalReason(
+        List.of("一级缺陷", "模块A", "已修复/完成"),
+        true,
+        List.of("模块A"),
+        "",
+        true)).isEqualTo("未按照模板回复");
+    assertThat(IssueFactNormalizationRules.illegalReason(
+        List.of("一级缺陷", "模块A", "已修复/完成"),
+        true,
+        List.of("模块A"),
+        "# 问题调研情况说明\n业务逻辑错误\n新增需求问题",
+        true)).isEqualTo("缺陷原因不唯一");
+    assertThat(IssueFactNormalizationRules.illegalReason(
+        List.of("一级缺陷", "模块A", "已修复/完成"),
+        true,
+        List.of("模块A"),
+        validTemplate,
+        true)).isNull();
   }
 
   @Test

@@ -16,21 +16,21 @@ final class IssueLabelRules {
       Map.entry("P2", List.of("P2")),
       Map.entry("P3", List.of("P3")));
   private static final List<String> EXCLUDED_LABELS = List.of("功能屏蔽", "已拒绝", "建议");
-  private static final List<String> CLOSED_EXCLUSION_LABELS = List.of("申请否决", "数据异常", "设计如此");
-  private static final List<String> FIXED_LABELS = List.of("已修复", "待合并");
+  private static final List<String> CLOSED_EXCLUSION_LABELS = List.of("申请否决", "数据异常", "需求如此");
+  private static final List<String> FIXED_LABELS = List.of("已修复", "已修复/完成", "待合并");
   private static final List<String> UNREPRODUCED_LABELS = List.of("未复现");
-  private static final List<String> SYSTEM_TEST_LABEL_TOKENS = List.of("系统测试");
-  private static final List<String> TESTING_PHASE_TOKENS = List.of("系统测试", "联调测试", "冒烟测试", "测试");
-  private static final Set<String> NON_MODULE_TOKENS = Set.of(
+  private static final List<String> SYSTEM_TEST_LABEL_TOKENS = List.of("系统测试", "回归测试");
+  private static final List<String> TESTING_PHASE_TOKENS = List.of("系统测试", "回归测试", "联调测试", "冒烟测试");
+  private static final Set<String> NON_MODULE_TOKENS = new LinkedHashSet<>(List.of(
       "一级缺陷", "一级严重", "二级缺陷", "二级严重", "三级缺陷", "三级严重",
       "建议", "需求", "需求如此", "P1", "P2", "P3",
-      "功能屏蔽", "已拒绝", "申请否决", "数据异常", "设计如此",
-      "已修复", "待合并", "未复现", "申请延期", "响应已延期",
+      "功能屏蔽", "已拒绝", "申请否决", "数据异常", "需求如此",
+      "已修复", "已修复/完成", "待合并", "未复现", "申请延期", "响应已延期",
       "系统测试", "联调测试", "冒烟测试",
       "技术卡点", "方案卡点", "资源卡点", "算法问题", "机制问题", "计算效率",
       "新增理解偏差数量", "需求理解有误数量", "新增需求数量", "新增需求问题数量",
       "业务逻辑错误", "编码逻辑错误", "编译/打包/部署问题", "编译打包问题",
-      "机制不支持", "算法/机制不支持");
+      "机制不支持", "算法/机制不支持"));
 
   private IssueLabelRules() {
   }

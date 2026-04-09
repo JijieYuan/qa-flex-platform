@@ -9,11 +9,11 @@ import org.springframework.util.StringUtils;
 final class IssueSlaRules {
   private static final int DEFAULT_RESOLVE_SLA_DAYS = 18;
   private static final Pattern DAY_PATTERN =
-      Pattern.compile("(预计解决时间|预计修复时间|预计完成时间)[^0-9]{0,8}(\\d{1,2})");
+      Pattern.compile("(预计解决时间|预计修复时间|预计完成时间|计划解决时间)[^0-9]{0,8}(\\d{1,2})");
   private static final List<String> RESPONSE_DELAY_LABELS = List.of("响应已延期");
   private static final List<String> RESOLVE_DELAY_EXEMPT_LABELS =
-      List.of("申请延期", "数据异常", "需求如此", "未复现", "已修复");
-  private static final List<String> RESPONSE_HEADER_TOKENS = List.of("# 问题调研情况说明");
+      List.of("申请延期", "数据异常", "需求如此", "未复现", "已修复", "已修复/完成");
+  private static final List<String> RESPONSE_HEADER_TOKENS = List.of("# 问题调研情况说明", "问题调研情况说明");
 
   private IssueSlaRules() {
   }

@@ -373,8 +373,8 @@ public class FactBuildService {
     fact.setRegression(IssueFactNormalizationRules.isRegression(labels, title));
     fact.setCrash(IssueFactNormalizationRules.isCrash(labels, title));
     fact.setLevel1Other(IssueFactNormalizationRules.isLevel1Other(labels, title));
-    fact.setIllegal(IssueFactNormalizationRules.isIllegal(labels, closed, moduleNames));
-    fact.setIllegalReason(IssueFactNormalizationRules.illegalReason(labels, closed, moduleNames));
+    fact.setIllegal(IssueFactNormalizationRules.isIllegal(labels, closed, moduleNames, notesText, Boolean.TRUE.equals(fact.getFixed())));
+    fact.setIllegalReason(IssueFactNormalizationRules.illegalReason(labels, closed, moduleNames, notesText, Boolean.TRUE.equals(fact.getFixed())));
     fact.setHasResponse(IssueFactNormalizationRules.hasResponse(notesText));
     boolean responseDelayed = IssueFactNormalizationRules.isResponseDelayed(labels, notesText);
     fact.setResponseOverdue(responseDelayed);
