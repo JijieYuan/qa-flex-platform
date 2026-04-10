@@ -29,6 +29,24 @@ describe('statistic board route query', () => {
     });
   });
 
+  it('prefers serialized filterGroup query when present', () => {
+    const result = buildFilterGroupFromRouteQuery({
+      filterGroup:
+        '{"logic":"OR","conditions":[{"fieldKey":"moduleName","operator":"eq","value":"module-a","secondaryValue":""}]}',
+      'filters.0.field': 'projectName',
+      'filters.0.operator': 'contains',
+      'filters.0.value': 'legacy',
+    });
+
+    expect(result.logic).toBe('OR');
+    expect(result.conditions).toHaveLength(1);
+    expect(result.conditions[0]).toMatchObject({
+      fieldKey: 'moduleName',
+      operator: 'eq',
+      value: 'module-a',
+    });
+  });
+
   it('clears stale filter keys when rebuilding filter query patch', () => {
     const patch = buildFilterQueryPatch(
       {
@@ -49,8 +67,10 @@ describe('statistic board route query', () => {
       },
     );
 
-    expect(patch['filters.0.field']).toBe('moduleName');
-    expect(patch['filters.0.value']).toBe('module-a');
+    expect(patch.filterGroup).toBeTruthy();
+    expect(patch.filterLogic).toBeNull();
+    expect(patch['filters.0.field']).toBeNull();
+    expect(String(patch.filterGroup)).toContain('"fieldKey":"moduleName"');
   });
 
   it('merges route query patches and removes empty values', () => {

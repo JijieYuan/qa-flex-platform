@@ -1,0 +1,143 @@
+package com.data.collection.platform.service.statistics;
+
+import com.data.collection.platform.common.JsonUtils;
+import com.data.collection.platform.entity.statistics.StatisticBoardDefinition;
+import com.data.collection.platform.entity.statistics.StatisticFilterCondition;
+import com.data.collection.platform.entity.statistics.StatisticFilterField;
+import com.data.collection.platform.entity.statistics.StatisticFilterGroup;
+import com.fasterxml.jackson.core.type.TypeReference;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Objects;
+import java.util.stream.Collectors;
+
+final class StatisticFilterGroupSupport {
+  static final String FILTER_GROUP_PARAM = "filterGroup";
+
+  private StatisticFilterGroupSupport() {
+  }
+
+  static StatisticFilterGroup parseFilterGroup(
+      JsonUtils jsonUtils,
+      Map<String, String> filters,
+      StatisticBoardDefinition definition) {
+    if (filters == null || filters.isEmpty()) {
+      return emptyFilterGroup();
+    }
+    String filterGroupJson = trimToNull(filters.get(FILTER_GROUP_PARAM));
+    if (filterGroupJson != null) {
+      StatisticFilterGroup parsed =
+          jsonUtils.fromJson(filterGroupJson, new TypeReference<>() {});
+      return validateFilterGroup(parsed, definition);
+    }
+    return validateFilterGroup(buildLegacyFilterGroup(filters, definition), definition);
+  }
+
+  static Map<String, String> withoutReservedFilters(Map<String, String> filters) {
+    if (filters == null || filters.isEmpty()) {
+      return Map.of();
+    }
+    return filters.entrySet().stream()
+        .filter(entry -> !FILTER_GROUP_PARAM.equals(entry.getKey()))
+        .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+  }
+
+  static StatisticFilterGroup emptyFilterGroup() {
+    return new StatisticFilterGroup("AND", java.util.List.of());
+  }
+
+  static java.util.Set<String> filterableFieldKeys(StatisticBoardDefinition definition) {
+    return new java.util.HashSet<>(toFieldMap(definition).keySet());
+  }
+
+  static String trimToNull(String value) {
+    if (value == null) {
+      return null;
+    }
+    String trimmed = value.trim();
+    return trimmed.isEmpty() ? null : trimmed;
+  }
+
+  private static StatisticFilterGroup buildLegacyFilterGroup(
+      Map<String, String> filters,
+      StatisticBoardDefinition definition) {
+    Map<String, String> safeFilters = withoutReservedFilters(filters);
+    if (safeFilters.isEmpty()) {
+      return emptyFilterGroup();
+    }
+    Map<String, StatisticFilterField> fieldMap = toFieldMap(definition);
+    java.util.List<StatisticFilterCondition> conditions =
+        safeFilters.entrySet().stream()
+            .filter(entry -> fieldMap.containsKey(entry.getKey()))
+            .map(entry -> toLegacyCondition(fieldMap.get(entry.getKey()), entry.getValue()))
+            .filter(Objects::nonNull)
+            .toList();
+    if (conditions.isEmpty()) {
+      return emptyFilterGroup();
+    }
+    return new StatisticFilterGroup("AND", conditions);
+  }
+
+  private static StatisticFilterCondition toLegacyCondition(
+      StatisticFilterField field,
+      String value) {
+    String safeValue = trimToNull(value);
+    if (safeValue == null) {
+      return null;
+    }
+    return new StatisticFilterCondition(field.key(), "eq", safeValue, null);
+  }
+
+  private static StatisticFilterGroup validateFilterGroup(
+      StatisticFilterGroup input,
+      StatisticBoardDefinition definition) {
+    if (input == null || input.conditions() == null || input.conditions().isEmpty()) {
+      return emptyFilterGroup();
+    }
+    String logic = "OR".equalsIgnoreCase(input.logic()) ? "OR" : "AND";
+    Map<String, StatisticFilterField> fieldMap = toFieldMap(definition);
+    java.util.List<StatisticFilterCondition> normalized = new java.util.ArrayList<>();
+    for (StatisticFilterCondition condition : input.conditions()) {
+      if (condition == null) {
+        continue;
+      }
+      StatisticFilterField field = fieldMap.get(trimToNull(condition.fieldKey()));
+      if (field == null) {
+        throw new IllegalArgumentException(
+            "Unsupported statistic filter field: " + condition.fieldKey());
+      }
+      String operator = trimToNull(condition.operator());
+      if (operator == null || !field.operators().contains(operator)) {
+        throw new IllegalArgumentException(
+            "Unsupported operator for field " + field.key() + ": " + condition.operator());
+      }
+      String value = trimToNull(condition.value());
+      String secondaryValue = trimToNull(condition.secondaryValue());
+      if (requiresPrimaryValue(operator) && value == null) {
+        continue;
+      }
+      if ("between".equals(operator) && secondaryValue == null) {
+        continue;
+      }
+      normalized.add(
+          new StatisticFilterCondition(field.key(), operator, value, secondaryValue));
+    }
+    if (normalized.isEmpty()) {
+      return emptyFilterGroup();
+    }
+    return new StatisticFilterGroup(logic, normalized);
+  }
+
+  private static boolean requiresPrimaryValue(String operator) {
+    return !"isEmpty".equals(operator) && !"isNotEmpty".equals(operator);
+  }
+
+  private static Map<String, StatisticFilterField> toFieldMap(
+      StatisticBoardDefinition definition) {
+    Map<String, StatisticFilterField> fieldMap = new HashMap<>();
+    for (StatisticFilterField field : definition.filters()) {
+      fieldMap.put(field.key(), field);
+    }
+    return fieldMap;
+  }
+}

@@ -1,5 +1,5 @@
 import type { LocationQuery } from 'vue-router';
-import type { StatisticFilterOperator } from '../api';
+import type { StatisticFilterGroup, StatisticFilterOperator } from '../api';
 import type { SortDirection } from './statistic-board-sorting';
 import {
   createEmptyFilterGroup,
@@ -13,6 +13,8 @@ function nextConditionId() {
   }
   return `condition-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
+
+const FILTER_GROUP_QUERY_KEY = 'filterGroup';
 
 export function parsePositiveInteger(rawValue: unknown, fallback: number) {
   const parsed = Number.parseInt(String(rawValue ?? ''), 10);
@@ -53,6 +55,14 @@ export function routeDetailVisible(query: LocationQuery) {
 }
 
 export function buildFilterGroupFromRouteQuery(query: LocationQuery) {
+  const serializedFilterGroup = firstQueryValue(query[FILTER_GROUP_QUERY_KEY]);
+  if (serializedFilterGroup) {
+    const parsed = parseRouteFilterGroup(serializedFilterGroup);
+    if (parsed) {
+      return toDraftFilterGroup(parsed);
+    }
+  }
+
   const draftGroup = createEmptyFilterGroup();
   draftGroup.logic = query.filterLogic === 'OR' ? 'OR' : 'AND';
   const keyedConditions = new Map<number, StatisticFilterConditionDraft>();
@@ -92,19 +102,14 @@ export function buildFilterGroupFromRouteQuery(query: LocationQuery) {
 
 export function buildFilterQueryPatch(query: LocationQuery, filterDraft: Pick<StatisticFilterDraftGroup, 'logic' | 'conditions'>) {
   const patch: Record<string, string | number | null> = {
-    filterLogic: filterDraft.conditions.length ? filterDraft.logic : null,
+    filterLogic: null,
+    [FILTER_GROUP_QUERY_KEY]: filterDraft.conditions.length ? stringifyRouteFilterGroup(filterDraft) : null,
   };
   for (const key of Object.keys(query)) {
     if (key.startsWith('filters.')) {
       patch[key] = null;
     }
   }
-  filterDraft.conditions.forEach((condition, index) => {
-    patch[`filters.${index}.field`] = condition.fieldKey || null;
-    patch[`filters.${index}.operator`] = condition.operator || null;
-    patch[`filters.${index}.value`] = condition.value || null;
-    patch[`filters.${index}.value2`] = condition.secondaryValue || null;
-  });
   return patch;
 }
 
@@ -118,4 +123,65 @@ export function mergeRouteQuery(query: LocationQuery, patch: Record<string, stri
     }
   }
   return nextQuery;
+}
+
+function parseRouteFilterGroup(value: string): StatisticFilterGroup | null {
+  try {
+    const parsed = JSON.parse(value) as Partial<StatisticFilterGroup> | null;
+    if (!parsed || !Array.isArray(parsed.conditions)) {
+      return null;
+    }
+    return {
+      logic: parsed.logic === 'OR' ? 'OR' : 'AND',
+      conditions: parsed.conditions.map((condition) => ({
+        fieldKey: String(condition?.fieldKey ?? ''),
+        operator: String(condition?.operator ?? '') as StatisticFilterOperator,
+        value: condition?.value == null ? '' : String(condition.value),
+        secondaryValue: condition?.secondaryValue == null ? '' : String(condition.secondaryValue),
+      })),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function stringifyRouteFilterGroup(filterDraft: Pick<StatisticFilterDraftGroup, 'logic' | 'conditions'>) {
+  return JSON.stringify({
+    logic: filterDraft.logic === 'OR' ? 'OR' : 'AND',
+    conditions: filterDraft.conditions.map((condition) => ({
+      fieldKey: condition.fieldKey,
+      operator: condition.operator,
+      value: normalizeRouteScalar(condition.value),
+      secondaryValue: normalizeRouteScalar(condition.secondaryValue),
+    })),
+  });
+}
+
+function toDraftFilterGroup(source: StatisticFilterGroup): StatisticFilterDraftGroup {
+  const draftGroup = createEmptyFilterGroup();
+  draftGroup.logic = source.logic === 'OR' ? 'OR' : 'AND';
+  draftGroup.conditions.push(
+    ...source.conditions.map((condition) => ({
+      id: nextConditionId(),
+      fieldKey: condition.fieldKey ?? '',
+      operator: (condition.operator ?? '') as StatisticFilterOperator | '',
+      value: condition.value ?? '',
+      secondaryValue: condition.secondaryValue ?? '',
+    })),
+  );
+  return draftGroup;
+}
+
+function normalizeRouteScalar(value: string | number | null) {
+  if (value == null) {
+    return '';
+  }
+  return typeof value === 'number' ? String(value) : value;
+}
+
+function firstQueryValue(rawValue: LocationQuery[string]) {
+  if (Array.isArray(rawValue)) {
+    return rawValue[0] ? String(rawValue[0]) : '';
+  }
+  return rawValue == null ? '' : String(rawValue);
 }

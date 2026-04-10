@@ -351,6 +351,7 @@ function resetFilters() {
   filterDraft.logic = 'AND';
   filterDraft.conditions.splice(0, filterDraft.conditions.length);
   const nextQuery = { ...route.query } as Record<string, string>;
+  delete nextQuery.filterGroup;
   delete nextQuery.filterLogic;
   for (const key of Object.keys(nextQuery)) {
     if (key.startsWith('filters.')) {
