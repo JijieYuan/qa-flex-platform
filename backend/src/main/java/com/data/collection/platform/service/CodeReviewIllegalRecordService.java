@@ -11,9 +11,7 @@ import com.data.collection.platform.entity.statistics.StatisticRuleFlowStepSampl
 import com.data.collection.platform.entity.statistics.StatisticRuleMetricDefinition;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
-import java.util.Set;
 import java.util.function.Function;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -24,18 +22,19 @@ import org.springframework.util.StringUtils;
 @Slf4j
 public class CodeReviewIllegalRecordService {
   public static final String WORKSPACE_KEY = "code-review-illegal-records";
-  private static final String RULE_VERSION = "code-review-illegal-records@2026-04-09-v4";
+  private static final String RULE_VERSION = "code-review-illegal-records@2026-04-10-v5";
 
-  private static final List<String> REALTIME_REFRESH_TABLES = List.of(
-      "merge_requests",
-      "merge_request_metrics",
-      "merge_request_reviewers",
-      "merge_request_assignees",
-      "label_links",
-      "labels",
-      "projects",
-      "namespaces",
-      "users");
+  private static final List<String> REALTIME_REFRESH_TABLES =
+      List.of(
+          "merge_requests",
+          "merge_request_metrics",
+          "merge_request_reviewers",
+          "merge_request_assignees",
+          "label_links",
+          "labels",
+          "projects",
+          "namespaces",
+          "users");
 
   private static final List<OptionItemResponse> REQUEST_TYPE_OPTIONS =
       List.of(new OptionItemResponse("合并请求", "merge_request"));
@@ -81,44 +80,55 @@ public class CodeReviewIllegalRecordService {
     int safeSize = size <= 0 ? 20 : Math.min(size, 100);
     String safeSortField = CodeReviewIllegalRecordQuerySupport.normalizeSortField(sortField);
     String safeSortOrder = CodeReviewIllegalRecordQuerySupport.normalizeSortOrder(sortOrder);
-    Map<String, String> factFilters = CodeReviewIllegalRecordQuerySupport.buildFactFilters(
-        projectId,
-        repositoryName,
-        mergedAtStart,
-        mergedAtEnd,
-        projectName,
-        targetBranch,
-        moduleName,
-        mergeRequestIid,
-        owner);
+    Map<String, String> factFilters =
+        CodeReviewIllegalRecordQuerySupport.buildFactFilters(
+            projectId,
+            repositoryName,
+            mergedAtStart,
+            mergedAtEnd,
+            projectName,
+            targetBranch,
+            moduleName,
+            mergeRequestIid,
+            owner);
 
-    List<CodeReviewIllegalRecordView> filtered = sourceLoader.loadSources(factFilters).stream()
-        .map(this::toView)
-        .filter(row -> !row.illegalTypes().isEmpty())
-        .filter(row -> CodeReviewIllegalRecordQuerySupport.matchesKeyword(row, keyword))
-        .filter(row -> CodeReviewIllegalRecordQuerySupport.matchesRequestType(row.requestType(), requestType))
-        .filter(row -> CodeReviewIllegalRecordQuerySupport.matchesEquals(row.mergedBy(), mergedBy))
-        .filter(row -> CodeReviewIllegalRecordQuerySupport.matchesIllegalType(row.illegalTypes(), illegalType))
-        .sorted(CodeReviewIllegalRecordQuerySupport.buildComparator(safeSortField, safeSortOrder))
-        .toList();
+    List<CodeReviewIllegalRecordView> filtered =
+        sourceLoader.loadSources(factFilters).stream()
+            .map(this::toView)
+            .filter(row -> !row.illegalTypes().isEmpty())
+            .filter(row -> CodeReviewIllegalRecordQuerySupport.matchesKeyword(row, keyword))
+            .filter(
+                row ->
+                    CodeReviewIllegalRecordQuerySupport.matchesRequestType(
+                        row.requestType(), requestType))
+            .filter(row -> CodeReviewIllegalRecordQuerySupport.matchesEquals(row.mergedBy(), mergedBy))
+            .filter(
+                row ->
+                    CodeReviewIllegalRecordQuerySupport.matchesIllegalType(
+                        row.illegalTypes(), illegalType))
+            .sorted(CodeReviewIllegalRecordQuerySupport.buildComparator(safeSortField, safeSortOrder))
+            .toList();
 
     long total = filtered.size();
     int fromIndex = Math.min((safePage - 1) * safeSize, filtered.size());
     int toIndex = Math.min(fromIndex + safeSize, filtered.size());
-    List<CodeReviewIllegalRecordRowResponse> records = filtered.subList(fromIndex, toIndex).stream()
-        .map(this::toResponse)
-        .toList();
+    List<CodeReviewIllegalRecordRowResponse> records =
+        filtered.subList(fromIndex, toIndex).stream().map(this::toResponse).toList();
 
-    return new CodeReviewIllegalRecordListResponse(records, total, safePage, safeSize, safeSortField, safeSortOrder);
+    return new CodeReviewIllegalRecordListResponse(
+        records, total, safePage, safeSize, safeSortField, safeSortOrder);
   }
 
   public CodeReviewIllegalRecordFilterOptionsResponse getFilterOptions(Long projectId) {
-    List<CodeReviewIllegalRecordView> rows = sourceLoader
-        .loadSources(CodeReviewIllegalRecordQuerySupport.buildFactFilters(projectId, null, null, null, null, null, null, null, null))
-        .stream()
-        .map(this::toView)
-        .filter(row -> !row.illegalTypes().isEmpty())
-        .toList();
+    List<CodeReviewIllegalRecordView> rows =
+        sourceLoader
+            .loadSources(
+                CodeReviewIllegalRecordQuerySupport.buildFactFilters(
+                    projectId, null, null, null, null, null, null, null, null))
+            .stream()
+            .map(this::toView)
+            .filter(row -> !row.illegalTypes().isEmpty())
+            .toList();
 
     return new CodeReviewIllegalRecordFilterOptionsResponse(
         REQUEST_TYPE_OPTIONS,
@@ -141,24 +151,10 @@ public class CodeReviewIllegalRecordService {
   public StatisticBoardRuleExplanationResponse getRuleExplanation() {
     List<CodeReviewIllegalRecordSource> sources = sourceLoader.loadSources(Map.of());
     List<CodeReviewIllegalRecordView> views = sources.stream().map(this::toView).toList();
-    List<CodeReviewIllegalRecordView> illegalViews = views.stream()
-        .filter(row -> !row.illegalTypes().isEmpty())
-        .toList();
+    List<CodeReviewIllegalRecordView> illegalViews =
+        views.stream().filter(row -> !row.illegalTypes().isEmpty()).toList();
     long total = views.size();
     long illegalTotal = illegalViews.size();
-    long missingModule = illegalViews.stream().filter(row -> row.illegalTypes().contains("缺少模块标签")).count();
-    long missingOwner = illegalViews.stream().filter(row -> row.illegalTypes().contains("缺少标注责任人")).count();
-    long missingReview = illegalViews.stream().filter(row -> row.illegalTypes().contains("无代码走查")).count();
-    long scanIssue = illegalViews.stream()
-        .filter(row -> row.illegalTypes().stream().anyMatch(type ->
-            type.contains("未代码扫描") || type.contains("静态扫描问题未关闭")))
-        .count();
-    long missingMetrics = illegalViews.stream()
-        .filter(row -> row.illegalTypes().stream().anyMatch(type ->
-            type.contains("缺少代码注释比例")
-                || type.contains("缺少缺陷数量")
-                || type.contains("缺少新增代码行数")))
-        .count();
 
     return new StatisticBoardRuleExplanationResponse(
         WORKSPACE_KEY,
@@ -167,138 +163,27 @@ public class CodeReviewIllegalRecordService {
         RULE_VERSION,
         "当前统计范围是已归一化到事实表中的 Merge Request 相关数据；页面查询条件会在这个范围上继续筛选。",
         "这里先说明总共有多少条非法记录，再说明它们分别是因为什么被判定为非法。",
-        List.of(
-            new StatisticRuleFlowStep(
-                "source-load",
-                "加载合并请求事实",
-                "从 merge_request_fact 读取已经归一化的合并请求、责任人、模块和指标数据。",
-                total,
-                total,
-                views.stream().limit(3).map(this::toIllegalRecordSample).toList()),
-            new StatisticRuleFlowStep(
-                "illegal-total",
-                "汇总非法记录",
-                "只要命中任意一条非法判定规则，这条合并请求就会出现在非法记录列表里。",
-                total,
-                illegalTotal,
-                illegalViews.stream().limit(3).map(this::toIllegalRecordSample).toList()),
-            new StatisticRuleFlowStep(
-                "missing-module-check",
-                "检查模块标签",
-                "如果模块为空，就会被判定为“缺少模块标签”。",
-                illegalTotal,
-                missingModule,
-                illegalViews.stream()
-                    .filter(row -> row.illegalTypes().contains("缺少模块标签"))
-                    .limit(3)
-                    .map(this::toIllegalRecordSample)
-                    .toList()),
-            new StatisticRuleFlowStep(
-                "missing-owner-check",
-                "检查标注责任人",
-                "如果责任人为空，就会被判定为“缺少标注责任人”。",
-                illegalTotal,
-                missingOwner,
-                illegalViews.stream()
-                    .filter(row -> row.illegalTypes().contains("缺少标注责任人"))
-                    .limit(3)
-                    .map(this::toIllegalRecordSample)
-                    .toList()),
-            new StatisticRuleFlowStep(
-                "review-check",
-                "检查代码走查记录",
-                "如果还没有形成有效的代码走查记录，就会被判定为“无代码走查”。",
-                illegalTotal,
-                missingReview,
-                illegalViews.stream()
-                    .filter(row -> row.illegalTypes().contains("无代码走查"))
-                    .limit(3)
-                    .map(this::toIllegalRecordSample)
-                    .toList()),
-            new StatisticRuleFlowStep(
-                "scan-check",
-                "检查代码扫描结果",
-                "如果明确标记为未代码扫描，或者静态扫描问题数大于 0，就会被判定为对应的非法类型。",
-                illegalTotal,
-                scanIssue,
-                illegalViews.stream()
-                    .filter(row -> row.illegalTypes().stream().anyMatch(type ->
-                        type.contains("未代码扫描") || type.contains("静态扫描问题未关闭")))
-                    .limit(3)
-                    .map(this::toIllegalRecordSample)
-                    .toList()),
-            new StatisticRuleFlowStep(
-                "missing-metric-check",
-                "检查外部指标",
-                "如果代码注释比例、缺陷数量或新增代码行数缺失，就会被判定为对应的非法类型。",
-                illegalTotal,
-                missingMetrics,
-                illegalViews.stream()
-                    .filter(row -> row.illegalTypes().stream().anyMatch(type ->
-                        type.contains("缺少代码注释比例")
-                            || type.contains("缺少缺陷数量")
-                            || type.contains("缺少新增代码行数")))
-                    .limit(3)
-                    .map(this::toIllegalRecordSample)
-                    .toList())),
-        List.of(
-            new StatisticRuleMetricDefinition(
-                "illegalTypes",
-                "非法类型",
-                "系统会根据规则检查结果，标记这条记录需要补充哪些信息。",
-                "非法类型 = 缺少模块标签 / 缺少标注责任人 / 无代码走查 / 未代码扫描 / 静态扫描问题未关闭 / 缺少外部指标",
-                "一条记录可以同时命中多种非法类型。"),
-            new StatisticRuleMetricDefinition(
-                "reviewStatus",
-                "代码走查记录",
-                "表示这条合并请求是否已经形成可识别的代码走查记录。",
-                "代码走查记录 = 评审表单时长或走查状态已形成有效值",
-                "如果当前还没有形成有效走查记录，这条记录会被判定为“无代码走查”。"),
-            new StatisticRuleMetricDefinition(
-                "moduleName",
-                "模块名称",
-                "表示这条合并请求所属的功能模块。",
-                "模块名称来自合并请求关联的模块标识。",
-                "如果缺少模块信息，这条记录会被判定为需要关注。"),
-            new StatisticRuleMetricDefinition(
-                "scanStatus",
-                "代码扫描结果",
-                "表示这条合并请求是否已经完成静态扫描，以及静态扫描问题是否已经清理。",
-                "未代码扫描 = 明确标记为未扫描；静态扫描问题未关闭 = 扫描问题数大于 0",
-                "只有事实层中已经带出扫描状态时，才会命中这类非法规则。"),
-            new StatisticRuleMetricDefinition(
-                "commentRate",
-                "代码注释比例",
-                "表示本次改动中代码注释的覆盖情况。",
-                "代码注释比例 = 外部工具结果 或 MR 机器人解析结果",
-                "如果缺少该指标，这条记录会被判定为需要关注。"),
-            new StatisticRuleMetricDefinition(
-                "defectCount",
-                "缺陷数量",
-                "表示本次改动关联的缺陷数量。",
-                "缺陷数量 = MR 评论 / 机器人结果 / Sonar 汇总结果",
-                "如果缺少该指标，这条记录会被判定为需要关注。"),
-            new StatisticRuleMetricDefinition(
-                "addedLines",
-                "新增代码行数",
-                "表示本次合并请求新增的代码规模。",
-                "新增代码行数 = 本次改动新增代码行数",
-                "如果缺少该指标，这条记录也会被判定为需要关注。")),
+        buildRuleFlowSteps(views, illegalViews, total, illegalTotal),
+        buildMetricDefinitions(),
         null);
   }
 
   private void refreshMirrorForRealtimeView() {
     try {
-      gitlabMirrorSyncService.refreshTablesOnDemand(REALTIME_REFRESH_TABLES, "code-review-illegal-records");
+      gitlabMirrorSyncService.refreshTablesOnDemand(
+          REALTIME_REFRESH_TABLES, "code-review-illegal-records");
       factBuildService.rebuildMergeRequestFacts(false);
     } catch (Exception e) {
-      log.warn("On-demand mirror refresh for code review illegal records failed, fallback to current mirror snapshot", e);
+      log.warn(
+          "On-demand mirror refresh for code review illegal records failed, fallback to current mirror snapshot",
+          e);
     }
   }
 
   private CodeReviewIllegalRecordView toView(CodeReviewIllegalRecordSource source) {
-    List<String> illegalTypes = buildIllegalTypes(source);
-    String mergeRequestLink = buildMergeRequestLink(source.repositoryName(), source.mergeRequestIid());
+    List<String> illegalTypes = CodeReviewIllegalRuleRegistry.evaluateIllegalTypes(source);
+    String mergeRequestLink =
+        buildMergeRequestLink(source.repositoryName(), source.mergeRequestIid());
     return new CodeReviewIllegalRecordView(
         "merge_request",
         source.mergeRequestId(),
@@ -323,45 +208,102 @@ public class CodeReviewIllegalRecordService {
         source.addedLines());
   }
 
+  private List<StatisticRuleFlowStep> buildRuleFlowSteps(
+      List<CodeReviewIllegalRecordView> views,
+      List<CodeReviewIllegalRecordView> illegalViews,
+      long total,
+      long illegalTotal) {
+    List<StatisticRuleFlowStep> steps = new ArrayList<>();
+    steps.add(
+        new StatisticRuleFlowStep(
+            "source-load",
+            "加载合并请求事实",
+            "从 merge_request_fact 读取已经归一化的合并请求、责任人、模块和指标数据。",
+            total,
+            total,
+            views.stream().limit(3).map(this::toIllegalRecordSample).toList()));
+    steps.add(
+        new StatisticRuleFlowStep(
+            "illegal-total",
+            "汇总非法记录",
+            "只要命中任意一条非法判定规则，这条合并请求就会出现在非法记录列表里。",
+            total,
+            illegalTotal,
+            illegalViews.stream().limit(3).map(this::toIllegalRecordSample).toList()));
+    CodeReviewIllegalRuleRegistry.explanationGroups()
+        .forEach(
+            group ->
+                steps.add(
+                    new StatisticRuleFlowStep(
+                        group.key(),
+                        group.title(),
+                        group.description(),
+                        illegalTotal,
+                        CodeReviewIllegalRuleRegistry.countMatches(illegalViews, group),
+                        CodeReviewIllegalRuleRegistry.filterMatches(illegalViews, group).stream()
+                            .limit(3)
+                            .map(this::toIllegalRecordSample)
+                            .toList())));
+    return steps;
+  }
+
+  private List<StatisticRuleMetricDefinition> buildMetricDefinitions() {
+    return List.of(
+        new StatisticRuleMetricDefinition(
+            "illegalTypes",
+            "非法类型",
+            "系统会根据规则检查结果，标记这条记录需要补充哪些信息。",
+            "非法类型 = 缺少模块标签 / 缺少标注责任人 / 无代码走查 / 未代码扫描 / 静态扫描问题未关闭 / 缺少外部指标",
+            "一条记录可以同时命中多种非法类型。"),
+        new StatisticRuleMetricDefinition(
+            "reviewStatus",
+            "代码走查记录",
+            "表示这条合并请求是否已经形成可识别的代码走查记录。",
+            "代码走查记录 = 评审表单时长或走查状态已形成有效值",
+            "如果当前还没有形成有效走查记录，这条记录会被判定为“无代码走查”。"),
+        new StatisticRuleMetricDefinition(
+            "moduleName",
+            "模块名称",
+            "表示这条合并请求所属的功能模块。",
+            "模块名称来自合并请求关联的模块标识。",
+            "如果缺少模块信息，这条记录会被判定为需要关注。"),
+        new StatisticRuleMetricDefinition(
+            "scanStatus",
+            "代码扫描结果",
+            "表示这条合并请求是否已经完成静态扫描，以及静态扫描问题是否已经清理。",
+            "未代码扫描 = 明确标记为未扫描；静态扫描问题未关闭 = 扫描问题数大于 0",
+            "只有事实层中已经带出扫描状态时，才会命中这类非法规则。"),
+        new StatisticRuleMetricDefinition(
+            "commentRate",
+            "代码注释比例",
+            "表示本次改动中代码注释的覆盖情况。",
+            "代码注释比例 = 外部工具结果 或 MR 机器人解析结果",
+            "如果缺少该指标，这条记录会被判定为需要关注。"),
+        new StatisticRuleMetricDefinition(
+            "defectCount",
+            "缺陷数量",
+            "表示本次改动关联的缺陷数量。",
+            "缺陷数量 = MR 评论 / 机器人结果 / Sonar 汇总结果",
+            "如果缺少该指标，这条记录会被判定为需要关注。"),
+        new StatisticRuleMetricDefinition(
+            "addedLines",
+            "新增代码行数",
+            "表示本次合并请求新增的代码规模。",
+            "新增代码行数 = 本次改动新增代码行数",
+            "如果缺少该指标，这条记录也会被判定为需要关注。"));
+  }
+
   private StatisticRuleFlowStepSample toIllegalRecordSample(CodeReviewIllegalRecordView row) {
     return new StatisticRuleFlowStepSample(
         "MR #" + row.mergeRequestIid(),
-        row.projectName() + " | " + (row.illegalTypes().isEmpty() ? "无非法类型" : String.join("、", row.illegalTypes())));
-  }
-
-  private List<String> buildIllegalTypes(CodeReviewIllegalRecordSource source) {
-    List<String> result = new ArrayList<>();
-    if (source.labelTitles().isEmpty()) {
-      result.add("缺少模块标签");
-    }
-    if (!StringUtils.hasText(source.owner())) {
-      result.add("缺少标注责任人");
-    }
-    if (!StringUtils.hasText(source.reviewStatus()) || source.reviewDurationMinutes() == null) {
-      result.add("无代码走查");
-    }
-    if (StringUtils.hasText(source.scanStatus())
-        && Set.of("NOT_SCANNED", "UNSCANNED", "未扫描", "未代码扫描", "未进行代码扫描")
-            .contains(source.scanStatus().trim().toUpperCase(Locale.ROOT))) {
-      result.add("未代码扫描");
-    }
-    if (source.scanBugCount() != null && source.scanBugCount() > 0) {
-      result.add("静态扫描问题未关闭");
-    }
-    if (source.commentRate() == null) {
-      result.add("缺少代码注释比例");
-    }
-    if (source.defectCount() == null) {
-      result.add("缺少缺陷数量");
-    }
-    if (source.addedLines() == null) {
-      result.add("缺少新增代码行数");
-    }
-    return result;
+        row.projectName() + " | "
+            + (row.illegalTypes().isEmpty() ? "无非法类型" : String.join("、", row.illegalTypes())));
   }
 
   private String buildMergeRequestLink(String repositoryName, Integer mergeRequestIid) {
-    if (!StringUtils.hasText(defaultGitlabBaseUrl) || !StringUtils.hasText(repositoryName) || mergeRequestIid == null) {
+    if (!StringUtils.hasText(defaultGitlabBaseUrl)
+        || !StringUtils.hasText(repositoryName)
+        || mergeRequestIid == null) {
       return null;
     }
     return defaultGitlabBaseUrl.replaceAll("/+$", "")
@@ -393,12 +335,13 @@ public class CodeReviewIllegalRecordService {
         row.addedLines());
   }
 
-  private List<OptionItemResponse> toOptions(List<CodeReviewIllegalRecordView> rows, Function<CodeReviewIllegalRecordView, String> extractor) {
+  private List<OptionItemResponse> toOptions(
+      List<CodeReviewIllegalRecordView> rows,
+      Function<CodeReviewIllegalRecordView, String> extractor) {
     return OptionItemResponseFactory.from(rows, extractor, TextQuerySupport::trimToNull);
   }
 
   private List<OptionItemResponse> toOptions(List<String> values) {
     return OptionItemResponseFactory.from(values, TextQuerySupport::trimToNull);
   }
-
 }
