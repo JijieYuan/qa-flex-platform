@@ -215,11 +215,17 @@ export abstract class AbstractRuleConfigSchemaSupport<
   }
 
   describeRule(rule: TRule, fields: TField[]) {
+    if (!rule.expression) {
+      return `如果未配置有效规则，就会被判定为${rule.resultKey || '未选择判定结果'}。`;
+    }
     const expressionText = this.describeNode(rule.expression, fields);
     return `如果 ${expressionText}，就会被判定为${rule.resultKey || '未选择判定结果'}。`;
   }
 
   syncRuleWithField(rule: TRule, fields: TField[]) {
+    if (!rule.expression) {
+      return;
+    }
     this.syncNode(rule.expression, fields);
   }
 
@@ -228,6 +234,9 @@ export abstract class AbstractRuleConfigSchemaSupport<
   }
 
   matchesRule(row: TRow, rule: TRule, fields: TField[]) {
+    if (!rule.expression) {
+      return false;
+    }
     return this.evaluateNode(row, rule.expression, fields);
   }
 
@@ -236,7 +245,10 @@ export abstract class AbstractRuleConfigSchemaSupport<
   protected abstract readFieldValue(row: TRow, fieldKey: string): unknown;
 
   protected isRuleReady(rule: TRule, fields: TField[]) {
-    if (!rule.resultKey.trim()) {
+    if (!rule.resultKey?.trim()) {
+      return false;
+    }
+    if (!rule.expression) {
       return false;
     }
     return this.isNodeReady(rule.expression, fields);
@@ -266,6 +278,9 @@ export abstract class AbstractRuleConfigSchemaSupport<
   }
 
   protected syncNode(node: RuleExpressionNode, fields: TField[]) {
+    if (!node) {
+      return;
+    }
     if (node.type === RuleNodeType.CONDITION) {
       const field = fields.find((item) => item.key === node.fieldKey);
       if (!field) {
@@ -291,6 +306,9 @@ export abstract class AbstractRuleConfigSchemaSupport<
   }
 
   protected isNodeReady(node: RuleExpressionNode, fields: TField[]): boolean {
+    if (!node) {
+      return false;
+    }
     if (node.type === RuleNodeType.CONDITION) {
       const field = fields.find((item) => item.key === node.fieldKey);
       if (!field) {
@@ -306,6 +324,9 @@ export abstract class AbstractRuleConfigSchemaSupport<
   }
 
   protected evaluateNode(row: TRow, node: RuleExpressionNode, fields: TField[]): boolean {
+    if (!node) {
+      return false;
+    }
     if (node.type === RuleNodeType.CONDITION) {
       return this.matchesCondition(row, node, fields);
     }

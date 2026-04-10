@@ -42,7 +42,17 @@ export function useRuleConfigState<TField extends RuleConfigField, TRule extends
   }
 
   function normalizeRules(nextRules: TRule[], fields: TField[]) {
-    const clonedRules = options.schema.cloneRules(nextRules);
+    const safeRules = nextRules.filter(
+      (rule) =>
+        rule != null &&
+        typeof rule.resultKey === 'string' &&
+        rule.expression != null &&
+        typeof rule.expression === 'object',
+    );
+    if (!safeRules.length) {
+      return options.schema.cloneRules(options.schema.createDefaultRules(fields));
+    }
+    const clonedRules = options.schema.cloneRules(safeRules);
     clonedRules.forEach((rule) => options.schema.syncRuleWithField(rule, fields));
     return clonedRules;
   }

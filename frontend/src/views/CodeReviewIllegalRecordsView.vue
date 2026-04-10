@@ -19,6 +19,11 @@ import {
   type CodeReviewDemoRule,
 } from './code-review-rule-demo';
 import { useRuleConfigState } from './useRuleConfigState';
+import {
+  RuleGroupOperator,
+  RuleNodeType,
+  type RuleExpressionNode,
+} from './rule-config-core';
 
 const {
   route,
@@ -42,9 +47,11 @@ const advancedVisible = ref(false);
 const rows = ref<CodeReviewIllegalRecordRowResponse[]>([]);
 const total = ref(0);
 const detailVisible = ref(false);
+const demoSampleVisible = ref(false);
 const ruleExplanationVisible = ref(false);
 const ruleExplanationLoading = ref(false);
 const selectedRow = ref<CodeReviewIllegalRecordRowResponse | null>(null);
+const selectedDemoRuleId = ref<string | null>(null);
 const syncStatus = ref<RealtimeWorkspaceStatusResponse | null>(null);
 const ruleExplanation = ref<StatisticBoardRuleExplanationResponse | null>(null);
 
@@ -194,7 +201,7 @@ const demoRuleState = useRuleConfigState({
   fields: demoRuleFields,
   schema: codeReviewRuleConfigDemoSupport,
   createRule(fields) {
-    return codeReviewRuleConfigDemoSupport.createRule(fields[0], demoIllegalTypeOptions.value[0]?.value ?? '');
+    return codeReviewRuleConfigDemoSupport.createResultRule(demoIllegalTypeOptions.value[0]?.value ?? '', fields[0]);
   },
 });
 const demoMatchedRows = computed(() => {
@@ -207,10 +214,10 @@ const demoMatchedRows = computed(() => {
 const demoHasConditions = computed(() => demoRuleState.rules.value.length > 0);
 const demoMatchedCount = computed(() => demoMatchedRows.value.length);
 const demoRulePreviewCards = computed(() =>
-  demoRuleState.rules.value.map((rule) => ({
+  demoRuleState.rules.value.map((rule, index) => ({
     id: rule.id,
-    title: `规则：${rule.resultKey || '未选择判定结果'}`,
-    description: codeReviewRuleConfigDemoSupport.describeRule(rule, demoRuleFields.value),
+    title: `条件组 ${index + 1}`,
+    description: describeExpression(rule.expression),
     outputCount: codeReviewRuleConfigDemoSupport.countMatches(rows.value, rule, demoRuleFields.value),
   })),
 );
@@ -219,6 +226,24 @@ const demoRuleSummaryText = computed(() => {
     return '当前未启用 Demo 规则，本页仍展示后端返回的原始结果。';
   }
   return `当前页已加载 ${rows.value.length} 条记录，Demo 规则命中 ${demoMatchedCount.value} 条。`;
+});
+const demoSelectedRule = computed(() =>
+  demoRuleState.rules.value.find((rule) => rule.id === selectedDemoRuleId.value) ?? null,
+);
+const demoSelectedRuleMatchedRows = computed(() => {
+  if (!demoSelectedRule.value) {
+    return [];
+  }
+  return rows.value.filter((row) =>
+    codeReviewRuleConfigDemoSupport.matchesRule(row, demoSelectedRule.value as CodeReviewDemoRule, demoRuleFields.value),
+  );
+});
+const demoSelectedRuleTitle = computed(() => {
+  if (!demoSelectedRule.value) {
+    return '命中样本预览';
+  }
+  const index = demoRuleState.rules.value.findIndex((rule) => rule.id === demoSelectedRule.value?.id);
+  return index >= 0 ? `条件组 ${index + 1} 命中样本` : '命中样本预览';
 });
 const tableEmptyDescription = computed(() =>
   demoRuleState.enabled.value && demoHasConditions.value
@@ -298,7 +323,28 @@ function demoRuleMatchCount(rule: CodeReviewDemoRule) {
 }
 
 function demoRuleSentence(rule: CodeReviewDemoRule) {
-  return codeReviewRuleConfigDemoSupport.describeRule(rule, demoRuleFields.value);
+  return describeExpression(rule.expression);
+}
+
+function describeExpression(node: RuleExpressionNode): string {
+  if (node.type === RuleNodeType.CONDITION) {
+    const field = demoRuleFields.value.find((item) => item.key === node.fieldKey);
+    const fieldLabel = field?.label ?? '字段';
+    const operatorLabel = codeReviewRuleConfigDemoSupport.operatorLabel(node.operator);
+    if (!codeReviewRuleConfigDemoSupport.usesValueInput(node.operator)) {
+      return `${fieldLabel}${operatorLabel}`;
+    }
+    return `${fieldLabel}${operatorLabel}${node.value || '未填写'}`;
+  }
+  const childDescriptions = node.children.map((child) => describeExpression(child)).filter(Boolean);
+  if (!childDescriptions.length) {
+    return '当前条件组还没有配置条件';
+  }
+  if (childDescriptions.length === 1) {
+    return childDescriptions[0];
+  }
+  const joiner = node.operator === RuleGroupOperator.AND ? ' 且 ' : ' 或 ';
+  return `(${childDescriptions.join(joiner)})`;
 }
 
 function ensureDemoRulesInitialized() {
@@ -315,6 +361,15 @@ function removeDemoRule(ruleId: string) {
 
 function resetDemoRules() {
   demoRuleState.resetToDefault();
+}
+
+function openDemoSample(ruleId: string) {
+  selectedDemoRuleId.value = ruleId;
+  demoSampleVisible.value = true;
+}
+
+function closeDemoSample() {
+  demoSampleVisible.value = false;
 }
 
 function createFallbackRuleExplanation(reason: string): StatisticBoardRuleExplanationResponse {
@@ -678,105 +733,67 @@ function metricFormulaSummary(metric: { label: string; definition: string; formu
 
       <div v-loading="ruleExplanationLoading" class="record-rule-panel">
         <section class="record-detail-section">
-          <div class="record-detail-section-title">如何使用这块配置</div>
-          <div class="record-detail-content">
-            当前这里展示的是“规则配置 Demo”。你可以直接修改每条规则里的原子条件、逻辑组关系和判定结果，用来预览树状规则配置的交互效果。
-            现在的修改只作用于本页已加载数据，不会写回后端，也不会改变正式非法判定口径。
-          </div>
-        </section>
-
-        <section class="record-detail-section">
-          <div class="record-detail-section-title">当前规则配置</div>
-          <div class="rule-demo-header">
-            <div class="rule-demo-header-main">
-              <div class="rule-demo-title">把规则说明改成可编辑句式</div>
-              <div class="rule-demo-note">{{ demoRuleSummaryText }}</div>
-            </div>
-            <div class="rule-demo-header-actions">
-              <el-switch v-model="demoRuleState.enabled.value" inline-prompt active-text="预览开" inactive-text="预览关" />
-            </div>
-          </div>
-          <div class="rule-demo-toolbar">
-            <div class="rule-demo-note">每条规则都表示“如果满足这棵逻辑树，就会被判定为某一种非法类型”。</div>
-            <div class="rule-demo-toolbar-actions">
-              <el-button size="small" :icon="Plus" @click="addDemoRule">新增规则</el-button>
-              <el-button size="small" text @click="resetDemoRules">恢复默认</el-button>
-            </div>
-          </div>
-
-          <div v-if="demoRuleState.rules.value.length" class="rule-demo-list">
-            <article
-              v-for="rule in demoRuleState.rules.value"
-              :key="rule.id"
-              class="rule-demo-card"
-            >
-              <div class="rule-demo-card-header">
-                <div class="rule-demo-card-title-row">
-                  <span class="rule-demo-card-title">命中后判定为</span>
-                  <el-select
-                    v-model="rule.resultKey"
-                    class="rule-demo-inline-select"
-                    placeholder="选择判定结果"
-                  >
-                    <el-option
-                      v-for="option in demoIllegalTypeOptions"
-                      :key="option.value"
-                      :label="option.label"
-                      :value="option.value"
-                    />
-                  </el-select>
-                </div>
-                <div class="rule-demo-card-note">
-                  当前这条规则已经升级为逻辑树，可以在组节点里组合多个原子特征。
-                </div>
+          <div class="record-detail-section-title">组合筛选</div>
+          <div class="rule-refactor-panel">
+            <div class="rule-refactor-toolbar">
+              <div class="rule-refactor-toolbar-main">
+                <div class="rule-refactor-title">非法记录筛选</div>
+                <div class="rule-refactor-subtitle">{{ demoRuleSummaryText }}</div>
               </div>
-              <RuleExpressionEditor
-                :node="rule.expression"
-                :fields="demoRuleFields"
-                :schema="codeReviewRuleConfigDemoSupport"
-                :can-remove="false"
-              />
-              <div class="rule-demo-card-footer">
-                <div class="rule-demo-card-meta">
-                  <el-tag size="small" effect="plain" type="warning">当前页命中 {{ demoRuleMatchCount(rule) }} 条</el-tag>
-                  <span class="rule-demo-card-summary">{{ demoRuleSentence(rule) }}</span>
-                </div>
-                <el-button
-                  class="rule-demo-delete"
-                  circle
-                  :icon="Delete"
-                  @click="removeDemoRule(rule.id)"
+              <div class="rule-refactor-toolbar-actions">
+                <el-switch
+                  v-model="demoRuleState.enabled.value"
+                  inline-prompt
+                  active-text="预览开"
+                  inactive-text="预览关"
                 />
+                <el-button size="small" :icon="Plus" @click="addDemoRule">新增条件组</el-button>
+                <el-button size="small" text @click="resetDemoRules">恢复默认</el-button>
               </div>
-            </article>
-          </div>
-          <el-empty
-            v-else
-            description="还没有配置规则，可以先新增一条句式规则。"
-          />
-        </section>
+            </div>
 
-        <section class="record-detail-section">
-          <div class="record-detail-section-title">当前预览规则说明</div>
-          <div class="record-detail-content">
-            下方说明和上面的编辑区使用的是同一份逻辑树规则数据，所以你改字段、关系、取值、组关系或判定结果后，这里会立即同步变化。
-          </div>
-          <div class="record-rule-card-grid">
-            <article
-              v-for="(ruleCard, index) in demoRulePreviewCards"
-              :key="ruleCard.id"
-              class="record-rule-card"
-            >
-              <div class="record-rule-card-title">预览规则 {{ index + 1 }}：{{ ruleCard.title }}</div>
-              <div class="record-rule-card-description">{{ ruleCard.description }}</div>
-              <div class="record-rule-card-summary">
-                {{ demoRuleState.enabled.value ? `当前页预览开启后，命中 ${ruleCard.outputCount} 条记录。` : '当前预览关闭，页面列表仍展示后端原始结果。' }}
-              </div>
-              <div class="record-rule-card-stats">
-                <span class="record-rule-card-stat">当前页命中 {{ ruleCard.outputCount }} 条</span>
-                <span class="record-rule-card-stat">预览状态 {{ demoRuleState.enabled.value ? '已开启' : '已关闭' }}</span>
-              </div>
-            </article>
+            <div v-if="demoRuleState.rules.value.length" class="rule-refactor-groups">
+              <template v-for="(rule, index) in demoRuleState.rules.value" :key="rule.id">
+                <article class="rule-refactor-group">
+                  <div class="rule-refactor-group-header">
+                    <div class="rule-refactor-group-title">条件组 {{ index + 1 }}</div>
+                    <div class="rule-refactor-group-actions">
+                      <el-button class="rule-demo-count-button" text @click="openDemoSample(rule.id)">
+                        命中 {{ demoRuleMatchCount(rule) }} 条
+                      </el-button>
+                      <el-button
+                        class="rule-refactor-delete"
+                        text
+                        size="small"
+                        :icon="Delete"
+                        @click="removeDemoRule(rule.id)"
+                      >
+                        删除
+                      </el-button>
+                    </div>
+                  </div>
+
+                  <RuleExpressionEditor
+                    :node="rule.expression"
+                    :fields="demoRuleFields"
+                    :schema="codeReviewRuleConfigDemoSupport"
+                    :can-remove="false"
+                  />
+                </article>
+
+                <div
+                  v-if="index < demoRuleState.rules.value.length - 1"
+                  class="rule-refactor-group-divider"
+                >
+                  或
+                </div>
+              </template>
+            </div>
+
+            <el-empty
+              v-else
+              description="当前还没有条件组，可以先新增一组筛选条件。"
+            />
           </div>
         </section>
 
@@ -869,6 +886,46 @@ function metricFormulaSummary(metric: { label: string; definition: string; formu
         </template>
       </div>
     </el-drawer>
+
+    <el-dialog
+      v-model="demoSampleVisible"
+      width="72%"
+      top="8vh"
+      destroy-on-close
+      class="rule-demo-sample-dialog"
+      @closed="closeDemoSample"
+    >
+      <template #header>
+        <div class="record-detail-header">
+          <div class="record-detail-header-main">
+            <div class="record-detail-header-kicker">采样预览</div>
+            <div class="record-detail-header-title">{{ demoSelectedRuleTitle }}</div>
+            <div class="record-detail-header-meta">
+              <span class="record-detail-meta-item">当前页命中 {{ demoSelectedRuleMatchedRows.length }} 条</span>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <div class="record-detail-content">
+        这里展示的是当前页被这张过滤网截留下来的样本。你可以用它快速判断：这张网抓到的是不是你真正想定义成同一类非法记录的数据。
+      </div>
+
+      <el-table
+        :data="demoSelectedRuleMatchedRows"
+        border
+        stripe
+        max-height="520"
+        class="rule-demo-sample-table"
+      >
+        <el-table-column prop="mergeRequestIid" label="MR 编号" width="110" />
+        <el-table-column prop="projectName" label="所属项目" min-width="160" />
+        <el-table-column prop="moduleName" label="模块名" min-width="140" />
+        <el-table-column prop="owner" label="标注责任人" min-width="140" />
+        <el-table-column prop="targetBranch" label="目标分支" min-width="160" />
+        <el-table-column prop="mergeRequestContent" label="合并请求内容" min-width="260" show-overflow-tooltip />
+      </el-table>
+    </el-dialog>
   </section>
 </template>
 
@@ -897,15 +954,15 @@ function metricFormulaSummary(metric: { label: string; definition: string; formu
 }
 
 .rule-demo-title {
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 700;
   color: rgba(15, 23, 42, 0.92);
 }
 
 .rule-demo-note,
 .rule-demo-stat {
-  font-size: 13px;
-  line-height: 1.7;
+  font-size: 12px;
+  line-height: 1.6;
   color: rgba(15, 23, 42, 0.6);
 }
 
@@ -931,40 +988,121 @@ function metricFormulaSummary(metric: { label: string; definition: string; formu
 
 .rule-demo-list {
   display: grid;
-  gap: 10px;
-}
-
-.rule-demo-card {
-  display: grid;
-  gap: 10px;
-  padding: 12px;
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.92);
-  border: 1px solid rgba(15, 23, 42, 0.06);
-}
-
-.rule-demo-card-header {
-  display: grid;
   gap: 8px;
 }
 
-.rule-demo-card-title-row {
+.rule-refactor-panel {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 12px;
+  background: #fff;
+  border: 1px solid #ebeef5;
+}
+
+.rule-refactor-toolbar {
   display: flex;
   align-items: center;
-  gap: 10px;
+  justify-content: space-between;
+  gap: 12px;
   flex-wrap: wrap;
 }
 
-.rule-demo-card-title {
-  font-size: 13px;
-  font-weight: 700;
-  color: rgba(15, 23, 42, 0.76);
+.rule-refactor-toolbar-main {
+  display: grid;
+  gap: 4px;
 }
 
-.rule-demo-card-note {
+.rule-refactor-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #1f2937;
+}
+
+.rule-refactor-subtitle {
+  font-size: 12px;
+  line-height: 1.6;
+  color: #6b7280;
+}
+
+.rule-refactor-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.rule-refactor-groups {
+  display: grid;
+  gap: 10px;
+}
+
+.rule-refactor-group {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 10px;
+  background: #fcfcfd;
+  border: 1px solid #e5e7eb;
+}
+
+.rule-refactor-group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.rule-refactor-group-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #374151;
+}
+
+.rule-refactor-group-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.rule-refactor-group-divider {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 24px;
+  margin: 0 auto;
+  border-radius: 999px;
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  color: #6b7280;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.rule-demo-capture-link,
+.rule-demo-count-button,
+.record-rule-card-stat-link {
+  width: fit-content;
+  padding: 1px 10px;
+  font-weight: 600;
+  border-radius: 999px;
+  color: #595959;
+  background: #fff;
+  border: 1px solid #e8e8e8;
+  font-size: 12px;
+}
+
+.rule-refactor-delete {
+  color: #6b7280;
+}
+
+.rule-demo-capture-text {
   font-size: 12px;
   line-height: 1.7;
-  color: rgba(15, 23, 42, 0.56);
+  color: #8c8c8c;
 }
 
 .rule-demo-inline-select {
@@ -987,7 +1125,7 @@ function metricFormulaSummary(metric: { label: string; definition: string; formu
 
 .rule-demo-card-summary {
   font-size: 12px;
-  color: rgba(15, 23, 42, 0.56);
+  color: #8c8c8c;
 }
 
 .rule-demo-delete {
@@ -1051,7 +1189,7 @@ function metricFormulaSummary(metric: { label: string; definition: string; formu
 
 .record-detail-drawer :deep(.el-drawer__body) {
   padding-top: 16px;
-  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  background: #fafafa;
 }
 
 .record-detail-header {
@@ -1106,23 +1244,24 @@ function metricFormulaSummary(metric: { label: string; definition: string; formu
 
 .record-detail-section {
   display: grid;
-  gap: 12px;
-  margin-bottom: 20px;
+  gap: 10px;
+  margin-bottom: 16px;
 }
 
 .record-detail-section-title {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 700;
   color: rgba(15, 23, 42, 0.76);
 }
 
 .record-detail-content {
-  padding: 14px 16px;
-  border-radius: 14px;
+  padding: 12px 14px;
+  border-radius: 10px;
   background: rgba(255, 255, 255, 0.88);
   border: 1px solid rgba(15, 23, 42, 0.06);
   color: rgba(15, 23, 42, 0.76);
-  line-height: 1.7;
+  line-height: 1.6;
+  font-size: 13px;
 }
 
 .record-detail-tags {
@@ -1166,13 +1305,17 @@ function metricFormulaSummary(metric: { label: string; definition: string; formu
   gap: 16px;
 }
 
+.rule-demo-sample-table {
+  margin-top: 14px;
+}
+
 .record-rule-summary-card {
   display: grid;
   gap: 8px;
   padding: 16px 18px;
-  border-radius: 16px;
-  background: linear-gradient(180deg, rgba(239, 246, 255, 0.95) 0%, rgba(248, 250, 252, 0.98) 100%);
-  border: 1px solid rgba(59, 130, 246, 0.14);
+  border-radius: 12px;
+  background: #fafafa;
+  border: 1px solid #f0f0f0;
 }
 
 .record-rule-summary-main {
@@ -1200,10 +1343,10 @@ function metricFormulaSummary(metric: { label: string; definition: string; formu
 .record-process-card {
   display: grid;
   gap: 10px;
-  padding: 16px;
-  border-radius: 16px;
-  background: rgba(255, 255, 255, 0.94);
-  border: 1px solid rgba(15, 23, 42, 0.06);
+  padding: 14px;
+  border-radius: 12px;
+  background: #fff;
+  border: 1px solid #f0f0f0;
 }
 
 .record-rule-overview-label {
@@ -1245,8 +1388,8 @@ function metricFormulaSummary(metric: { label: string; definition: string; formu
 .record-formula-card-formula {
   padding: 10px 12px;
   border-radius: 12px;
-  background: rgba(248, 250, 252, 0.96);
-  border: 1px solid rgba(15, 23, 42, 0.06);
+  background: #fafafa;
+  border: 1px solid #f5f5f5;
   font-size: 13px;
   line-height: 1.7;
   color: rgba(15, 23, 42, 0.8);
@@ -1261,9 +1404,9 @@ function metricFormulaSummary(metric: { label: string; definition: string; formu
 .record-rule-card-stat {
   padding: 6px 10px;
   border-radius: 999px;
-  background: rgba(241, 245, 249, 0.95);
+  background: #fafafa;
   font-size: 12px;
-  color: rgba(15, 23, 42, 0.72);
+  color: #595959;
 }
 
 .record-process-chain {
@@ -1292,6 +1435,12 @@ function metricFormulaSummary(metric: { label: string; definition: string; formu
   .rule-demo-card-footer {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .rule-refactor-toolbar,
+  .rule-refactor-group-header {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .record-rule-overview-grid,
