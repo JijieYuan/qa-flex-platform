@@ -1,8 +1,13 @@
 import type { CodeReviewIllegalRecordRowResponse, OptionItemResponse } from '../api';
-import { AbstractRuleConfigDemoSupport, type RuleConfigDemoField, type RuleConfigDemoRule } from './rule-config-demo';
+import {
+  AbstractRuleConfigSchemaSupport,
+  RuleOperator,
+  type RuleConfigField,
+  type RuleConfigResultRule,
+} from './rule-config-core';
 
-export type CodeReviewDemoRuleField = RuleConfigDemoField;
-export type CodeReviewDemoRule = RuleConfigDemoRule;
+export type CodeReviewDemoRuleField = RuleConfigField;
+export type CodeReviewDemoRule = RuleConfigResultRule;
 
 const FALLBACK_ILLEGAL_TYPES = [
   '缺少模块标签',
@@ -12,7 +17,7 @@ const FALLBACK_ILLEGAL_TYPES = [
   '缺少新增代码行数',
 ];
 
-class CodeReviewRuleConfigDemoSupport extends AbstractRuleConfigDemoSupport<CodeReviewIllegalRecordRowResponse> {
+class CodeReviewRuleConfigDemoSupport extends AbstractRuleConfigSchemaSupport<CodeReviewIllegalRecordRowResponse> {
   buildFields(optionGroups: {
     repositoryNames: OptionItemResponse[];
     illegalTypes: OptionItemResponse[];
@@ -43,17 +48,17 @@ class CodeReviewRuleConfigDemoSupport extends AbstractRuleConfigDemoSupport<Code
     return FALLBACK_ILLEGAL_TYPES.map((item) => ({ label: item, value: item }));
   }
 
-  createDefaultRules(fields: CodeReviewDemoRuleField[]) {
+  override createDefaultRules(fields: CodeReviewDemoRuleField[]) {
     return [
-      this.createConfiguredRule(fields, 'moduleName', 'isEmpty', '', '缺少模块标签'),
-      this.createConfiguredRule(fields, 'owner', 'isEmpty', '', '缺少标注责任人'),
-      this.createConfiguredRule(fields, 'commentRate', 'isEmpty', '', '缺少代码注释比例'),
-      this.createConfiguredRule(fields, 'defectCount', 'isEmpty', '', '缺少缺陷数量'),
-      this.createConfiguredRule(fields, 'addedLines', 'isEmpty', '', '缺少新增代码行数'),
+      this.createConfiguredRule(fields, 'moduleName', RuleOperator.IS_EMPTY, '', '缺少模块标签'),
+      this.createConfiguredRule(fields, 'owner', RuleOperator.IS_EMPTY, '', '缺少标注责任人'),
+      this.createConfiguredRule(fields, 'commentRate', RuleOperator.IS_EMPTY, '', '缺少代码注释比例'),
+      this.createConfiguredRule(fields, 'defectCount', RuleOperator.IS_EMPTY, '', '缺少缺陷数量'),
+      this.createConfiguredRule(fields, 'addedLines', RuleOperator.IS_EMPTY, '', '缺少新增代码行数'),
     ];
   }
 
-  protected readFieldValue(row: CodeReviewIllegalRecordRowResponse, fieldKey: string) {
+  protected override readFieldValue(row: CodeReviewIllegalRecordRowResponse, fieldKey: string) {
     if (fieldKey === 'illegalTypes') {
       return row.illegalTypes;
     }
@@ -63,16 +68,18 @@ class CodeReviewRuleConfigDemoSupport extends AbstractRuleConfigDemoSupport<Code
   private createConfiguredRule(
     fields: CodeReviewDemoRuleField[],
     fieldKey: string,
-    operator: CodeReviewDemoRule['operator'],
+    operator: RuleOperator,
     value: string,
-    illegalType: string,
+    resultKey: string,
   ) {
     const field = fields.find((item) => item.key === fieldKey);
-    const rule = this.createRule(field, illegalType);
-    rule.fieldKey = fieldKey;
-    rule.operator = operator;
-    rule.value = value;
-    rule.illegalType = illegalType;
+    const rule = this.createResultRule(resultKey, field);
+    const condition = rule.expression.children[0];
+    if (condition?.type === 'condition') {
+      condition.fieldKey = fieldKey;
+      condition.operator = operator;
+      condition.value = value;
+    }
     return rule;
   }
 }

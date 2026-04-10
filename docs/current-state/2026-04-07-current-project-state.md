@@ -857,7 +857,8 @@
 - 页面主文件：
   - `frontend/src/views/CodeReviewIllegalRecordsView.vue`
 - 通用句式规则抽象层：
-  - `frontend/src/views/rule-config-demo.ts`
+  - `frontend/src/views/rule-config-core.ts`
+  - `frontend/src/views/useRuleConfigState.ts`
 - Demo 规则 helper：
   - `frontend/src/views/code-review-rule-demo.ts`
 - Demo 规则测试：

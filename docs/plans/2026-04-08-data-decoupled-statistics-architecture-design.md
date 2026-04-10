@@ -1221,7 +1221,8 @@
 
 本轮又进一步补了一层可复用抽象：
 
-- 新增前端通用抽象类 `rule-config-demo.ts`
+- 新增前端通用抽象核心 `rule-config-core.ts`
+- 新增通用状态 Hook `useRuleConfigState.ts`
 - 负责统一承接：
   - 句式规则结构
   - 运算符标签

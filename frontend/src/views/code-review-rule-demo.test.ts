@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { RuleNodeType, RuleOperator } from './rule-config-core';
 import { codeReviewRuleConfigDemoSupport } from './code-review-rule-demo';
 
 const rows = [
@@ -43,7 +44,7 @@ const rows = [
 ];
 
 describe('code review rule demo', () => {
-  it('builds fields and default rules from shared abstract support', () => {
+  it('builds fields and default tree rules from shared schema support', () => {
     const fields = codeReviewRuleConfigDemoSupport.buildFields({
       repositoryNames: [{ label: 'repo-a', value: 'repo-a' }],
       illegalTypes: [{ label: '缺少模块标签', value: '缺少模块标签' }],
@@ -55,13 +56,14 @@ describe('code review rule demo', () => {
 
     const defaults = codeReviewRuleConfigDemoSupport.createDefaultRules(fields);
     expect(fields[0].label).toBe('代码库');
-    expect(defaults[0].illegalType).toBe('缺少模块标签');
-    expect(codeReviewRuleConfigDemoSupport.operatorLabel('contains')).toBe('包含');
-    expect(codeReviewRuleConfigDemoSupport.usesValueInput('isEmpty')).toBe(false);
+    expect(defaults[0].resultKey).toBe('缺少模块标签');
+    expect(defaults[0].expression.children[0].type).toBe(RuleNodeType.CONDITION);
+    expect(codeReviewRuleConfigDemoSupport.operatorLabel(RuleOperator.CONTAINS)).toBe('包含');
+    expect(codeReviewRuleConfigDemoSupport.usesValueInput(RuleOperator.IS_EMPTY)).toBe(false);
     expect(codeReviewRuleConfigDemoSupport.buildIllegalTypeOptions([])[0].label).toBe('缺少模块标签');
   });
 
-  it('matches and counts sentence rules', () => {
+  it('matches and counts tree rules', () => {
     const fields = codeReviewRuleConfigDemoSupport.buildFields({
       repositoryNames: [],
       illegalTypes: [{ label: '缺少模块标签', value: '缺少模块标签' }],
@@ -78,7 +80,7 @@ describe('code review rule demo', () => {
     expect(codeReviewRuleConfigDemoSupport.describeRule(rule, fields)).toContain('模块名称为空');
   });
 
-  it('filters rows by any matched rule', () => {
+  it('filters rows by any matched result rule', () => {
     const fields = codeReviewRuleConfigDemoSupport.buildFields({
       repositoryNames: [],
       illegalTypes: [],
