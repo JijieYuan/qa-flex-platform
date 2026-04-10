@@ -809,6 +809,59 @@
   - 这与老平台 `spider_issue_data / project_issue_info` 作为“议题事实表”的思想一致
 - 代码走查类指标不必为“注释率 / 缺陷数 / review 时长 / 缺陷密度”等每项各建一张表
   - 当前项目已经有 `ods_gitlab_merge_requests`、`ods_gitlab_merge_request_metrics`、`ods_gitlab_merge_request_reviewers`、`ods_gitlab_merge_request_assignees`
+
+## 2026-04-10 代码走查规则配置 Demo 补充
+
+### 当前页面行为
+
+- 页面：`/#/code-review/illegal-records`
+- 前端入口按钮已从“规则说明”调整为“规则配置”
+- 原来独立放在页面顶部的 Demo 规则面板已移除
+- Demo 能力已并入右侧抽屉，与后端返回的正式规则 Flow 说明放在同一个抽屉里展示
+
+### 当前抽屉结构
+
+- 抽屉标题调整为“规则配置”
+- 抽屉上半部分为前端本地 Demo：
+  - 支持按句式编辑规则
+  - 句式结构为：
+    - `如果 [字段] [关系] [取值]，就会被判定为 [非法类型]`
+  - 当前支持修改：
+    - 字段
+    - 关系
+    - 取值
+    - 判定后的非法类型
+  - 支持新增规则、删除规则、恢复默认规则
+  - 支持“预览开/关”
+  - 预览仅作用于当前页已加载数据
+- 抽屉下半部分仍保留后端真实规则说明：
+  - 总体结论
+  - 范围说明
+  - 正式口径下的规则卡片
+  - Flow 过程
+  - 指标公式说明
+
+### 当前能力边界
+
+- 当前规则配置仍是前端 Demo，不写回后端
+- 当前修改不会改变 `CodeReviewIllegalRecordService` 的正式非法判定逻辑
+- 当前修改不会改动 `/api/code-review/illegal-records/rule-explanation` 的返回内容
+- 当前“命中 X 条”的预览结果，仅基于当前页已加载记录做本地计算
+
+### 本次新增的前端实现
+
+- 页面主文件：
+  - `frontend/src/views/CodeReviewIllegalRecordsView.vue`
+- Demo 规则 helper：
+  - `frontend/src/views/code-review-rule-demo.ts`
+- Demo 规则测试：
+  - `frontend/src/views/code-review-rule-demo.test.ts`
+
+### 本次验证结果
+
+- `npm test` 通过
+- `npm run build` 通过
+- Vite 仍存在既有 chunk 体积 warning，不是本次改造引入的新问题
   - 代码走查页面天然适合围绕 “一张 MR 事实主表 + 若干补充指标表” 来实现
 - 外部结果单独落正式表，这个思路可以保留
   - 老平台里 CC 注释率走 `annotation_rate_info`
