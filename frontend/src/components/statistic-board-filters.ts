@@ -22,6 +22,18 @@ export function createEmptyFilterGroup(): StatisticFilterDraftGroup {
   };
 }
 
+export function replaceFilterDraftGroup(
+  target: StatisticFilterDraftGroup,
+  nextGroup: Pick<StatisticFilterDraftGroup, 'logic' | 'conditions'>,
+) {
+  target.logic = nextGroup.logic === 'OR' ? 'OR' : 'AND';
+  target.conditions.splice(0, target.conditions.length, ...nextGroup.conditions);
+}
+
+export function resetFilterDraftGroup(target: StatisticFilterDraftGroup) {
+  replaceFilterDraftGroup(target, createEmptyFilterGroup());
+}
+
 export function createFilterConditionDraft(field?: StatisticFilterField): StatisticFilterConditionDraft {
   filterConditionSeed += 1;
   return {

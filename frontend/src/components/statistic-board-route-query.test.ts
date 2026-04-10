@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildFilterGroupFromRouteQuery,
   buildFilterQueryPatch,
+  buildResetFilterQueryPatch,
   mergeRouteQuery,
   routeDetailPage,
   routeDetailSortOrder,
@@ -71,6 +72,20 @@ describe('statistic board route query', () => {
     expect(patch.filterLogic).toBeNull();
     expect(patch['filters.0.field']).toBeNull();
     expect(String(patch.filterGroup)).toContain('"fieldKey":"moduleName"');
+  });
+
+  it('builds reset patch for both serialized and legacy filters', () => {
+    const patch = buildResetFilterQueryPatch({
+      filterGroup: '{"logic":"AND","conditions":[]}',
+      filterLogic: 'OR',
+      'filters.0.field': 'legacy',
+      'filters.0.value': 'legacy',
+    });
+
+    expect(patch.filterGroup).toBeNull();
+    expect(patch.filterLogic).toBeNull();
+    expect(patch['filters.0.field']).toBeNull();
+    expect(patch['filters.0.value']).toBeNull();
   });
 
   it('merges route query patches and removes empty values', () => {

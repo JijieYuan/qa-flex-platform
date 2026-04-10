@@ -3,6 +3,8 @@ import type { StatisticFilterField } from '../api';
 import {
   createFilterConditionDraft,
   createEmptyFilterGroup,
+  replaceFilterDraftGroup,
+  resetFilterDraftGroup,
   normalizeFilterDraftGroup,
   sanitizeFilterDraftGroup,
   usesSecondaryValue,
@@ -76,5 +78,31 @@ describe('statistic-board-filters', () => {
     expect(sanitizeFilterDraftGroup(group)).toBeNull();
     expect(usesSecondaryValue('between')).toBe(true);
     expect(usesSecondaryValue('eq')).toBe(false);
+  });
+
+  it('replaces and resets draft group in place', () => {
+    const group = createEmptyFilterGroup();
+    group.conditions.push(createFilterConditionDraft(FIELDS[0]));
+
+    replaceFilterDraftGroup(group, {
+      logic: 'OR',
+      conditions: [
+        {
+          id: 'condition-y',
+          fieldKey: 'totalRecords',
+          operator: 'gt',
+          value: '3',
+          secondaryValue: '',
+        },
+      ],
+    });
+
+    expect(group.logic).toBe('OR');
+    expect(group.conditions).toHaveLength(1);
+    expect(group.conditions[0].fieldKey).toBe('totalRecords');
+
+    resetFilterDraftGroup(group);
+    expect(group.logic).toBe('AND');
+    expect(group.conditions).toHaveLength(0);
   });
 });

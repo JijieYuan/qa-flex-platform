@@ -113,6 +113,10 @@ export function buildFilterQueryPatch(query: LocationQuery, filterDraft: Pick<St
   return patch;
 }
 
+export function buildResetFilterQueryPatch(query: LocationQuery) {
+  return buildFilterQueryPatch(query, createEmptyFilterGroup());
+}
+
 export function mergeRouteQuery(query: LocationQuery, patch: Record<string, string | number | null | undefined>) {
   const nextQuery = { ...query } as Record<string, string>;
   for (const [key, value] of Object.entries(patch)) {

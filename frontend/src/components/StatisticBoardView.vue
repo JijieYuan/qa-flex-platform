@@ -40,6 +40,8 @@ import {
 import {
   createEmptyFilterGroup,
   createFilterConditionDraft,
+  replaceFilterDraftGroup,
+  resetFilterDraftGroup,
   normalizeFilterDraftGroup,
   operatorLabel,
   sanitizeFilterDraftGroup,
@@ -50,6 +52,7 @@ import {
 import {
   buildFilterGroupFromRouteQuery,
   buildFilterQueryPatch,
+  buildResetFilterQueryPatch,
   mergeRouteQuery,
   routeBoardSortColumn,
   routeBoardSortDirection,
@@ -68,6 +71,7 @@ import {
 } from './statistic-board-column-layout';
 import { useStatisticBoardColumnDrag } from './useStatisticBoardColumnDrag';
 import {
+  buildRuleExplanationOverview,
   createFallbackRuleExplanation,
   metricFormulaSummary,
   ruleStepRemovedCount,
@@ -192,26 +196,11 @@ const rowHeaderLabel = computed(() => board.value?.definition.rowHeaderLabel || 
 const ruleExplanationSteps = computed(() => ruleExplanation.value?.flowSteps ?? []);
 const ruleExplanationMetrics = computed(() => ruleExplanation.value?.metricDefinitions ?? []);
 const ruleExclusionSteps = computed(() => ruleExplanationSteps.value.slice(1));
-const ruleFirstInputCount = computed(() => ruleExplanationSteps.value[0]?.inputCount ?? 0);
-const ruleFinalOutputCount = computed(() => {
-  const steps = ruleExplanationSteps.value;
-  return steps.length ? steps[steps.length - 1].outputCount : 0;
-});
-const ruleFinalRetainedRate = computed(() => {
-  if (!ruleFirstInputCount.value) {
-    return '0%';
-  }
-  return `${((ruleFinalOutputCount.value / ruleFirstInputCount.value) * 100).toFixed(1)}%`;
-});
-const qaFriendlyRuleSummary = computed(() => {
-  if (!ruleExplanation.value?.supported) {
-    return '';
-  }
-  if (!ruleExplanationSteps.value.length) {
-    return ruleExplanation.value?.summary || '当前页面已经启用规则说明，但暂时没有可展示的统计过程。';
-  }
-  return `当前结果一共基于 ${ruleFirstInputCount.value} 条原始数据逐步筛选，最后保留 ${ruleFinalOutputCount.value} 条，最终保留比例为 ${ruleFinalRetainedRate.value}。`;
-});
+const ruleExplanationOverview = computed(() => buildRuleExplanationOverview(ruleExplanation.value));
+const ruleFirstInputCount = computed(() => ruleExplanationOverview.value.firstInputCount);
+const ruleFinalOutputCount = computed(() => ruleExplanationOverview.value.finalOutputCount);
+const ruleFinalRetainedRate = computed(() => ruleExplanationOverview.value.finalRetainedRate);
+const qaFriendlyRuleSummary = computed(() => ruleExplanationOverview.value.summary);
 
 const {
   tableCurrentPage,
@@ -260,8 +249,7 @@ const firstColumnMinWidth = computed(() => computeFirstColumnMinWidth(rowHeaderL
 function initializeFilters(fields: StatisticFilterField[]) {
   const routeFilterGroup = buildFilterGroupFromRouteQuery(route.query);
   const nextDraft = normalizeFilterDraftGroup(routeFilterGroup, fields);
-  filterDraft.logic = nextDraft.logic;
-  filterDraft.conditions.splice(0, filterDraft.conditions.length, ...nextDraft.conditions);
+  replaceFilterDraftGroup(filterDraft, nextDraft);
 }
 
 function applyStoredViewPrefs(response: StatisticBoardResponse) {
@@ -348,21 +336,8 @@ async function exportBoard() {
 }
 
 function resetFilters() {
-  filterDraft.logic = 'AND';
-  filterDraft.conditions.splice(0, filterDraft.conditions.length);
-  const nextQuery = { ...route.query } as Record<string, string>;
-  delete nextQuery.filterGroup;
-  delete nextQuery.filterLogic;
-  for (const key of Object.keys(nextQuery)) {
-    if (key.startsWith('filters.')) {
-      delete nextQuery[key];
-    }
-  }
-  void router.replace({
-    path: route.path,
-    query: nextQuery,
-    hash: route.hash,
-  });
+  resetFilterDraftGroup(filterDraft);
+  void replaceRouteQuery(buildResetFilterQueryPatch(route.query));
 }
 
 function handleSettingsCommand(command: string) {
