@@ -1,15 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  buildCodeReviewDemoIllegalTypeOptions,
-  buildCodeReviewDemoRuleFields,
-  codeReviewDemoOperatorLabel,
-  countCodeReviewDemoRuleMatches,
-  createDefaultCodeReviewDemoRules,
-  describeCodeReviewDemoRule,
-  evaluateCodeReviewDemoRules,
-  matchesCodeReviewDemoRule,
-  usesValueInput,
-} from './code-review-rule-demo';
+import { codeReviewRuleConfigDemoSupport } from './code-review-rule-demo';
 
 const rows = [
   {
@@ -19,14 +9,14 @@ const rows = [
     projectId: 1,
     mergeRequestContent: 'Fix auth module',
     mergeRequestLink: null,
-    owner: '\u5f20\u4e09',
-    projectName: '\u9879\u76eeA',
+    owner: '张三',
+    projectName: '项目A',
     repositoryName: 'repo-a',
     mergedAt: '2026-04-10T10:00:00',
-    mergedBy: '\u674e\u56db',
+    mergedBy: '李四',
     moduleName: '',
     targetBranch: 'master',
-    illegalTypes: ['\u7f3a\u5c11\u6a21\u5757\u6807\u7b7e'],
+    illegalTypes: ['缺少模块标签'],
     commentRate: 12,
     defectCount: 3,
     addedLines: 40,
@@ -39,11 +29,11 @@ const rows = [
     mergeRequestContent: 'Docs update',
     mergeRequestLink: null,
     owner: '',
-    projectName: '\u9879\u76eeB',
+    projectName: '项目B',
     repositoryName: 'repo-b',
     mergedAt: '2026-04-10T11:00:00',
-    mergedBy: '\u738b\u4e94',
-    moduleName: '\u6587\u6863\u6a21\u5757',
+    mergedBy: '王五',
+    moduleName: '文档模块',
     targetBranch: 'release',
     illegalTypes: [],
     commentRate: null,
@@ -53,43 +43,43 @@ const rows = [
 ];
 
 describe('code review rule demo', () => {
-  it('builds fields and default rules', () => {
-    const fields = buildCodeReviewDemoRuleFields({
+  it('builds fields and default rules from shared abstract support', () => {
+    const fields = codeReviewRuleConfigDemoSupport.buildFields({
       repositoryNames: [{ label: 'repo-a', value: 'repo-a' }],
-      illegalTypes: [{ label: '\u7f3a\u5c11\u6a21\u5757\u6807\u7b7e', value: '\u7f3a\u5c11\u6a21\u5757\u6807\u7b7e' }],
+      illegalTypes: [{ label: '缺少模块标签', value: '缺少模块标签' }],
       targetBranches: [],
       mergedBys: [],
       moduleNames: [],
       projectNames: [],
     });
 
-    const defaults = createDefaultCodeReviewDemoRules(fields);
-    expect(fields[0].label).toBe('\u4ee3\u7801\u5e93');
-    expect(defaults[0].illegalType).toBe('\u7f3a\u5c11\u6a21\u5757\u6807\u7b7e');
-    expect(codeReviewDemoOperatorLabel('contains')).toBe('\u5305\u542b');
-    expect(usesValueInput('isEmpty')).toBe(false);
-    expect(buildCodeReviewDemoIllegalTypeOptions([])[0].label).toBe('\u7f3a\u5c11\u6a21\u5757\u6807\u7b7e');
+    const defaults = codeReviewRuleConfigDemoSupport.createDefaultRules(fields);
+    expect(fields[0].label).toBe('代码库');
+    expect(defaults[0].illegalType).toBe('缺少模块标签');
+    expect(codeReviewRuleConfigDemoSupport.operatorLabel('contains')).toBe('包含');
+    expect(codeReviewRuleConfigDemoSupport.usesValueInput('isEmpty')).toBe(false);
+    expect(codeReviewRuleConfigDemoSupport.buildIllegalTypeOptions([])[0].label).toBe('缺少模块标签');
   });
 
   it('matches and counts sentence rules', () => {
-    const fields = buildCodeReviewDemoRuleFields({
+    const fields = codeReviewRuleConfigDemoSupport.buildFields({
       repositoryNames: [],
-      illegalTypes: [{ label: '\u7f3a\u5c11\u6a21\u5757\u6807\u7b7e', value: '\u7f3a\u5c11\u6a21\u5757\u6807\u7b7e' }],
+      illegalTypes: [{ label: '缺少模块标签', value: '缺少模块标签' }],
       targetBranches: [],
       mergedBys: [],
       moduleNames: [],
       projectNames: [],
     });
-    const rule = createDefaultCodeReviewDemoRules(fields)[0];
+    const rule = codeReviewRuleConfigDemoSupport.createDefaultRules(fields)[0];
 
-    expect(matchesCodeReviewDemoRule(rows[0], rule, fields)).toBe(true);
-    expect(matchesCodeReviewDemoRule(rows[1], rule, fields)).toBe(false);
-    expect(countCodeReviewDemoRuleMatches(rows, rule, fields)).toBe(1);
-    expect(describeCodeReviewDemoRule(rule, fields)).toContain('\u6a21\u5757\u540d\u79f0\u4e3a\u7a7a');
+    expect(codeReviewRuleConfigDemoSupport.matchesRule(rows[0], rule, fields)).toBe(true);
+    expect(codeReviewRuleConfigDemoSupport.matchesRule(rows[1], rule, fields)).toBe(false);
+    expect(codeReviewRuleConfigDemoSupport.countMatches(rows, rule, fields)).toBe(1);
+    expect(codeReviewRuleConfigDemoSupport.describeRule(rule, fields)).toContain('模块名称为空');
   });
 
   it('filters rows by any matched rule', () => {
-    const fields = buildCodeReviewDemoRuleFields({
+    const fields = codeReviewRuleConfigDemoSupport.buildFields({
       repositoryNames: [],
       illegalTypes: [],
       targetBranches: [],
@@ -97,9 +87,9 @@ describe('code review rule demo', () => {
       moduleNames: [],
       projectNames: [],
     });
-    const rules = createDefaultCodeReviewDemoRules(fields).slice(0, 2);
+    const rules = codeReviewRuleConfigDemoSupport.createDefaultRules(fields).slice(0, 2);
 
-    const result = evaluateCodeReviewDemoRules(rows, rules, fields);
+    const result = codeReviewRuleConfigDemoSupport.evaluateRows(rows, rules, fields);
     expect(result).toHaveLength(2);
     expect(result.map((item) => item.mergeRequestIid)).toEqual([101, 102]);
   });

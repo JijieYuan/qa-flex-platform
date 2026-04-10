@@ -14,15 +14,7 @@ import {
 import { useRouteTableState } from '../composables/useRouteTableState';
 import type { RecordTableActiveFilterTag, RecordTableColumn, RecordTableFilterField } from '../types/record-table';
 import {
-  buildCodeReviewDemoRuleFields,
-  buildCodeReviewDemoIllegalTypeOptions,
-  codeReviewDemoOperatorLabel,
-  countCodeReviewDemoRuleMatches,
-  createCodeReviewDemoRule,
-  createDefaultCodeReviewDemoRules,
-  describeCodeReviewDemoRule,
-  evaluateCodeReviewDemoRules,
-  usesValueInput,
+  codeReviewRuleConfigDemoSupport,
   type CodeReviewDemoRule,
   type CodeReviewDemoRuleField,
 } from './code-review-rule-demo';
@@ -187,7 +179,7 @@ const columns = computed<RecordTableColumn[]>(() => [
 ]);
 
 const demoRuleFields = computed(() =>
-  buildCodeReviewDemoRuleFields({
+  codeReviewRuleConfigDemoSupport.buildFields({
     repositoryNames: filterOptions.value.repositoryNames,
     illegalTypes: filterOptions.value.illegalTypes,
     targetBranches: filterOptions.value.targetBranches,
@@ -197,16 +189,24 @@ const demoRuleFields = computed(() =>
   }),
 );
 
-const demoIllegalTypeOptions = computed(() => buildCodeReviewDemoIllegalTypeOptions(filterOptions.value.illegalTypes));
+const demoIllegalTypeOptions = computed(() => codeReviewRuleConfigDemoSupport.buildIllegalTypeOptions(filterOptions.value.illegalTypes));
 const demoMatchedRows = computed(() => {
   if (!demoRuleEnabled.value) {
     return rows.value;
   }
-  return evaluateCodeReviewDemoRules(rows.value, demoRules, demoRuleFields.value);
+  return codeReviewRuleConfigDemoSupport.evaluateRows(rows.value, demoRules, demoRuleFields.value);
 });
 
 const demoHasConditions = computed(() => demoRules.length > 0);
 const demoMatchedCount = computed(() => demoMatchedRows.value.length);
+const demoRulePreviewCards = computed(() =>
+  demoRules.map((rule) => ({
+    id: rule.id,
+    title: `规则：${rule.illegalType || '未选择非法类型'}`,
+    description: codeReviewRuleConfigDemoSupport.describeRule(rule, demoRuleFields.value),
+    outputCount: codeReviewRuleConfigDemoSupport.countMatches(rows.value, rule, demoRuleFields.value),
+  })),
+);
 const demoRuleSummaryText = computed(() => {
   if (!demoRuleEnabled.value || !demoHasConditions.value) {
     return '当前未启用 Demo 规则，本页仍展示后端返回的原始结果。';
@@ -299,44 +299,26 @@ function isDemoSelectField(field: CodeReviewDemoRuleField | null) {
 }
 
 function demoRuleMatchCount(rule: CodeReviewDemoRule) {
-  return countCodeReviewDemoRuleMatches(rows.value, rule, demoRuleFields.value);
+  return codeReviewRuleConfigDemoSupport.countMatches(rows.value, rule, demoRuleFields.value);
 }
 
 function demoRuleSentence(rule: CodeReviewDemoRule) {
-  return describeCodeReviewDemoRule(rule, demoRuleFields.value);
+  return codeReviewRuleConfigDemoSupport.describeRule(rule, demoRuleFields.value);
 }
 
 function ensureDemoRulesInitialized() {
   if (demoRules.length) {
     return;
   }
-  demoRules.push(...createDefaultCodeReviewDemoRules(demoRuleFields.value));
+  demoRules.push(...codeReviewRuleConfigDemoSupport.createDefaultRules(demoRuleFields.value));
 }
 
 function syncDemoRuleWithField(rule: CodeReviewDemoRule) {
-  const field = resolveDemoRuleField(rule.fieldKey);
-  if (!field) {
-    rule.operator = 'eq';
-    rule.value = '';
-    return;
-  }
-  if (!field.operators.includes(rule.operator)) {
-    rule.operator = field.operators[0] ?? 'eq';
-  }
-  if (!usesValueInput(rule.operator)) {
-    rule.value = '';
-    return;
-  }
-  if (isDemoSelectField(field)) {
-    const options = demoFieldOptions(field);
-    if (!options.some((item) => item.value === rule.value)) {
-      rule.value = '';
-    }
-  }
+  codeReviewRuleConfigDemoSupport.syncRuleWithField(rule, demoRuleFields.value);
 }
 
 function addDemoRule() {
-  demoRules.push(createCodeReviewDemoRule(demoRuleFields.value[0], demoIllegalTypeOptions.value[0]?.value ?? ''));
+  demoRules.push(codeReviewRuleConfigDemoSupport.createRule(demoRuleFields.value[0], demoIllegalTypeOptions.value[0]?.value ?? ''));
 }
 
 function removeDemoRule(ruleId: string) {
@@ -359,7 +341,7 @@ function handleDemoOperatorChange(rule: CodeReviewDemoRule) {
 
 function resetDemoRules() {
   demoRuleEnabled.value = false;
-  demoRules.splice(0, demoRules.length, ...createDefaultCodeReviewDemoRules(demoRuleFields.value));
+  demoRules.splice(0, demoRules.length, ...codeReviewRuleConfigDemoSupport.createDefaultRules(demoRuleFields.value));
 }
 
 function createFallbackRuleExplanation(reason: string): StatisticBoardRuleExplanationResponse {
@@ -781,11 +763,11 @@ function metricFormulaSummary(metric: { label: string; definition: string; formu
                   <el-option
                     v-for="operator in resolveDemoRuleField(rule.fieldKey)?.operators ?? []"
                     :key="operator"
-                    :label="codeReviewDemoOperatorLabel(operator)"
+                    :label="codeReviewRuleConfigDemoSupport.operatorLabel(operator)"
                     :value="operator"
                   />
                 </el-select>
-                <template v-if="usesValueInput(rule.operator)">
+                <template v-if="codeReviewRuleConfigDemoSupport.usesValueInput(rule.operator)">
                   <el-select
                     v-if="isDemoSelectField(resolveDemoRuleField(rule.fieldKey))"
                     v-model="rule.value"
@@ -843,6 +825,30 @@ function metricFormulaSummary(metric: { label: string; definition: string; formu
             v-else
             description="还没有配置规则，可以先新增一条句式规则。"
           />
+        </section>
+
+        <section class="record-detail-section">
+          <div class="record-detail-section-title">当前预览规则说明</div>
+          <div class="record-detail-content">
+            下方说明和上面的编辑区使用的是同一份规则数据，所以你改字段、关系、取值或非法类型后，这里会立即同步变化。
+          </div>
+          <div class="record-rule-card-grid">
+            <article
+              v-for="(ruleCard, index) in demoRulePreviewCards"
+              :key="ruleCard.id"
+              class="record-rule-card"
+            >
+              <div class="record-rule-card-title">预览规则 {{ index + 1 }}：{{ ruleCard.title }}</div>
+              <div class="record-rule-card-description">{{ ruleCard.description }}</div>
+              <div class="record-rule-card-summary">
+                {{ demoRuleEnabled ? `当前页预览开启后，命中 ${ruleCard.outputCount} 条记录。` : '当前预览关闭，页面列表仍展示后端原始结果。' }}
+              </div>
+              <div class="record-rule-card-stats">
+                <span class="record-rule-card-stat">当前页命中 {{ ruleCard.outputCount }} 条</span>
+                <span class="record-rule-card-stat">预览状态 {{ demoRuleEnabled ? '已开启' : '已关闭' }}</span>
+              </div>
+            </article>
+          </div>
         </section>
 
         <el-empty

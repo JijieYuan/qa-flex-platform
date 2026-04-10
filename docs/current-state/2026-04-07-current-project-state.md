@@ -834,6 +834,10 @@
   - 支持新增规则、删除规则、恢复默认规则
   - 支持“预览开/关”
   - 预览仅作用于当前页已加载数据
+- 抽屉中部新增“当前预览规则说明”区域：
+  - 与上方编辑区使用同一份规则数据
+  - 编辑字段、关系、取值、非法类型后会立即同步刷新
+  - 当前展示的是前端本地预览命中结果
 - 抽屉下半部分仍保留后端真实规则说明：
   - 总体结论
   - 范围说明
@@ -852,6 +856,8 @@
 
 - 页面主文件：
   - `frontend/src/views/CodeReviewIllegalRecordsView.vue`
+- 通用句式规则抽象层：
+  - `frontend/src/views/rule-config-demo.ts`
 - Demo 规则 helper：
   - `frontend/src/views/code-review-rule-demo.ts`
 - Demo 规则测试：
