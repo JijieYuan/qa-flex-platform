@@ -6,6 +6,8 @@ import com.data.collection.platform.entity.statistics.*;
 import com.data.collection.platform.service.FactBuildService;
 import com.data.collection.platform.service.GitlabMirrorSyncService;
 import com.data.collection.platform.service.IssueFactQueryService;
+import com.data.collection.platform.service.PageSlice;
+import com.data.collection.platform.service.PageSliceSupport;
 import com.data.collection.platform.service.RealtimeWorkspaceService;
 import com.data.collection.platform.service.SortSupport;
 import java.sql.ResultSet;
@@ -189,10 +191,10 @@ public class SystemTestDefectSummaryBoardService extends AbstractStatisticBoardS
     List<IssueSource> scoped = loadBoardScopedSources(request.filters()).stream()
         .filter(issue -> matchesRow(issue, request.rowKey())).filter(matchesMetric(request.columnKey()))
         .sorted(buildDetailComparator(request.sortField(), request.sortOrder())).toList();
-    int page = request.page() <= 0 ? 1 : request.page(), size = request.size() <= 0 ? 10 : request.size();
-    int from = Math.min((page - 1) * size, scoped.size()), to = Math.min(from + size, scoped.size());
+    PageSlice<IssueSource> pageSlice =
+        PageSliceSupport.slice(scoped, request.page(), request.size() <= 0 ? 10 : request.size());
     return new StatisticDetailResponse("系统测试缺陷明细", "展示当前模块与指标命中的 issue_fact 明细。", buildDefinition().detailColumns(),
-        scoped.subList(from, to).stream().map(this::toDetailRecord).toList(), scoped.size(), page, size,
+        pageSlice.records().stream().map(this::toDetailRecord).toList(), pageSlice.total(), pageSlice.page(), pageSlice.size(),
         StringUtils.hasText(request.sortField()) ? request.sortField() : "updatedAt",
         "ascending".equalsIgnoreCase(request.sortOrder()) ? "ascending" : "descending");
   }

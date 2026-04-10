@@ -109,14 +109,13 @@ public class CodeReviewIllegalRecordService {
             .sorted(CodeReviewIllegalRecordQuerySupport.buildComparator(safeSortField, safeSortOrder))
             .toList();
 
-    long total = filtered.size();
-    int fromIndex = Math.min((safePage - 1) * safeSize, filtered.size());
-    int toIndex = Math.min(fromIndex + safeSize, filtered.size());
+    PageSlice<CodeReviewIllegalRecordView> pageSlice =
+        PageSliceSupport.slice(filtered, safePage, safeSize);
     List<CodeReviewIllegalRecordRowResponse> records =
-        filtered.subList(fromIndex, toIndex).stream().map(this::toResponse).toList();
+        pageSlice.records().stream().map(this::toResponse).toList();
 
     return new CodeReviewIllegalRecordListResponse(
-        records, total, safePage, safeSize, safeSortField, safeSortOrder);
+        records, pageSlice.total(), pageSlice.page(), pageSlice.size(), safeSortField, safeSortOrder);
   }
 
   public CodeReviewIllegalRecordFilterOptionsResponse getFilterOptions(Long projectId) {
@@ -221,7 +220,7 @@ public class CodeReviewIllegalRecordService {
             "从 merge_request_fact 读取已经归一化的合并请求、责任人、模块和指标数据。",
             total,
             total,
-            views.stream().limit(3).map(this::toIllegalRecordSample).toList()));
+            sampleIllegalRecords(views)));
     steps.add(
         new StatisticRuleFlowStep(
             "illegal-total",
@@ -229,7 +228,7 @@ public class CodeReviewIllegalRecordService {
             "只要命中任意一条非法判定规则，这条合并请求就会出现在非法记录列表里。",
             total,
             illegalTotal,
-            illegalViews.stream().limit(3).map(this::toIllegalRecordSample).toList()));
+            sampleIllegalRecords(illegalViews)));
     CodeReviewIllegalRuleRegistry.explanationGroups()
         .forEach(
             group ->
@@ -240,10 +239,8 @@ public class CodeReviewIllegalRecordService {
                         group.description(),
                         illegalTotal,
                         CodeReviewIllegalRuleRegistry.countMatches(illegalViews, group),
-                        CodeReviewIllegalRuleRegistry.filterMatches(illegalViews, group).stream()
-                            .limit(3)
-                            .map(this::toIllegalRecordSample)
-                            .toList())));
+                        sampleIllegalRecords(
+                            CodeReviewIllegalRuleRegistry.filterMatches(illegalViews, group)))));
     return steps;
   }
 
@@ -298,6 +295,10 @@ public class CodeReviewIllegalRecordService {
         "MR #" + row.mergeRequestIid(),
         row.projectName() + " | "
             + (row.illegalTypes().isEmpty() ? "无非法类型" : String.join("、", row.illegalTypes())));
+  }
+
+  private List<StatisticRuleFlowStepSample> sampleIllegalRecords(List<CodeReviewIllegalRecordView> rows) {
+    return rows.stream().limit(3).map(this::toIllegalRecordSample).toList();
   }
 
   private String buildMergeRequestLink(String repositoryName, Integer mergeRequestIid) {
