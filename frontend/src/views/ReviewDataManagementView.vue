@@ -196,6 +196,15 @@ async function loadRows() {
   summary.value = response.summary;
 }
 
+async function handleRefresh() {
+  try {
+    await Promise.all([loadFilterOptions(), loadRows()]);
+    ElMessage.success('已刷新评审数据');
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '评审数据刷新失败');
+  }
+}
+
 async function loadDetail(recordId: number) {
   detailData.value = await api.getReviewDataRecordDetail(recordId);
 }
@@ -459,11 +468,11 @@ function formatDate(value?: string | null) {
       :active-filter-tags="activeFilterTags"
       :advanced-visible="advancedVisible"
       :expanded-row-keys="expandedRowKeys"
-      :show-refresh="false"
       query-button-text="查询"
       empty-description="当前筛选条件下没有可展示的评审记录。"
       @filter-change="handleFilterChange"
       @reset="handleReset"
+      @refresh="handleRefresh"
       @query="handleQuery"
       @clear-filter="clearFilter"
       @update:advanced-visible="advancedVisible = $event"

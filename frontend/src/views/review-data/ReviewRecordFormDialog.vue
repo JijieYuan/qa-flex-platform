@@ -108,6 +108,14 @@ function handleClose() {
     destroy-on-close
     @close="handleClose"
   >
+    <el-alert
+      class="review-form-tip"
+      type="info"
+      :closable="false"
+      show-icon
+      title="先补齐评审主记录，保存后再到列表展开行里维护“评审问题清单”。项目、模块、负责人和专家都支持首字母搜索。"
+    />
+
     <el-form ref="formRef" :model="form" :rules="rules" label-width="112px" class="review-form">
       <div class="review-form-grid">
         <el-form-item label="项目名称" prop="projectName">
@@ -167,6 +175,10 @@ function handleClose() {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px 16px;
+}
+
+.review-form-tip {
+  margin-bottom: 16px;
 }
 
 .review-form-number {

@@ -107,6 +107,14 @@ function handleClose() {
     destroy-on-close
     @close="handleClose"
   >
+    <el-alert
+      class="problem-form-tip"
+      type="info"
+      :closable="false"
+      show-icon
+      title="先选评审专家和问题状态，再补充位置、问题描述和建议方案。保存后会立即回写到当前评审记录下的清单。"
+    />
+
     <el-form ref="formRef" :model="form" :rules="rules" label-width="108px">
       <div class="problem-form-grid">
         <el-form-item label="评审专家" prop="reviewerName">
@@ -156,6 +164,10 @@ function handleClose() {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px 16px;
+}
+
+.problem-form-tip {
+  margin-bottom: 16px;
 }
 
 .span-2 {
