@@ -375,40 +375,28 @@ export interface CodeReviewIllegalRecordFilterOptionsResponse {
 
 export interface ReviewDataSummaryResponse {
   totalRecords: number;
-  activeRecords: number;
-  deletedRecords: number;
-  averageDurationMinutes: number;
-  averageTotalScore: number;
-  averageCommentRate: number;
+  totalProblemItems: number;
+  averageReviewScalePages: number;
+  averageProblemCount: number;
 }
 
 export interface ReviewDataRecordRowResponse {
   id: number;
-  projectId: number;
-  mergeRequestId?: number | null;
-  mergeRequestIid?: number | null;
-  formTitle: string;
-  templateCode: string;
-  reviewer: string;
-  reviewDurationMinutes?: number | null;
-  totalScore: number;
-  specificationScore?: number | null;
-  logicScore?: number | null;
-  performanceScore?: number | null;
-  designScore?: number | null;
-  otherScore?: number | null;
-  remark: string;
-  deleted: boolean;
   projectName: string;
-  repositoryName: string;
-  mergeRequestTitle: string;
+  title: string;
   moduleName: string;
-  targetBranch: string;
-  commentRate?: number | null;
-  defectCount?: number | null;
-  addedLines?: number | null;
-  createdAt?: string | null;
+  reviewType: string;
+  reviewDate?: string | null;
+  reviewOwner: string;
+  reviewExpertsSummary: string;
+  reviewScalePages: number;
+  reviewProduct: string;
+  authorName: string;
+  reviewVersion: string;
+  problemCount: number;
+  problemDensity: number;
   updatedAt?: string | null;
+  deleted: boolean;
 }
 
 export interface ReviewDataRecordListResponse {
@@ -423,12 +411,62 @@ export interface ReviewDataRecordListResponse {
 
 export interface ReviewDataFilterOptionsResponse {
   projectNames: OptionItemResponse[];
-  repositoryNames: OptionItemResponse[];
   moduleNames: OptionItemResponse[];
-  reviewers: OptionItemResponse[];
-  templateCodes: OptionItemResponse[];
-  targetBranches: OptionItemResponse[];
-  recordStatuses: OptionItemResponse[];
+  reviewOwners: OptionItemResponse[];
+  reviewTypes: OptionItemResponse[];
+  reviewExperts: OptionItemResponse[];
+  problemStatuses: OptionItemResponse[];
+  reviewCategories: OptionItemResponse[];
+  problemCategories: OptionItemResponse[];
+}
+
+export interface ReviewDataProblemItemResponse {
+  id: number;
+  reviewRecordId: number;
+  reviewerName: string;
+  workloadHours: number;
+  reviewCategory: string;
+  documentPosition: string;
+  problemCategory: string;
+  problemDescription: string;
+  suggestedSolution: string;
+  ownerName: string;
+  rejectionReason: string;
+  problemStatus: string;
+  updatedAt?: string | null;
+}
+
+export interface ReviewDataRecordDetailResponse {
+  record: ReviewDataRecordRowResponse;
+  reviewExperts: string[];
+  problemItems: ReviewDataProblemItemResponse[];
+}
+
+export interface ReviewDataRecordSaveRequest {
+  projectName: string;
+  title: string;
+  moduleName: string;
+  reviewType: string;
+  reviewDate: string;
+  reviewOwner: string;
+  reviewExperts: string[];
+  reviewScalePages: number;
+  reviewProduct: string;
+  authorName: string;
+  reviewVersion: string;
+}
+
+export interface ReviewDataProblemItemSaveRequest {
+  reviewerName: string;
+  workloadHours: number;
+  reviewCategory: string;
+  documentPosition: string;
+  problemCategory: string;
+  problemDescription: string;
+  suggestedSolution: string;
+  ownerName: string;
+  rejectionReason: string;
+  problemStatus: string;
 }
 
 export interface CollectFormDetailResponse {
@@ -690,18 +728,13 @@ export const api = {
       });
     },
     getReviewDataRecords(params: {
-      projectId?: string | number | null;
+      title?: string;
       projectName?: string;
-      repositoryName?: string;
       moduleName?: string;
-      reviewer?: string;
-      templateCode?: string;
-      targetBranch?: string;
-      recordStatus?: string;
-      keyword?: string;
-      mergeRequestIid?: string;
-      updatedAtStart?: string;
-      updatedAtEnd?: string;
+      reviewOwner?: string;
+      reviewType?: string;
+      problemStatus?: string;
+      reviewExpert?: string;
       page?: number;
       size?: number;
       sortBy?: string;
@@ -710,30 +743,64 @@ export const api = {
       const query = new URLSearchParams({
         page: String(params.page ?? 1),
         size: String(params.size ?? 20),
-        ...(params.projectId != null && params.projectId !== '' ? { projectId: String(params.projectId) } : {}),
+        ...(params.title ? { title: params.title } : {}),
         ...(params.projectName ? { projectName: params.projectName } : {}),
-        ...(params.repositoryName ? { repositoryName: params.repositoryName } : {}),
         ...(params.moduleName ? { moduleName: params.moduleName } : {}),
-        ...(params.reviewer ? { reviewer: params.reviewer } : {}),
-        ...(params.templateCode ? { templateCode: params.templateCode } : {}),
-        ...(params.targetBranch ? { targetBranch: params.targetBranch } : {}),
-        ...(params.recordStatus ? { recordStatus: params.recordStatus } : {}),
-        ...(params.keyword ? { keyword: params.keyword } : {}),
-        ...(params.mergeRequestIid ? { mergeRequestIid: params.mergeRequestIid } : {}),
-        ...(params.updatedAtStart ? { updatedAtStart: params.updatedAtStart } : {}),
-        ...(params.updatedAtEnd ? { updatedAtEnd: params.updatedAtEnd } : {}),
+        ...(params.reviewOwner ? { reviewOwner: params.reviewOwner } : {}),
+        ...(params.reviewType ? { reviewType: params.reviewType } : {}),
+        ...(params.problemStatus ? { problemStatus: params.problemStatus } : {}),
+        ...(params.reviewExpert ? { reviewExpert: params.reviewExpert } : {}),
         ...(params.sortBy ? { sortBy: params.sortBy } : {}),
         ...(params.sortOrder ? { sortOrder: params.sortOrder } : {}),
       });
       return request<ReviewDataRecordListResponse>(`/api/review-data/records?${query.toString()}`);
     },
-    getReviewDataFilterOptions(projectId?: string | number | null) {
-      const query = new URLSearchParams(
-        projectId != null && projectId !== '' ? { projectId: String(projectId) } : {},
-      );
-      return request<ReviewDataFilterOptionsResponse>(
-        `/api/review-data/records/filter-options${query.toString() ? `?${query.toString()}` : ''}`,
-      );
+    getReviewDataFilterOptions() {
+      return request<ReviewDataFilterOptionsResponse>('/api/review-data/records/filter-options');
+    },
+    getReviewDataRecordDetail(recordId: string | number) {
+      return request<ReviewDataRecordDetailResponse>(`/api/review-data/records/${recordId}`);
+    },
+    createReviewDataRecord(payload: ReviewDataRecordSaveRequest) {
+      return request<ReviewDataRecordDetailResponse>('/api/review-data/records', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+    },
+    updateReviewDataRecord(recordId: string | number, payload: ReviewDataRecordSaveRequest) {
+      return request<ReviewDataRecordDetailResponse>(`/api/review-data/records/${recordId}`, {
+        method: 'PUT',
+        body: JSON.stringify(payload),
+      });
+    },
+    deleteReviewDataRecord(recordId: string | number) {
+      return request<void>(`/api/review-data/records/${recordId}`, {
+        method: 'DELETE',
+      });
+    },
+    getReviewDataProblemItems(recordId: string | number) {
+      return request<ReviewDataProblemItemResponse[]>(`/api/review-data/records/${recordId}/problem-items`);
+    },
+    createReviewDataProblemItem(recordId: string | number, payload: ReviewDataProblemItemSaveRequest) {
+      return request<ReviewDataProblemItemResponse>(`/api/review-data/records/${recordId}/problem-items`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+    },
+    updateReviewDataProblemItem(
+      recordId: string | number,
+      itemId: string | number,
+      payload: ReviewDataProblemItemSaveRequest,
+    ) {
+      return request<ReviewDataProblemItemResponse>(`/api/review-data/records/${recordId}/problem-items/${itemId}`, {
+        method: 'PUT',
+        body: JSON.stringify(payload),
+      });
+    },
+    deleteReviewDataProblemItem(recordId: string | number, itemId: string | number) {
+      return request<void>(`/api/review-data/records/${recordId}/problem-items/${itemId}`, {
+        method: 'DELETE',
+      });
     },
     getStatisticBoardRealtimeStatus(boardKey: string) {
       return request<RealtimeWorkspaceStatusResponse>(`/api/statistic-boards/${boardKey}/status`);

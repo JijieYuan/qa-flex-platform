@@ -16,6 +16,7 @@ export interface RecordTableFilterOption {
 }
 
 export type RecordTableFilterType = 'input' | 'select' | 'daterange';
+export type RecordTableFilterSelectMode = 'default' | 'compact';
 
 export interface RecordTableFilterField {
   key: string;
@@ -26,6 +27,7 @@ export interface RecordTableFilterField {
   advanced?: boolean;
   clearable?: boolean;
   options?: RecordTableFilterOption[];
+  selectMode?: RecordTableFilterSelectMode;
   startPlaceholder?: string;
   endPlaceholder?: string;
 }

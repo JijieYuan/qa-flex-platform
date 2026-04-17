@@ -107,6 +107,52 @@ create table if not exists collect_form_records (
     unique (gitlab_base_url, project_id, resource_type, resource_id, template_code)
 );
 
+create table if not exists review_records (
+    id bigserial primary key,
+    project_name varchar(255) not null,
+    title varchar(512) not null,
+    module_name varchar(255) not null,
+    review_type varchar(128) not null,
+    review_date date,
+    review_owner varchar(128) not null,
+    review_scale_pages integer not null default 0,
+    review_product varchar(255) not null,
+    author_name varchar(128) not null,
+    review_version varchar(128) not null,
+    deleted boolean not null default false,
+    created_at timestamp not null default current_timestamp,
+    updated_at timestamp not null default current_timestamp
+);
+
+create table if not exists review_record_experts (
+    id bigserial primary key,
+    review_record_id bigint not null references review_records(id) on delete cascade,
+    expert_name varchar(128) not null,
+    sort_order integer not null default 0,
+    deleted boolean not null default false,
+    created_at timestamp not null default current_timestamp,
+    updated_at timestamp not null default current_timestamp,
+    unique (review_record_id, expert_name)
+);
+
+create table if not exists review_problem_items (
+    id bigserial primary key,
+    review_record_id bigint not null references review_records(id) on delete cascade,
+    reviewer_name varchar(128) not null,
+    workload_hours numeric(8, 2) not null default 0,
+    review_category varchar(128) not null,
+    document_position varchar(255),
+    problem_category varchar(128) not null,
+    problem_description text not null default '',
+    suggested_solution text,
+    owner_name varchar(128),
+    rejection_reason text,
+    problem_status varchar(128) not null default '新提交',
+    deleted boolean not null default false,
+    created_at timestamp not null default current_timestamp,
+    updated_at timestamp not null default current_timestamp
+);
+
 create table if not exists code_review_external_metrics (
     id bigserial primary key,
     project_id bigint not null,
@@ -308,6 +354,11 @@ alter table issue_fact add column if not exists is_legacy boolean not null defau
 
 create index if not exists idx_gitlab_mirror_records_table on gitlab_mirror_records(config_id, table_name);
 create index if not exists idx_collect_form_records_context on collect_form_records(project_id, resource_type, resource_id, template_code);
+create index if not exists idx_review_records_main on review_records(project_name, module_name, review_owner, review_type, review_date);
+create index if not exists idx_review_record_experts_record on review_record_experts(review_record_id, deleted, sort_order);
+create index if not exists idx_review_record_experts_name on review_record_experts(expert_name, deleted);
+create index if not exists idx_review_problem_items_record on review_problem_items(review_record_id, deleted, problem_status, updated_at desc);
+create index if not exists idx_review_problem_items_reviewer on review_problem_items(reviewer_name, deleted);
 create index if not exists idx_code_review_external_metrics_context on code_review_external_metrics(project_id, merge_request_iid);
 create index if not exists idx_issue_fact_context on issue_fact(source_system, source_instance, project_id, issue_iid);
 create index if not exists idx_issue_fact_state on issue_fact(issue_state, severity_level, priority_level);

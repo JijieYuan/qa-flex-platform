@@ -192,7 +192,6 @@
 
 以下模块当前仍使用 `ModulePlaceholderView.vue`：
 
-- 评审数据
 - 集成测试
 - 客户问题
 - 系统设置 / 模块管理
@@ -745,7 +744,6 @@
 
 - 客户问题模块：前端仍为占位页
 - 集成测试模块：前端仍为占位页
-- 评审数据模块：前端仍为占位页
 - 模块管理页：前端仍为占位页
 - 规则配置中心：未实现
 - 规则 flow 可视化：已完成一期，当前 `mirror-table-overview`、`system-test-defect-summary`、`code-review-illegal-records` 均支持只读规则说明与 Flow 展示
@@ -869,6 +867,70 @@
 - `npm test` 通过
 - `npm run build` 通过
 - Vite 仍存在既有 chunk 体积 warning，不是本次改造引入的新问题
+
+## 2026-04-17 评审数据管理页更新
+
+### 当前页面状态
+
+- `评审数据管理` 已从占位页切换为正式记录类页面
+- 前端入口：`/#/review-data/home`
+- 页面文件：`frontend/src/views/ReviewDataManagementView.vue`
+- 页面底座：`frontend/src/components/base/BaseRecordTable.vue`
+
+### 当前页面能力
+
+- 主记录列表筛选、分页、排序
+- 顶部“新增评审”入口
+- 行展开的“评审问题清单”子表
+- 问题清单新增、编辑、删除
+- 评审主记录新增、编辑、删除
+- 详情抽屉查看
+- 顶部刷新按钮已移除
+
+### 当前数据模型
+
+为承载新版评审数据管理页，后端新增了独立评审域表：
+
+- `review_records`
+- `review_record_experts`
+- `review_problem_items`
+
+当前不再使用 `collect_form_records` 直接承载评审数据主记录。
+
+### 当前通用能力补充
+
+本次为了满足平台统一搜索交互，新增了可复用选择器：
+
+- `frontend/src/components/base/SmartSelect.vue`
+
+当前支持：
+
+- 原文搜索
+- 英文首字母搜索
+- 中文拼音首字母搜索
+- 可选紧凑型下拉展示
+
+### 当前后端接口
+
+- `GET /api/review-data/records`
+- `GET /api/review-data/records/filter-options`
+- `GET /api/review-data/records/{recordId}`
+- `POST /api/review-data/records`
+- `PUT /api/review-data/records/{recordId}`
+- `DELETE /api/review-data/records/{recordId}`
+- `GET /api/review-data/records/{recordId}/problem-items`
+- `POST /api/review-data/records/{recordId}/problem-items`
+- `PUT /api/review-data/records/{recordId}/problem-items/{itemId}`
+- `DELETE /api/review-data/records/{recordId}/problem-items/{itemId}`
+
+### 验证结果
+
+- `mvn -q "-Dtest=ReviewDataControllerTest" test` 通过
+- `mvn -q -DskipTests compile` 通过
+- `npm test` 通过
+- `npm run build` 通过
+
+当前仍保留 Vite chunk 体积 warning，属于既有前端体量问题，不是本次评审数据页实现引入的功能故障。
   - 代码走查页面天然适合围绕 “一张 MR 事实主表 + 若干补充指标表” 来实现
 - 外部结果单独落正式表，这个思路可以保留
   - 老平台里 CC 注释率走 `annotation_rate_info`

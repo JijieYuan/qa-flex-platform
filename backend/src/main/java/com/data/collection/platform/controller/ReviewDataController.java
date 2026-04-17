@@ -2,9 +2,20 @@ package com.data.collection.platform.controller;
 
 import com.data.collection.platform.common.response.ApiResponse;
 import com.data.collection.platform.entity.ReviewDataFilterOptionsResponse;
+import com.data.collection.platform.entity.ReviewDataProblemItemResponse;
+import com.data.collection.platform.entity.ReviewDataProblemItemSaveRequest;
+import com.data.collection.platform.entity.ReviewDataRecordDetailResponse;
 import com.data.collection.platform.entity.ReviewDataRecordListResponse;
+import com.data.collection.platform.entity.ReviewDataRecordSaveRequest;
 import com.data.collection.platform.service.ReviewDataRecordService;
+import jakarta.validation.Valid;
+import java.util.List;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -21,36 +32,26 @@ public class ReviewDataController {
 
   @GetMapping("/records")
   public ApiResponse<ReviewDataRecordListResponse> listRecords(
-      @RequestParam(required = false) Long projectId,
+      @RequestParam(required = false) String title,
       @RequestParam(required = false) String projectName,
-      @RequestParam(required = false) String repositoryName,
       @RequestParam(required = false) String moduleName,
-      @RequestParam(required = false) String reviewer,
-      @RequestParam(required = false) String templateCode,
-      @RequestParam(required = false) String targetBranch,
-      @RequestParam(required = false) String recordStatus,
-      @RequestParam(required = false) String keyword,
-      @RequestParam(required = false) String mergeRequestIid,
-      @RequestParam(required = false) String updatedAtStart,
-      @RequestParam(required = false) String updatedAtEnd,
+      @RequestParam(required = false) String reviewOwner,
+      @RequestParam(required = false) String reviewType,
+      @RequestParam(required = false) String problemStatus,
+      @RequestParam(required = false) String reviewExpert,
       @RequestParam(defaultValue = "1") int page,
       @RequestParam(defaultValue = "20") int size,
       @RequestParam(required = false) String sortBy,
       @RequestParam(required = false) String sortOrder) {
     return ApiResponse.success(
         reviewDataRecordService.listRecords(
-            projectId,
+            title,
             projectName,
-            repositoryName,
             moduleName,
-            reviewer,
-            templateCode,
-            targetBranch,
-            recordStatus,
-            keyword,
-            mergeRequestIid,
-            updatedAtStart,
-            updatedAtEnd,
+            reviewOwner,
+            reviewType,
+            problemStatus,
+            reviewExpert,
             page,
             size,
             sortBy,
@@ -58,8 +59,57 @@ public class ReviewDataController {
   }
 
   @GetMapping("/records/filter-options")
-  public ApiResponse<ReviewDataFilterOptionsResponse> getFilterOptions(
-      @RequestParam(required = false) Long projectId) {
-    return ApiResponse.success(reviewDataRecordService.getFilterOptions(projectId));
+  public ApiResponse<ReviewDataFilterOptionsResponse> getFilterOptions() {
+    return ApiResponse.success(reviewDataRecordService.getFilterOptions());
+  }
+
+  @GetMapping("/records/{recordId}")
+  public ApiResponse<ReviewDataRecordDetailResponse> getRecordDetail(@PathVariable Long recordId) {
+    return ApiResponse.success(reviewDataRecordService.getRecordDetail(recordId));
+  }
+
+  @PostMapping("/records")
+  public ApiResponse<ReviewDataRecordDetailResponse> createRecord(
+      @Valid @RequestBody ReviewDataRecordSaveRequest request) {
+    return ApiResponse.success("新增评审成功", reviewDataRecordService.createRecord(request));
+  }
+
+  @PutMapping("/records/{recordId}")
+  public ApiResponse<ReviewDataRecordDetailResponse> updateRecord(
+      @PathVariable Long recordId, @Valid @RequestBody ReviewDataRecordSaveRequest request) {
+    return ApiResponse.success("编辑评审成功", reviewDataRecordService.updateRecord(recordId, request));
+  }
+
+  @DeleteMapping("/records/{recordId}")
+  public ApiResponse<Void> deleteRecord(@PathVariable Long recordId) {
+    reviewDataRecordService.deleteRecord(recordId);
+    return ApiResponse.success("删除评审成功", null);
+  }
+
+  @GetMapping("/records/{recordId}/problem-items")
+  public ApiResponse<List<ReviewDataProblemItemResponse>> listProblemItems(@PathVariable Long recordId) {
+    return ApiResponse.success(reviewDataRecordService.listProblemItems(recordId));
+  }
+
+  @PostMapping("/records/{recordId}/problem-items")
+  public ApiResponse<ReviewDataProblemItemResponse> createProblemItem(
+      @PathVariable Long recordId, @Valid @RequestBody ReviewDataProblemItemSaveRequest request) {
+    return ApiResponse.success("新增评审问题成功", reviewDataRecordService.createProblemItem(recordId, request));
+  }
+
+  @PutMapping("/records/{recordId}/problem-items/{itemId}")
+  public ApiResponse<ReviewDataProblemItemResponse> updateProblemItem(
+      @PathVariable Long recordId,
+      @PathVariable Long itemId,
+      @Valid @RequestBody ReviewDataProblemItemSaveRequest request) {
+    return ApiResponse.success(
+        "编辑评审问题成功",
+        reviewDataRecordService.updateProblemItem(recordId, itemId, request));
+  }
+
+  @DeleteMapping("/records/{recordId}/problem-items/{itemId}")
+  public ApiResponse<Void> deleteProblemItem(@PathVariable Long recordId, @PathVariable Long itemId) {
+    reviewDataRecordService.deleteProblemItem(recordId, itemId);
+    return ApiResponse.success("删除评审问题成功", null);
   }
 }

@@ -1,33 +1,48 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
-import { ElMessage } from 'element-plus';
-import { Document, RefreshRight, View } from '@element-plus/icons-vue';
+import {
+  ElButton,
+  ElDescriptions,
+  ElDescriptionsItem,
+  ElDropdown,
+  ElDropdownItem,
+  ElDropdownMenu,
+  ElMessage,
+  ElMessageBox,
+  ElTag,
+} from 'element-plus';
+import { Document, Plus, View } from '@element-plus/icons-vue';
 import BaseRecordTable from '../components/base/BaseRecordTable.vue';
+import ReviewProblemItemFormDialog from './review-data/ReviewProblemItemFormDialog.vue';
+import ReviewRecordFormDialog from './review-data/ReviewRecordFormDialog.vue';
 import {
   api,
   type ReviewDataFilterOptionsResponse,
+  type ReviewDataProblemItemResponse,
+  type ReviewDataProblemItemSaveRequest,
+  type ReviewDataRecordDetailResponse,
   type ReviewDataRecordRowResponse,
+  type ReviewDataRecordSaveRequest,
   type ReviewDataSummaryResponse,
 } from '../api';
 import { useRouteTableState } from '../composables/useRouteTableState';
 import type { RecordTableFilterField } from '../types/record-table';
 import {
+  buildProblemItemTableRows,
   buildReviewDataFilterTags,
   buildReviewDataSummaryCards,
   buildReviewDataTableRows,
+  createEmptyProblemItemForm,
+  createEmptyReviewRecordForm,
+  createProblemItemFormFromRow,
+  createReviewRecordFormFromRow,
   reviewDataColumns,
+  reviewProblemItemColumns,
+  type ReviewProblemItemFormModel,
+  type ReviewRecordFormModel,
 } from './review-data-management';
 
-const {
-  route,
-  page,
-  pageSize,
-  sortBy,
-  sortOrder,
-  patchQuery,
-  bindLoader,
-  isTableLoading,
-} = useRouteTableState({
+const { route, page, pageSize, sortBy, sortOrder, patchQuery, bindLoader, isTableLoading } = useRouteTableState({
   defaults: {
     page: 1,
     pageSize: 20,
@@ -40,140 +55,115 @@ const advancedVisible = ref(false);
 const rows = ref<ReviewDataRecordRowResponse[]>([]);
 const total = ref(0);
 const summary = ref<ReviewDataSummaryResponse | null>(null);
-const detailVisible = ref(false);
-const selectedRow = ref<ReviewDataRecordRowResponse | null>(null);
-
 const filterOptions = ref<ReviewDataFilterOptionsResponse>({
   projectNames: [],
-  repositoryNames: [],
   moduleNames: [],
-  reviewers: [],
-  templateCodes: [],
-  targetBranches: [],
-  recordStatuses: [],
+  reviewOwners: [],
+  reviewTypes: [],
+  reviewExperts: [],
+  problemStatuses: [],
+  reviewCategories: [],
+  problemCategories: [],
 });
 
-const filterValues = computed<Record<string, unknown>>(() => {
-  const start = String(route.query.updatedAtStart ?? '');
-  const end = String(route.query.updatedAtEnd ?? '');
-  return {
-    projectName: String(route.query.projectName ?? ''),
-    repositoryName: String(route.query.repositoryName ?? ''),
-    moduleName: String(route.query.moduleName ?? ''),
-    reviewer: String(route.query.reviewer ?? ''),
-    templateCode: String(route.query.templateCode ?? ''),
-    targetBranch: String(route.query.targetBranch ?? ''),
-    recordStatus: String(route.query.recordStatus ?? ''),
-    keyword: String(route.query.keyword ?? ''),
-    mergeRequestIid: String(route.query.mergeRequestIid ?? ''),
-    updatedAtRange: start && end ? [start, end] : [],
-  };
-});
+const detailVisible = ref(false);
+const detailData = ref<ReviewDataRecordDetailResponse | null>(null);
+
+const recordDialogVisible = ref(false);
+const recordDialogSaving = ref(false);
+const recordEditMode = ref(false);
+const editingRecordId = ref<number | null>(null);
+const recordForm = ref<ReviewRecordFormModel>(createEmptyReviewRecordForm());
+
+const problemDialogVisible = ref(false);
+const problemDialogSaving = ref(false);
+const problemDialogEditMode = ref(false);
+const currentProblemRecordId = ref<number | null>(null);
+const currentProblemItemId = ref<number | null>(null);
+const currentProblemExpertOptions = ref<string[]>([]);
+const problemForm = ref<ReviewProblemItemFormModel>(createEmptyProblemItemForm());
+
+const expandedRowKeys = ref<Array<number | string>>([]);
+const problemItemsMap = ref<Record<number, ReviewDataProblemItemResponse[]>>({});
+const problemLoadingMap = ref<Record<number, boolean>>({});
+
+const columns = reviewDataColumns();
+const problemColumns = reviewProblemItemColumns();
+
+const filterValues = computed<Record<string, unknown>>(() => ({
+  title: String(route.query.title ?? ''),
+  projectName: String(route.query.projectName ?? ''),
+  moduleName: String(route.query.moduleName ?? ''),
+  reviewOwner: String(route.query.reviewOwner ?? ''),
+  reviewType: String(route.query.reviewType ?? ''),
+  problemStatus: String(route.query.problemStatus ?? ''),
+  reviewExpert: String(route.query.reviewExpert ?? ''),
+}));
 
 const primaryFilters = computed<RecordTableFilterField[]>(() => [
+  {
+    key: 'title',
+    label: '标题',
+    type: 'input',
+    width: 220,
+    placeholder: '标题',
+  },
   {
     key: 'projectName',
     label: '项目',
     type: 'select',
     width: 180,
+    selectMode: 'compact',
     options: [{ label: '全部项目', value: '' }, ...filterOptions.value.projectNames],
-  },
-  {
-    key: 'repositoryName',
-    label: '代码库',
-    type: 'select',
-    width: 200,
-    options: [{ label: '全部代码库', value: '' }, ...filterOptions.value.repositoryNames],
   },
   {
     key: 'moduleName',
     label: '模块',
     type: 'select',
-    width: 180,
+    width: 168,
+    selectMode: 'compact',
     options: [{ label: '全部模块', value: '' }, ...filterOptions.value.moduleNames],
   },
   {
-    key: 'keyword',
-    label: '关键字',
-    type: 'input',
-    width: 280,
-    placeholder: '搜索标题、备注、评审人或仓库',
+    key: 'reviewOwner',
+    label: '负责人',
+    type: 'select',
+    width: 168,
+    selectMode: 'compact',
+    options: [{ label: '全部负责人', value: '' }, ...filterOptions.value.reviewOwners],
   },
 ]);
 
 const advancedFilters = computed<RecordTableFilterField[]>(() => [
   {
-    key: 'reviewer',
-    label: '评审人',
+    key: 'reviewType',
+    label: '评审类型',
     type: 'select',
-    options: [{ label: '全部评审人', value: '' }, ...filterOptions.value.reviewers],
+    width: 180,
+    selectMode: 'compact',
+    options: [{ label: '全部评审类型', value: '' }, ...filterOptions.value.reviewTypes],
   },
   {
-    key: 'templateCode',
-    label: '模板编码',
+    key: 'problemStatus',
+    label: '问题状态',
     type: 'select',
-    options: [{ label: '全部模板', value: '' }, ...filterOptions.value.templateCodes],
+    width: 168,
+    selectMode: 'compact',
+    options: [{ label: '全部问题状态', value: '' }, ...filterOptions.value.problemStatuses],
   },
   {
-    key: 'targetBranch',
-    label: '目标分支',
+    key: 'reviewExpert',
+    label: '评审专家',
     type: 'select',
-    options: [{ label: '全部目标分支', value: '' }, ...filterOptions.value.targetBranches],
-  },
-  {
-    key: 'recordStatus',
-    label: '记录状态',
-    type: 'select',
-    options: [{ label: '全部状态', value: '' }, ...filterOptions.value.recordStatuses],
-  },
-  {
-    key: 'mergeRequestIid',
-    label: '合并请求编号',
-    type: 'input',
-    placeholder: '输入合并请求编号',
-  },
-  {
-    key: 'updatedAtRange',
-    label: '更新时间',
-    type: 'daterange',
-    width: 280,
-    startPlaceholder: '开始日期',
-    endPlaceholder: '结束日期',
+    width: 168,
+    selectMode: 'compact',
+    options: [{ label: '全部评审专家', value: '' }, ...filterOptions.value.reviewExperts],
   },
 ]);
 
-const columns = reviewDataColumns();
 const activeFilterTags = computed(() => buildReviewDataFilterTags(filterValues.value));
 const summaryCards = computed(() => buildReviewDataSummaryCards(summary.value));
 const tableRows = computed(() => buildReviewDataTableRows(rows.value));
-
-async function loadFilterOptions() {
-  filterOptions.value = await api.getReviewDataFilterOptions(route.query.projectId as string | undefined);
-}
-
-async function loadRows() {
-  const response = await api.getReviewDataRecords({
-    projectId: route.query.projectId as string | undefined,
-    projectName: String(route.query.projectName ?? ''),
-    repositoryName: String(route.query.repositoryName ?? ''),
-    moduleName: String(route.query.moduleName ?? ''),
-    reviewer: String(route.query.reviewer ?? ''),
-    templateCode: String(route.query.templateCode ?? ''),
-    targetBranch: String(route.query.targetBranch ?? ''),
-    recordStatus: String(route.query.recordStatus ?? ''),
-    keyword: String(route.query.keyword ?? ''),
-    mergeRequestIid: String(route.query.mergeRequestIid ?? ''),
-    updatedAtStart: String(route.query.updatedAtStart ?? ''),
-    updatedAtEnd: String(route.query.updatedAtEnd ?? ''),
-    page: page.value,
-    size: pageSize.value,
-    sortBy: sortBy.value,
-    sortOrder: sortOrder.value || 'desc',
-  });
-  rows.value = response.records;
-  total.value = response.total;
-  summary.value = response.summary;
-}
 
 bindLoader(async () => {
   try {
@@ -183,17 +173,43 @@ bindLoader(async () => {
   }
 });
 
-async function handleFilterChange(payload: { key: string; value: string | string[] | null }) {
-  if (payload.key === 'updatedAtRange') {
-    const nextValue = Array.isArray(payload.value) ? payload.value : [];
-    await patchQuery({
-      updatedAtStart: nextValue[0] ?? '',
-      updatedAtEnd: nextValue[1] ?? '',
-      page: 1,
-    });
-    return;
-  }
+async function loadFilterOptions() {
+  filterOptions.value = await api.getReviewDataFilterOptions();
+}
 
+async function loadRows() {
+  const response = await api.getReviewDataRecords({
+    title: String(route.query.title ?? ''),
+    projectName: String(route.query.projectName ?? ''),
+    moduleName: String(route.query.moduleName ?? ''),
+    reviewOwner: String(route.query.reviewOwner ?? ''),
+    reviewType: String(route.query.reviewType ?? ''),
+    problemStatus: String(route.query.problemStatus ?? ''),
+    reviewExpert: String(route.query.reviewExpert ?? ''),
+    page: page.value,
+    size: pageSize.value,
+    sortBy: sortBy.value,
+    sortOrder: (sortOrder.value as 'asc' | 'desc' | null) ?? 'desc',
+  });
+  rows.value = response.records;
+  total.value = response.total;
+  summary.value = response.summary;
+}
+
+async function loadDetail(recordId: number) {
+  detailData.value = await api.getReviewDataRecordDetail(recordId);
+}
+
+async function loadProblemItems(recordId: number) {
+  problemLoadingMap.value[recordId] = true;
+  try {
+    problemItemsMap.value[recordId] = await api.getReviewDataProblemItems(recordId);
+  } finally {
+    problemLoadingMap.value[recordId] = false;
+  }
+}
+
+async function handleFilterChange(payload: { key: string; value: string | string[] | null }) {
   await patchQuery({
     [payload.key]: Array.isArray(payload.value) ? payload.value.join(',') : payload.value ?? '',
     page: 1,
@@ -202,17 +218,13 @@ async function handleFilterChange(payload: { key: string; value: string | string
 
 async function handleReset() {
   await patchQuery({
+    title: '',
     projectName: '',
-    repositoryName: '',
     moduleName: '',
-    reviewer: '',
-    templateCode: '',
-    targetBranch: '',
-    recordStatus: '',
-    keyword: '',
-    mergeRequestIid: '',
-    updatedAtStart: '',
-    updatedAtEnd: '',
+    reviewOwner: '',
+    reviewType: '',
+    problemStatus: '',
+    reviewExpert: '',
     sortBy: 'updatedAt',
     sortOrder: 'desc',
     page: 1,
@@ -221,11 +233,6 @@ async function handleReset() {
 
 async function handleQuery() {
   await patchQuery({ page: 1 });
-}
-
-async function handleRefresh() {
-  await loadFilterOptions();
-  await loadRows();
 }
 
 async function handleSortChange(payload: { prop: string; order: 'ascending' | 'descending' | null }) {
@@ -245,16 +252,171 @@ async function handleSizeChange(nextSize: number) {
 }
 
 async function clearFilter(key: string) {
-  if (key === 'updatedAtRange') {
-    await patchQuery({ updatedAtStart: '', updatedAtEnd: '', page: 1 });
-    return;
-  }
   await patchQuery({ [key]: '', page: 1 });
 }
 
-function openDetail(row: Record<string, unknown>) {
-  selectedRow.value = (row.__raw as ReviewDataRecordRowResponse) ?? null;
-  detailVisible.value = true;
+async function handleExpandChange(row: Record<string, unknown>, expandedRows: Record<string, unknown>[]) {
+  const raw = row.__raw as ReviewDataRecordRowResponse | undefined;
+  if (!raw) {
+    return;
+  }
+  expandedRowKeys.value = expandedRows.map((item) => Number((item.__raw as ReviewDataRecordRowResponse).id));
+  if (expandedRowKeys.value.includes(raw.id) && !problemItemsMap.value[raw.id]) {
+    await loadProblemItems(raw.id);
+  }
+}
+
+async function handleOpenDetail(row: Record<string, unknown>) {
+  const raw = row.__raw as ReviewDataRecordRowResponse | undefined;
+  if (!raw) {
+    return;
+  }
+  try {
+    await loadDetail(raw.id);
+    detailVisible.value = true;
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '评审详情加载失败');
+  }
+}
+
+async function handleEditRecord(row: Record<string, unknown>) {
+  const raw = row.__raw as ReviewDataRecordRowResponse | undefined;
+  if (!raw) {
+    return;
+  }
+  try {
+    const detail = await api.getReviewDataRecordDetail(raw.id);
+    editingRecordId.value = raw.id;
+    recordEditMode.value = true;
+    recordForm.value = createReviewRecordFormFromRow(detail.record, detail.reviewExperts);
+    recordDialogVisible.value = true;
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '评审详情加载失败');
+  }
+}
+
+function handleCreateRecord() {
+  editingRecordId.value = null;
+  recordEditMode.value = false;
+  recordForm.value = createEmptyReviewRecordForm();
+  recordDialogVisible.value = true;
+}
+
+async function submitRecord(payload: ReviewDataRecordSaveRequest) {
+  recordDialogSaving.value = true;
+  try {
+    if (recordEditMode.value && editingRecordId.value != null) {
+      await api.updateReviewDataRecord(editingRecordId.value, payload);
+      ElMessage.success('评审记录已更新');
+    } else {
+      await api.createReviewDataRecord(payload);
+      ElMessage.success('评审记录已创建');
+    }
+    recordDialogVisible.value = false;
+    await Promise.all([loadFilterOptions(), loadRows()]);
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '评审记录保存失败');
+  } finally {
+    recordDialogSaving.value = false;
+  }
+}
+
+async function handleDeleteRecord(row: Record<string, unknown>) {
+  const raw = row.__raw as ReviewDataRecordRowResponse | undefined;
+  if (!raw) {
+    return;
+  }
+  try {
+    await ElMessageBox.confirm(`确认删除评审“${raw.title}”吗？`, '删除评审', {
+      type: 'warning',
+      confirmButtonText: '删除',
+      cancelButtonText: '取消',
+    });
+    await api.deleteReviewDataRecord(raw.id);
+    ElMessage.success('评审记录已删除');
+    await Promise.all([loadFilterOptions(), loadRows()]);
+  } catch (error) {
+    if (error !== 'cancel') {
+      ElMessage.error(error instanceof Error ? error.message : '评审记录删除失败');
+    }
+  }
+}
+
+async function handleCreateProblemItem(recordId: number) {
+  try {
+    const detail = await api.getReviewDataRecordDetail(recordId);
+    currentProblemRecordId.value = recordId;
+    currentProblemItemId.value = null;
+    currentProblemExpertOptions.value = detail.reviewExperts;
+    problemDialogEditMode.value = false;
+    problemForm.value = createEmptyProblemItemForm();
+    problemDialogVisible.value = true;
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '评审问题初始化失败');
+  }
+}
+
+async function handleEditProblemItem(recordId: number, item: ReviewDataProblemItemResponse) {
+  try {
+    const detail = await api.getReviewDataRecordDetail(recordId);
+    currentProblemRecordId.value = recordId;
+    currentProblemItemId.value = item.id;
+    currentProblemExpertOptions.value = detail.reviewExperts;
+    problemDialogEditMode.value = true;
+    problemForm.value = createProblemItemFormFromRow(item);
+    problemDialogVisible.value = true;
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '评审问题详情加载失败');
+  }
+}
+
+async function submitProblemItem(payload: ReviewDataProblemItemSaveRequest) {
+  if (currentProblemRecordId.value == null) {
+    return;
+  }
+  problemDialogSaving.value = true;
+  try {
+    if (problemDialogEditMode.value && currentProblemItemId.value != null) {
+      await api.updateReviewDataProblemItem(currentProblemRecordId.value, currentProblemItemId.value, payload);
+      ElMessage.success('评审问题已更新');
+    } else {
+      await api.createReviewDataProblemItem(currentProblemRecordId.value, payload);
+      ElMessage.success('评审问题已新增');
+    }
+    problemDialogVisible.value = false;
+    await Promise.all([loadRows(), loadProblemItems(currentProblemRecordId.value)]);
+    if (detailVisible.value && detailData.value?.record.id === currentProblemRecordId.value) {
+      await loadDetail(currentProblemRecordId.value);
+    }
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '评审问题保存失败');
+  } finally {
+    problemDialogSaving.value = false;
+  }
+}
+
+async function handleDeleteProblemItem(recordId: number, itemId: number) {
+  try {
+    await ElMessageBox.confirm('确认删除这条评审问题吗？', '删除评审问题', {
+      type: 'warning',
+      confirmButtonText: '删除',
+      cancelButtonText: '取消',
+    });
+    await api.deleteReviewDataProblemItem(recordId, itemId);
+    ElMessage.success('评审问题已删除');
+    await Promise.all([loadRows(), loadProblemItems(recordId)]);
+    if (detailVisible.value && detailData.value?.record.id === recordId) {
+      await loadDetail(recordId);
+    }
+  } catch (error) {
+    if (error !== 'cancel') {
+      ElMessage.error(error instanceof Error ? error.message : '评审问题删除失败');
+    }
+  }
+}
+
+function problemItemsFor(recordId: number) {
+  return buildProblemItemTableRows(problemItemsMap.value[recordId] ?? []);
 }
 
 function displayText(value: unknown) {
@@ -262,12 +424,8 @@ function displayText(value: unknown) {
   return text || '-';
 }
 
-function formatDateTime(value?: string | null) {
-  return value ? value.replace('T', ' ').slice(0, 19) : '-';
-}
-
-function formatPercent(value?: number | null) {
-  return value == null ? '-' : `${value.toFixed(2)}%`;
+function formatDate(value?: string | null) {
+  return value ? value.slice(0, 10) : '-';
 }
 </script>
 
@@ -276,10 +434,9 @@ function formatPercent(value?: number | null) {
     <header class="review-data-hero">
       <div>
         <p class="review-data-eyebrow">评审数据管理</p>
-        <h1 class="review-data-title">评审记录总览</h1>
-        <p class="review-data-desc">围绕正式评审记录查看标题、评审人、评分、外部指标与更新时间，适合做记录筛选、追溯和轻量复核。</p>
+        <h1 class="review-data-title">评审数据管理</h1>
+        <p class="review-data-desc">围绕评审主记录统一查看筛选、维护评审问题清单，并在同一页完成新增、编辑和删除。</p>
       </div>
-      <el-button type="primary" plain :icon="RefreshRight" @click="handleRefresh">刷新数据</el-button>
     </header>
 
     <section class="review-data-summary">
@@ -301,92 +458,176 @@ function formatPercent(value?: number | null) {
       :filter-values="filterValues"
       :active-filter-tags="activeFilterTags"
       :advanced-visible="advancedVisible"
-      search-placeholder="搜索评审标题、备注、评审人或仓库"
-      empty-description="当前筛选条件下没有可展示的评审记录。"
+      :expanded-row-keys="expandedRowKeys"
+      :show-refresh="false"
       query-button-text="查询"
+      empty-description="当前筛选条件下没有可展示的评审记录。"
       @filter-change="handleFilterChange"
       @reset="handleReset"
       @query="handleQuery"
-      @refresh="handleRefresh"
       @clear-filter="clearFilter"
       @update:advanced-visible="advancedVisible = $event"
       @sort-change="handleSortChange"
       @current-change="handlePageChange"
       @size-change="handleSizeChange"
+      @expand-change="handleExpandChange"
     >
-      <template #cell-formTitle="{ row }">
+      <template #primary-actions>
+        <el-button type="primary" :icon="Plus" @click="handleCreateRecord">新增评审</el-button>
+      </template>
+
+      <template #cell-title="{ row }">
         <div class="title-cell">
-          <span class="title-main">{{ row.formTitle }}</span>
-          <span class="title-sub">MR #{{ (row.__raw as ReviewDataRecordRowResponse).mergeRequestIid ?? '-' }}</span>
+          <span class="title-main">{{ row.title }}</span>
+          <span class="title-sub">{{ row.reviewExpertsSummary }}</span>
+        </div>
+      </template>
+
+      <template #expand="{ row }">
+        <div class="problem-panel">
+          <div class="problem-panel-head">
+            <div class="problem-panel-title">
+              <span>评审问题清单</span>
+              <el-tag size="small" effect="plain">共 {{ (row.__raw as ReviewDataRecordRowResponse).problemCount }} 条</el-tag>
+            </div>
+            <el-button type="primary" text :icon="Plus" @click="handleCreateProblemItem((row.__raw as ReviewDataRecordRowResponse).id)">
+              新增问题
+            </el-button>
+          </div>
+
+          <el-table
+            v-loading="problemLoadingMap[(row.__raw as ReviewDataRecordRowResponse).id]"
+            :data="problemItemsFor((row.__raw as ReviewDataRecordRowResponse).id)"
+            class="problem-subtable"
+            border
+            stripe
+            empty-text="当前评审下还没有录入问题清单。"
+          >
+            <el-table-column
+              v-for="column in problemColumns"
+              :key="column.key"
+              :prop="column.key"
+              :label="column.label"
+              :width="column.width"
+              :min-width="column.minWidth"
+              :align="column.align ?? 'left'"
+              :show-overflow-tooltip="column.showOverflowTooltip ?? true"
+            >
+              <template #default="{ row: problemRow }">
+                <template v-if="column.type === 'tag'">
+                  <el-tag
+                    v-for="tag in problemRow[column.key] as Array<{ label: string; type?: 'success' | 'warning' | 'info' | 'danger' | 'primary' }>"
+                    :key="tag.label"
+                    size="small"
+                    :type="tag.type ?? 'info'"
+                    effect="plain"
+                  >
+                    {{ tag.label }}
+                  </el-tag>
+                </template>
+                <span v-else>{{ problemRow[column.key] }}</span>
+              </template>
+            </el-table-column>
+
+            <el-table-column label="操作" width="120" fixed="right" align="center">
+              <template #default="{ row: problemRow }">
+                <el-button
+                  type="primary"
+                  link
+                  @click="handleEditProblemItem((row.__raw as ReviewDataRecordRowResponse).id, problemRow.__raw as ReviewDataProblemItemResponse)"
+                >
+                  编辑
+                </el-button>
+                <el-button
+                  type="danger"
+                  link
+                  @click="handleDeleteProblemItem((row.__raw as ReviewDataRecordRowResponse).id, (problemRow.__raw as ReviewDataProblemItemResponse).id)"
+                >
+                  删除
+                </el-button>
+              </template>
+            </el-table-column>
+          </el-table>
         </div>
       </template>
 
       <template #row-actions="{ row }">
-        <el-button type="primary" link :icon="View" @click="openDetail(row)">查看</el-button>
+        <div class="record-actions">
+          <el-button type="primary" link :icon="View" @click="handleOpenDetail(row)">查看</el-button>
+          <el-dropdown>
+            <span class="record-actions-more">更多</span>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item @click="handleEditRecord(row)">编辑评审</el-dropdown-item>
+                <el-dropdown-item @click="handleCreateProblemItem((row.__raw as ReviewDataRecordRowResponse).id)">新增问题</el-dropdown-item>
+                <el-dropdown-item divided @click="handleDeleteRecord(row)">删除评审</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+        </div>
       </template>
     </BaseRecordTable>
 
     <el-drawer
       v-model="detailVisible"
-      title="评审记录详情"
-      size="520px"
+      title="评审详情"
+      size="560px"
       append-to-body
       class="review-data-drawer"
     >
-      <template v-if="selectedRow">
+      <template v-if="detailData">
         <section class="detail-section">
           <header class="detail-section-head">
             <el-icon><Document /></el-icon>
-            <span>基础信息</span>
+            <span>评审基础信息</span>
           </header>
           <el-descriptions :column="1" border>
-            <el-descriptions-item label="评审标题">{{ displayText(selectedRow.formTitle) }}</el-descriptions-item>
-            <el-descriptions-item label="项目">{{ displayText(selectedRow.projectName) }}</el-descriptions-item>
-            <el-descriptions-item label="代码库">{{ displayText(selectedRow.repositoryName) }}</el-descriptions-item>
-            <el-descriptions-item label="合并请求编号">MR #{{ selectedRow.mergeRequestIid ?? '-' }}</el-descriptions-item>
-            <el-descriptions-item label="模块">{{ displayText(selectedRow.moduleName) }}</el-descriptions-item>
-            <el-descriptions-item label="评审人">{{ displayText(selectedRow.reviewer) }}</el-descriptions-item>
-            <el-descriptions-item label="目标分支">{{ displayText(selectedRow.targetBranch) }}</el-descriptions-item>
-            <el-descriptions-item label="记录状态">{{ selectedRow.deleted ? '已作废' : '有效' }}</el-descriptions-item>
+            <el-descriptions-item label="项目名称">{{ displayText(detailData.record.projectName) }}</el-descriptions-item>
+            <el-descriptions-item label="标题">{{ displayText(detailData.record.title) }}</el-descriptions-item>
+            <el-descriptions-item label="模块">{{ displayText(detailData.record.moduleName) }}</el-descriptions-item>
+            <el-descriptions-item label="评审类型">{{ displayText(detailData.record.reviewType) }}</el-descriptions-item>
+            <el-descriptions-item label="评审日期">{{ formatDate(detailData.record.reviewDate) }}</el-descriptions-item>
+            <el-descriptions-item label="评审负责人">{{ displayText(detailData.record.reviewOwner) }}</el-descriptions-item>
+            <el-descriptions-item label="评审专家">{{ detailData.reviewExperts.join('、') || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="评审规模">{{ detailData.record.reviewScalePages }} 页</el-descriptions-item>
+            <el-descriptions-item label="评审工作产品">{{ displayText(detailData.record.reviewProduct) }}</el-descriptions-item>
+            <el-descriptions-item label="作者">{{ displayText(detailData.record.authorName) }}</el-descriptions-item>
+            <el-descriptions-item label="评审版本">{{ displayText(detailData.record.reviewVersion) }}</el-descriptions-item>
           </el-descriptions>
         </section>
 
         <section class="detail-section">
           <header class="detail-section-head">
-            <span>评分信息</span>
+            <span>问题概览</span>
           </header>
           <el-descriptions :column="2" border>
-            <el-descriptions-item label="总分">{{ selectedRow.totalScore }}</el-descriptions-item>
-            <el-descriptions-item label="评审时长">{{ selectedRow.reviewDurationMinutes ?? 0 }} 分钟</el-descriptions-item>
-            <el-descriptions-item label="规范">{{ selectedRow.specificationScore ?? 0 }}</el-descriptions-item>
-            <el-descriptions-item label="逻辑">{{ selectedRow.logicScore ?? 0 }}</el-descriptions-item>
-            <el-descriptions-item label="性能">{{ selectedRow.performanceScore ?? 0 }}</el-descriptions-item>
-            <el-descriptions-item label="设计">{{ selectedRow.designScore ?? 0 }}</el-descriptions-item>
-            <el-descriptions-item label="其他">{{ selectedRow.otherScore ?? 0 }}</el-descriptions-item>
-            <el-descriptions-item label="模板编码">{{ displayText(selectedRow.templateCode) }}</el-descriptions-item>
+            <el-descriptions-item label="问题合计">{{ detailData.record.problemCount }}</el-descriptions-item>
+            <el-descriptions-item label="缺陷密度">{{ detailData.record.problemDensity.toFixed(2) }}</el-descriptions-item>
+            <el-descriptions-item label="更新时间">{{ displayText(detailData.record.updatedAt?.replace('T', ' ').slice(0, 19)) }}</el-descriptions-item>
+            <el-descriptions-item label="当前状态">{{ detailData.record.deleted ? '已删除' : '有效' }}</el-descriptions-item>
           </el-descriptions>
-        </section>
-
-        <section class="detail-section">
-          <header class="detail-section-head">
-            <span>外部指标</span>
-          </header>
-          <el-descriptions :column="2" border>
-            <el-descriptions-item label="注释率">{{ formatPercent(selectedRow.commentRate) }}</el-descriptions-item>
-            <el-descriptions-item label="缺陷数">{{ selectedRow.defectCount ?? 0 }}</el-descriptions-item>
-            <el-descriptions-item label="新增代码行数">{{ selectedRow.addedLines ?? 0 }}</el-descriptions-item>
-            <el-descriptions-item label="更新时间">{{ formatDateTime(selectedRow.updatedAt) }}</el-descriptions-item>
-          </el-descriptions>
-        </section>
-
-        <section class="detail-section">
-          <header class="detail-section-head">
-            <span>备注</span>
-          </header>
-          <div class="remark-panel">{{ displayText(selectedRow.remark) }}</div>
         </section>
       </template>
     </el-drawer>
+
+    <ReviewRecordFormDialog
+      v-model:visible="recordDialogVisible"
+      :saving="recordDialogSaving"
+      :model-value="recordForm"
+      :filter-options="filterOptions"
+      :edit-mode="recordEditMode"
+      @submit="submitRecord"
+    />
+
+    <ReviewProblemItemFormDialog
+      v-model:visible="problemDialogVisible"
+      :saving="problemDialogSaving"
+      :model-value="problemForm"
+      :filter-options="filterOptions"
+      :expert-options-override="currentProblemExpertOptions"
+      :edit-mode="problemDialogEditMode"
+      @submit="submitProblemItem"
+    />
   </section>
 </template>
 
@@ -471,6 +712,46 @@ function formatPercent(value?: number | null) {
   color: rgba(15, 23, 42, 0.48);
 }
 
+.record-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.record-actions-more {
+  cursor: pointer;
+  font-size: 13px;
+  color: #409eff;
+}
+
+.problem-panel {
+  display: grid;
+  gap: 12px;
+  padding: 12px 8px 4px 40px;
+  background: rgba(248, 250, 252, 0.72);
+}
+
+.problem-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.problem-panel-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  color: rgba(15, 23, 42, 0.82);
+}
+
+.problem-subtable {
+  border-radius: 12px;
+  overflow: hidden;
+}
+
 .detail-section {
   display: grid;
   gap: 10px;
@@ -486,22 +767,15 @@ function formatPercent(value?: number | null) {
   color: rgba(15, 23, 42, 0.75);
 }
 
-.remark-panel {
-  min-height: 88px;
-  padding: 14px 16px;
-  border: 1px solid rgba(15, 23, 42, 0.06);
-  border-radius: 12px;
-  background: rgba(248, 250, 252, 0.88);
-  color: rgba(15, 23, 42, 0.78);
-  line-height: 1.7;
-  white-space: pre-wrap;
-}
-
 :deep(.review-data-drawer .el-drawer__header) {
   margin-bottom: 10px;
 }
 
 :deep(.review-data-drawer .el-descriptions__label) {
-  width: 108px;
+  width: 116px;
+}
+
+:deep(.problem-subtable .el-table__header th.el-table__cell) {
+  background: #f8fafc;
 }
 </style>

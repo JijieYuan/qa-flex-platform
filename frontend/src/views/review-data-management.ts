@@ -1,4 +1,5 @@
 import type {
+  ReviewDataProblemItemResponse,
   ReviewDataRecordRowResponse,
   ReviewDataSummaryResponse,
 } from '../api';
@@ -10,37 +11,97 @@ export interface ReviewDataSummaryCard {
   value: string;
 }
 
+export interface ReviewRecordFormModel {
+  projectName: string;
+  title: string;
+  moduleName: string;
+  reviewType: string;
+  reviewDate: string;
+  reviewOwner: string;
+  reviewExperts: string[];
+  reviewScalePages: number;
+  reviewProduct: string;
+  authorName: string;
+  reviewVersion: string;
+}
+
+export interface ReviewProblemItemFormModel {
+  reviewerName: string;
+  workloadHours: number;
+  reviewCategory: string;
+  documentPosition: string;
+  problemCategory: string;
+  problemDescription: string;
+  suggestedSolution: string;
+  ownerName: string;
+  rejectionReason: string;
+  problemStatus: string;
+}
+
 export function reviewDataColumns(): RecordTableColumn[] {
   return [
-    { key: 'formTitle', label: '评审标题', sortable: true, minWidth: 220, fixed: 'left' },
+    { key: 'title', label: '标题', sortable: true, minWidth: 280, fixed: 'left' },
     { key: 'projectName', label: '项目', sortable: true, minWidth: 140 },
-    { key: 'repositoryName', label: '代码库', sortable: true, minWidth: 180 },
-    { key: 'moduleName', label: '模块', sortable: true, minWidth: 140 },
-    { key: 'reviewer', label: '评审人', sortable: true, width: 120 },
-    { key: 'reviewDurationMinutes', label: '评审时长(分钟)', type: 'number', sortable: true, width: 140, align: 'right' },
-    { key: 'totalScore', label: '总分', type: 'number', sortable: true, width: 90, align: 'right' },
-    { key: 'commentRate', label: '注释率(%)', sortable: true, width: 110, align: 'right' },
-    { key: 'defectCount', label: '缺陷数', type: 'number', sortable: true, width: 100, align: 'right' },
-    { key: 'addedLines', label: '新增代码行数', type: 'number', sortable: true, width: 130, align: 'right' },
-    { key: 'recordStatus', label: '记录状态', type: 'tag', width: 100, align: 'center' },
-    { key: 'updatedAt', label: '更新时间', type: 'datetime', sortable: true, minWidth: 170 },
+    { key: 'problemCount', label: '问题合计(个)', type: 'number', sortable: true, width: 110, align: 'right' },
+    { key: 'reviewScalePages', label: '页数', type: 'number', sortable: true, width: 90, align: 'right' },
+    { key: 'problemDensity', label: '评审缺陷密度(个/页)', sortable: true, width: 150, align: 'right' },
+    { key: 'reviewType', label: '评审类型', sortable: true, minWidth: 140 },
+    { key: 'moduleName', label: '模块', sortable: true, minWidth: 120 },
+    { key: 'reviewOwner', label: '负责人', sortable: true, width: 110 },
+    { key: 'reviewExpertsSummary', label: '评审专家', minWidth: 180 },
+    { key: 'reviewDate', label: '评审日期', sortable: true, width: 120 },
+    { key: 'updatedAt', label: '更新时间', sortable: true, minWidth: 170 },
+  ];
+}
+
+export function reviewProblemItemColumns(): RecordTableColumn[] {
+  return [
+    { key: 'reviewerName', label: '评审专家', minWidth: 110 },
+    { key: 'workloadHours', label: '评审工作量', width: 110, align: 'right' },
+    { key: 'reviewCategory', label: '评审类别', minWidth: 110 },
+    { key: 'documentPosition', label: '在文档中的位置', minWidth: 150 },
+    { key: 'problemCategory', label: '问题类别', minWidth: 110 },
+    { key: 'problemDescription', label: '问题描述', minWidth: 220 },
+    { key: 'suggestedSolution', label: '建议解决方案', minWidth: 220 },
+    { key: 'ownerName', label: '责任人', minWidth: 110 },
+    { key: 'rejectionReason', label: '不接受理由', minWidth: 140 },
+    { key: 'problemStatus', label: '问题状态', type: 'tag', width: 110, align: 'center' },
+    { key: 'updatedAt', label: '更新日期', minWidth: 160 },
   ];
 }
 
 export function buildReviewDataTableRows(rows: ReviewDataRecordRowResponse[]) {
   return rows.map((row) => ({
     __raw: row,
-    formTitle: row.formTitle || row.mergeRequestTitle || `MR #${row.mergeRequestIid ?? '-'}`,
+    id: row.id,
+    title: row.title || '-',
     projectName: row.projectName || '-',
-    repositoryName: row.repositoryName || '-',
+    problemCount: row.problemCount ?? 0,
+    reviewScalePages: row.reviewScalePages ?? 0,
+    problemDensity: formatNullableNumber(row.problemDensity, 2),
+    reviewType: row.reviewType || '-',
     moduleName: row.moduleName || '-',
-    reviewer: row.reviewer || '-',
-    reviewDurationMinutes: row.reviewDurationMinutes ?? 0,
-    totalScore: row.totalScore ?? 0,
-    commentRate: formatNullableNumber(row.commentRate, 2),
-    defectCount: row.defectCount ?? 0,
-    addedLines: row.addedLines ?? 0,
-    recordStatus: [recordStatusTag(row.deleted)],
+    reviewOwner: row.reviewOwner || '-',
+    reviewExpertsSummary: row.reviewExpertsSummary || '-',
+    reviewDate: formatDate(row.reviewDate),
+    updatedAt: formatDateTime(row.updatedAt),
+  }));
+}
+
+export function buildProblemItemTableRows(rows: ReviewDataProblemItemResponse[]) {
+  return rows.map((row) => ({
+    __raw: row,
+    id: row.id,
+    reviewerName: row.reviewerName || '-',
+    workloadHours: formatNullableNumber(row.workloadHours, 1),
+    reviewCategory: row.reviewCategory || '-',
+    documentPosition: row.documentPosition || '-',
+    problemCategory: row.problemCategory || '-',
+    problemDescription: row.problemDescription || '-',
+    suggestedSolution: row.suggestedSolution || '-',
+    ownerName: row.ownerName || '-',
+    rejectionReason: row.rejectionReason || '-',
+    problemStatus: [problemStatusTag(row.problemStatus)],
     updatedAt: formatDateTime(row.updatedAt),
   }));
 }
@@ -49,38 +110,94 @@ export function buildReviewDataSummaryCards(summary: ReviewDataSummaryResponse |
   if (!summary) {
     return [
       { key: 'total', label: '评审记录', value: '0' },
-      { key: 'active', label: '有效记录', value: '0' },
-      { key: 'duration', label: '平均时长', value: '0 分钟' },
-      { key: 'score', label: '平均总分', value: '0.0' },
+      { key: 'problems', label: '评审问题', value: '0' },
+      { key: 'pages', label: '平均页数', value: '0.0' },
+      { key: 'density', label: '平均问题数', value: '0.0' },
     ];
   }
   return [
     { key: 'total', label: '评审记录', value: String(summary.totalRecords) },
-    { key: 'active', label: '有效记录', value: String(summary.activeRecords) },
-    { key: 'duration', label: '平均时长', value: `${formatFixed(summary.averageDurationMinutes, 1)} 分钟` },
-    { key: 'score', label: '平均总分', value: formatFixed(summary.averageTotalScore, 1) },
+    { key: 'problems', label: '评审问题', value: String(summary.totalProblemItems) },
+    { key: 'pages', label: '平均页数', value: formatFixed(summary.averageReviewScalePages, 1) },
+    { key: 'density', label: '平均问题数', value: formatFixed(summary.averageProblemCount, 1) },
   ];
 }
 
 export function buildReviewDataFilterTags(values: Record<string, unknown>): RecordTableActiveFilterTag[] {
   const tags: RecordTableActiveFilterTag[] = [];
+  pushTag(tags, 'title', '标题', values.title);
   pushTag(tags, 'projectName', '项目', values.projectName);
-  pushTag(tags, 'repositoryName', '代码库', values.repositoryName);
   pushTag(tags, 'moduleName', '模块', values.moduleName);
-  pushTag(tags, 'reviewer', '评审人', values.reviewer);
-  pushTag(tags, 'templateCode', '模板编码', values.templateCode);
-  pushTag(tags, 'targetBranch', '目标分支', values.targetBranch);
-  pushTag(tags, 'recordStatus', '记录状态', values.recordStatus);
-  pushTag(tags, 'keyword', '关键字', values.keyword);
-  pushTag(tags, 'mergeRequestIid', '合并请求编号', values.mergeRequestIid);
-  if (Array.isArray(values.updatedAtRange) && values.updatedAtRange.length === 2) {
-    tags.push({
-      key: 'updatedAtRange',
-      label: '更新时间',
-      value: `${values.updatedAtRange[0]} ~ ${values.updatedAtRange[1]}`,
-    });
-  }
+  pushTag(tags, 'reviewOwner', '负责人', values.reviewOwner);
+  pushTag(tags, 'reviewType', '评审类型', values.reviewType);
+  pushTag(tags, 'problemStatus', '问题状态', values.problemStatus);
+  pushTag(tags, 'reviewExpert', '评审专家', values.reviewExpert);
   return tags;
+}
+
+export function createEmptyReviewRecordForm(): ReviewRecordFormModel {
+  return {
+    projectName: '',
+    title: '',
+    moduleName: '',
+    reviewType: '',
+    reviewDate: '',
+    reviewOwner: '',
+    reviewExperts: [],
+    reviewScalePages: 0,
+    reviewProduct: '',
+    authorName: '',
+    reviewVersion: '',
+  };
+}
+
+export function createReviewRecordFormFromRow(
+  row: ReviewDataRecordRowResponse,
+  experts: string[],
+): ReviewRecordFormModel {
+  return {
+    projectName: row.projectName || '',
+    title: row.title || '',
+    moduleName: row.moduleName || '',
+    reviewType: row.reviewType || '',
+    reviewDate: row.reviewDate || '',
+    reviewOwner: row.reviewOwner || '',
+    reviewExperts: [...experts],
+    reviewScalePages: row.reviewScalePages ?? 0,
+    reviewProduct: row.reviewProduct || '',
+    authorName: row.authorName || '',
+    reviewVersion: row.reviewVersion || '',
+  };
+}
+
+export function createEmptyProblemItemForm(): ReviewProblemItemFormModel {
+  return {
+    reviewerName: '',
+    workloadHours: 0,
+    reviewCategory: '',
+    documentPosition: '',
+    problemCategory: '',
+    problemDescription: '',
+    suggestedSolution: '',
+    ownerName: '',
+    rejectionReason: '',
+    problemStatus: '',
+  };
+}
+
+export function createProblemItemFormFromRow(row: ReviewDataProblemItemResponse): ReviewProblemItemFormModel {
+  return {
+    reviewerName: row.reviewerName || '',
+    workloadHours: row.workloadHours ?? 0,
+    reviewCategory: row.reviewCategory || '',
+    documentPosition: row.documentPosition || '',
+    problemCategory: row.problemCategory || '',
+    problemDescription: row.problemDescription || '',
+    suggestedSolution: row.suggestedSolution || '',
+    ownerName: row.ownerName || '',
+    rejectionReason: row.rejectionReason || '',
+    problemStatus: row.problemStatus || '',
+  };
 }
 
 function pushTag(tags: RecordTableActiveFilterTag[], key: string, label: string, value: unknown) {
@@ -90,8 +207,21 @@ function pushTag(tags: RecordTableActiveFilterTag[], key: string, label: string,
   }
 }
 
-function recordStatusTag(deleted: boolean): RecordTableTagValue {
-  return deleted ? { label: '已作废', type: 'info' } : { label: '有效', type: 'success' };
+function problemStatusTag(status: string): RecordTableTagValue {
+  switch (status) {
+    case '已修复':
+      return { label: status, type: 'success' };
+    case '已关闭':
+      return { label: status, type: 'info' };
+    case '已拒绝':
+      return { label: status, type: 'danger' };
+    case '无问题':
+      return { label: status, type: 'primary' };
+    case '未评审':
+      return { label: status, type: 'warning' };
+    default:
+      return { label: status || '新提交', type: 'warning' };
+  }
 }
 
 function formatNullableNumber(value: number | null | undefined, fractionDigits = 0) {
@@ -107,4 +237,8 @@ function formatFixed(value: number, fractionDigits: number) {
 
 function formatDateTime(value?: string | null) {
   return value ? value.replace('T', ' ').slice(0, 19) : '-';
+}
+
+function formatDate(value?: string | null) {
+  return value ? value.slice(0, 10) : '-';
 }

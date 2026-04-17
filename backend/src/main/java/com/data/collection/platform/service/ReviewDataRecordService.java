@@ -2,9 +2,16 @@ package com.data.collection.platform.service;
 
 import com.data.collection.platform.entity.OptionItemResponse;
 import com.data.collection.platform.entity.ReviewDataFilterOptionsResponse;
+import com.data.collection.platform.entity.ReviewDataProblemItemResponse;
+import com.data.collection.platform.entity.ReviewDataProblemItemSaveRequest;
+import com.data.collection.platform.entity.ReviewDataRecordDetailResponse;
 import com.data.collection.platform.entity.ReviewDataRecordListResponse;
 import com.data.collection.platform.entity.ReviewDataRecordRowResponse;
+import com.data.collection.platform.entity.ReviewDataRecordSaveRequest;
 import com.data.collection.platform.entity.ReviewDataSummaryResponse;
+import java.math.BigDecimal;
+import java.sql.Date;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDate;
@@ -14,53 +21,86 @@ import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
-import java.util.function.Function;
+import java.util.stream.Collectors;
+import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.support.GeneratedKeyHolder;
+import org.springframework.jdbc.support.KeyHolder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class ReviewDataRecordService {
-  private static final String BASE_SQL = """
-      select
-        f.id,
-        f.project_id,
-        mr.merge_request_id,
-        coalesce(mr.merge_request_iid, f.request_iid) as merge_request_iid,
-        f.form_title,
-        f.template_code,
-        f.reviewer,
-        f.review_duration_minutes,
-        f.specification_score,
-        f.logic_score,
-        f.performance_score,
-        f.design_score,
-        f.other_score,
-        f.remark,
-        f.deleted,
-        f.created_at,
-        f.updated_at,
-        coalesce(mr.project_name, '') as project_name,
-        coalesce(mr.repository_name, '') as repository_name,
-        coalesce(mr.title, '') as merge_request_title,
-        coalesce(mr.module_name, '') as module_name,
-        coalesce(mr.target_branch, '') as target_branch,
-        mr.comment_rate,
-        mr.defect_count,
-        mr.added_lines
-      from collect_form_records f
-      left join merge_request_fact mr
-        on mr.project_id = f.project_id
-       and mr.merge_request_iid = f.request_iid
-       and coalesce(mr.deleted, false) = false
-      where f.resource_type = 'merge_request'
-      """;
-
-  private static final List<OptionItemResponse> RECORD_STATUS_OPTIONS =
+  private static final List<OptionItemResponse> REVIEW_TYPE_OPTIONS =
       List.of(
-          new OptionItemResponse("有效", "ACTIVE"),
-          new OptionItemResponse("已作废", "DELETED"));
+          new OptionItemResponse("需求说明书评审", "需求说明书评审"),
+          new OptionItemResponse("设计说明书评审", "设计说明书评审"),
+          new OptionItemResponse("产品用户手册", "产品用户手册"),
+          new OptionItemResponse("项目计划评审", "项目计划评审"),
+          new OptionItemResponse("其他", "其他"));
+
+  private static final List<OptionItemResponse> REVIEW_CATEGORY_OPTIONS =
+      List.of(
+          new OptionItemResponse("走查", "走查"),
+          new OptionItemResponse("独立评审", "独立评审"),
+          new OptionItemResponse("会议评审", "会议评审"));
+
+  private static final List<OptionItemResponse> PROBLEM_CATEGORY_OPTIONS =
+      List.of(
+          new OptionItemResponse("文档规范", "文档规范"),
+          new OptionItemResponse("完整性", "完整性"),
+          new OptionItemResponse("功能性", "功能性"),
+          new OptionItemResponse("可行性", "可行性"),
+          new OptionItemResponse("无问题", "无问题"));
+
+  private static final List<OptionItemResponse> PROBLEM_STATUS_OPTIONS =
+      List.of(
+          new OptionItemResponse("新提交", "新提交"),
+          new OptionItemResponse("已修复", "已修复"),
+          new OptionItemResponse("已关闭", "已关闭"),
+          new OptionItemResponse("已拒绝", "已拒绝"),
+          new OptionItemResponse("无问题", "无问题"),
+          new OptionItemResponse("未评审", "未评审"));
+
+  private static final String BASE_LIST_SQL =
+      """
+      select
+        r.id,
+        r.project_name,
+        r.title,
+        r.module_name,
+        r.review_type,
+        r.review_date,
+        r.review_owner,
+        r.review_scale_pages,
+        r.review_product,
+        r.author_name,
+        r.review_version,
+        r.updated_at,
+        r.deleted,
+        coalesce(expert.expert_names, '') as review_experts_summary,
+        coalesce(problem.problem_count, 0) as problem_count
+      from review_records r
+      left join (
+        select
+          review_record_id,
+          string_agg(expert_name, '、' order by sort_order asc, id asc) as expert_names
+        from review_record_experts
+        where deleted = false
+        group by review_record_id
+      ) expert on expert.review_record_id = r.id
+      left join (
+        select
+          review_record_id,
+          count(*)::integer as problem_count
+        from review_problem_items
+        where deleted = false
+        group by review_record_id
+      ) problem on problem.review_record_id = r.id
+      where r.deleted = false
+      """;
 
   private final JdbcTemplate jdbcTemplate;
 
@@ -69,18 +109,13 @@ public class ReviewDataRecordService {
   }
 
   public ReviewDataRecordListResponse listRecords(
-      Long projectId,
+      String title,
       String projectName,
-      String repositoryName,
       String moduleName,
-      String reviewer,
-      String templateCode,
-      String targetBranch,
-      String recordStatus,
-      String keyword,
-      String mergeRequestIid,
-      String updatedAtStart,
-      String updatedAtEnd,
+      String reviewOwner,
+      String reviewType,
+      String problemStatus,
+      String reviewExpert,
       int page,
       int size,
       String sortField,
@@ -91,26 +126,13 @@ public class ReviewDataRecordService {
     String safeSortOrder = normalizeSortOrder(sortOrder);
 
     List<ReviewDataRecordRowResponse> filtered =
-        loadRecords(
-            projectId,
-            projectName,
-            repositoryName,
-            moduleName,
-            reviewer,
-            templateCode,
-            targetBranch,
-            recordStatus,
-            keyword,
-            mergeRequestIid,
-            updatedAtStart,
-            updatedAtEnd)
+        loadRecords(title, projectName, moduleName, reviewOwner, reviewType, problemStatus, reviewExpert)
             .stream()
             .sorted(buildComparator(safeSortField, safeSortOrder))
             .toList();
 
     PageSlice<ReviewDataRecordRowResponse> pageSlice =
         PageSliceSupport.slice(filtered, safePage, safeSize);
-    ReviewDataSummaryResponse summary = buildSummary(filtered);
 
     return new ReviewDataRecordListResponse(
         pageSlice.records(),
@@ -119,157 +141,461 @@ public class ReviewDataRecordService {
         pageSlice.size(),
         safeSortField,
         safeSortOrder,
-        summary);
+        buildSummary(filtered));
   }
 
-  public ReviewDataFilterOptionsResponse getFilterOptions(Long projectId) {
-    List<ReviewDataRecordRowResponse> rows =
-        loadRecords(
-            projectId,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null);
+  public ReviewDataFilterOptionsResponse getFilterOptions() {
+    List<ReviewDataRecordRowResponse> records = loadRecords(null, null, null, null, null, null, null);
 
     return new ReviewDataFilterOptionsResponse(
-        toOptions(rows, ReviewDataRecordRowResponse::projectName),
-        toOptions(rows, ReviewDataRecordRowResponse::repositoryName),
-        toOptions(rows, ReviewDataRecordRowResponse::moduleName),
-        toOptions(rows, ReviewDataRecordRowResponse::reviewer),
-        toOptions(rows, ReviewDataRecordRowResponse::templateCode),
-        toOptions(rows, ReviewDataRecordRowResponse::targetBranch),
-        RECORD_STATUS_OPTIONS);
+        toOptions(records.stream().map(ReviewDataRecordRowResponse::projectName).toList()),
+        toOptions(records.stream().map(ReviewDataRecordRowResponse::moduleName).toList()),
+        toOptions(records.stream().map(ReviewDataRecordRowResponse::reviewOwner).toList()),
+        REVIEW_TYPE_OPTIONS,
+        loadExpertOptions(),
+        PROBLEM_STATUS_OPTIONS,
+        REVIEW_CATEGORY_OPTIONS,
+        PROBLEM_CATEGORY_OPTIONS);
+  }
+
+  public ReviewDataRecordDetailResponse getRecordDetail(Long recordId) {
+    ReviewDataRecordRowResponse record = getRecordOrThrow(recordId);
+    return new ReviewDataRecordDetailResponse(record, listRecordExperts(recordId), listProblemItems(recordId));
+  }
+
+  public List<ReviewDataProblemItemResponse> listProblemItems(Long recordId) {
+    assertRecordExists(recordId);
+    return jdbcTemplate.query(
+        """
+        select
+          id,
+          review_record_id,
+          reviewer_name,
+          workload_hours,
+          review_category,
+          document_position,
+          problem_category,
+          problem_description,
+          suggested_solution,
+          owner_name,
+          rejection_reason,
+          problem_status,
+          updated_at
+        from review_problem_items
+        where review_record_id = ? and deleted = false
+        order by updated_at desc, id desc
+        """,
+        this::mapProblemItem,
+        recordId);
+  }
+
+  @Transactional
+  public ReviewDataRecordDetailResponse createRecord(ReviewDataRecordSaveRequest request) {
+    KeyHolder keyHolder = new GeneratedKeyHolder();
+    jdbcTemplate.update(
+        connection -> {
+          PreparedStatement statement =
+              connection.prepareStatement(
+                  """
+                  insert into review_records(
+                    project_name,
+                    title,
+                    module_name,
+                    review_type,
+                    review_date,
+                    review_owner,
+                    review_scale_pages,
+                    review_product,
+                    author_name,
+                    review_version,
+                    created_at,
+                    updated_at
+                  ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, current_timestamp, current_timestamp)
+                  """,
+                  new String[] {"id"});
+          statement.setString(1, normalizeText(request.projectName()));
+          statement.setString(2, normalizeText(request.title()));
+          statement.setString(3, normalizeText(request.moduleName()));
+          statement.setString(4, normalizeText(request.reviewType()));
+          statement.setDate(5, request.reviewDate() == null ? null : Date.valueOf(request.reviewDate()));
+          statement.setString(6, normalizeText(request.reviewOwner()));
+          statement.setInt(7, safeInt(request.reviewScalePages()));
+          statement.setString(8, normalizeText(request.reviewProduct()));
+          statement.setString(9, normalizeText(request.authorName()));
+          statement.setString(10, normalizeText(request.reviewVersion()));
+          return statement;
+        },
+        keyHolder);
+
+    Long recordId = keyHolder.getKey() == null ? null : keyHolder.getKey().longValue();
+    if (recordId == null) {
+      throw new IllegalStateException("创建评审记录失败");
+    }
+
+    replaceExperts(recordId, request.reviewExperts());
+    return getRecordDetail(recordId);
+  }
+
+  @Transactional
+  public ReviewDataRecordDetailResponse updateRecord(Long recordId, ReviewDataRecordSaveRequest request) {
+    assertRecordExists(recordId);
+    jdbcTemplate.update(
+        """
+        update review_records
+        set
+          project_name = ?,
+          title = ?,
+          module_name = ?,
+          review_type = ?,
+          review_date = ?,
+          review_owner = ?,
+          review_scale_pages = ?,
+          review_product = ?,
+          author_name = ?,
+          review_version = ?,
+          updated_at = current_timestamp
+        where id = ?
+        """,
+        normalizeText(request.projectName()),
+        normalizeText(request.title()),
+        normalizeText(request.moduleName()),
+        normalizeText(request.reviewType()),
+        request.reviewDate() == null ? null : Date.valueOf(request.reviewDate()),
+        normalizeText(request.reviewOwner()),
+        safeInt(request.reviewScalePages()),
+        normalizeText(request.reviewProduct()),
+        normalizeText(request.authorName()),
+        normalizeText(request.reviewVersion()),
+        recordId);
+
+    replaceExperts(recordId, request.reviewExperts());
+    return getRecordDetail(recordId);
+  }
+
+  @Transactional
+  public void deleteRecord(Long recordId) {
+    assertRecordExists(recordId);
+    jdbcTemplate.update(
+        "update review_records set deleted = true, updated_at = current_timestamp where id = ?", recordId);
+  }
+
+  @Transactional
+  public ReviewDataProblemItemResponse createProblemItem(
+      Long recordId, ReviewDataProblemItemSaveRequest request) {
+    assertRecordExists(recordId);
+    KeyHolder keyHolder = new GeneratedKeyHolder();
+    jdbcTemplate.update(
+        connection -> {
+          PreparedStatement statement =
+              connection.prepareStatement(
+                  """
+                  insert into review_problem_items(
+                    review_record_id,
+                    reviewer_name,
+                    workload_hours,
+                    review_category,
+                    document_position,
+                    problem_category,
+                    problem_description,
+                    suggested_solution,
+                    owner_name,
+                    rejection_reason,
+                    problem_status,
+                    created_at,
+                    updated_at
+                  ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, current_timestamp, current_timestamp)
+                  """,
+                  new String[] {"id"});
+          statement.setLong(1, recordId);
+          statement.setString(2, normalizeText(request.reviewerName()));
+          statement.setBigDecimal(3, BigDecimal.valueOf(safeDouble(request.workloadHours())));
+          statement.setString(4, normalizeText(request.reviewCategory()));
+          statement.setString(5, normalizeNullableText(request.documentPosition()));
+          statement.setString(6, normalizeText(request.problemCategory()));
+          statement.setString(7, normalizeText(request.problemDescription()));
+          statement.setString(8, normalizeNullableText(request.suggestedSolution()));
+          statement.setString(9, normalizeNullableText(request.ownerName()));
+          statement.setString(10, normalizeNullableText(request.rejectionReason()));
+          statement.setString(11, normalizeText(request.problemStatus()));
+          return statement;
+        },
+        keyHolder);
+
+    Long itemId = keyHolder.getKey() == null ? null : keyHolder.getKey().longValue();
+    if (itemId == null) {
+      throw new IllegalStateException("创建评审问题失败");
+    }
+    touchRecord(recordId);
+    return getProblemItemOrThrow(recordId, itemId);
+  }
+
+  @Transactional
+  public ReviewDataProblemItemResponse updateProblemItem(
+      Long recordId, Long itemId, ReviewDataProblemItemSaveRequest request) {
+    assertRecordExists(recordId);
+    assertProblemItemExists(recordId, itemId);
+    jdbcTemplate.update(
+        """
+        update review_problem_items
+        set
+          reviewer_name = ?,
+          workload_hours = ?,
+          review_category = ?,
+          document_position = ?,
+          problem_category = ?,
+          problem_description = ?,
+          suggested_solution = ?,
+          owner_name = ?,
+          rejection_reason = ?,
+          problem_status = ?,
+          updated_at = current_timestamp
+        where id = ? and review_record_id = ?
+        """,
+        normalizeText(request.reviewerName()),
+        BigDecimal.valueOf(safeDouble(request.workloadHours())),
+        normalizeText(request.reviewCategory()),
+        normalizeNullableText(request.documentPosition()),
+        normalizeText(request.problemCategory()),
+        normalizeText(request.problemDescription()),
+        normalizeNullableText(request.suggestedSolution()),
+        normalizeNullableText(request.ownerName()),
+        normalizeNullableText(request.rejectionReason()),
+        normalizeText(request.problemStatus()),
+        itemId,
+        recordId);
+    touchRecord(recordId);
+    return getProblemItemOrThrow(recordId, itemId);
+  }
+
+  @Transactional
+  public void deleteProblemItem(Long recordId, Long itemId) {
+    assertRecordExists(recordId);
+    assertProblemItemExists(recordId, itemId);
+    jdbcTemplate.update(
+        """
+        update review_problem_items
+        set deleted = true, updated_at = current_timestamp
+        where id = ? and review_record_id = ?
+        """,
+        itemId,
+        recordId);
+    touchRecord(recordId);
   }
 
   private List<ReviewDataRecordRowResponse> loadRecords(
-      Long projectId,
+      String title,
       String projectName,
-      String repositoryName,
       String moduleName,
-      String reviewer,
-      String templateCode,
-      String targetBranch,
-      String recordStatus,
-      String keyword,
-      String mergeRequestIid,
-      String updatedAtStart,
-      String updatedAtEnd) {
-    StringBuilder sql = new StringBuilder(BASE_SQL);
+      String reviewOwner,
+      String reviewType,
+      String problemStatus,
+      String reviewExpert) {
+    StringBuilder sql = new StringBuilder(BASE_LIST_SQL);
     List<Object> args = new ArrayList<>();
 
-    appendEq(sql, args, "f.project_id", projectId);
-    appendContains(sql, args, "mr.project_name", projectName);
-    appendContains(sql, args, "mr.repository_name", repositoryName);
-    appendContains(sql, args, "mr.module_name", moduleName);
-    appendContains(sql, args, "f.reviewer", reviewer);
-    appendContains(sql, args, "f.template_code", templateCode);
-    appendContains(sql, args, "mr.target_branch", targetBranch);
-    appendMergeRequestIid(sql, args, mergeRequestIid);
-    appendUpdatedAtStart(sql, args, updatedAtStart);
-    appendUpdatedAtEnd(sql, args, updatedAtEnd);
-    appendRecordStatus(sql, args, recordStatus);
-    appendKeyword(sql, args, keyword);
+    appendContains(sql, args, "r.title", title);
+    appendContains(sql, args, "r.project_name", projectName);
+    appendContains(sql, args, "r.module_name", moduleName);
+    appendContains(sql, args, "r.review_owner", reviewOwner);
+    appendEqText(sql, args, "r.review_type", reviewType);
+    appendProblemStatusFilter(sql, args, problemStatus);
+    appendReviewExpertFilter(sql, args, reviewExpert);
 
-    return jdbcTemplate.query(sql.toString(), this::mapRow, args.toArray());
+    return jdbcTemplate.query(sql.toString(), this::mapRecordRow, args.toArray());
   }
 
-  private ReviewDataRecordRowResponse mapRow(ResultSet rs, int rowNum) throws SQLException {
-    int totalScore =
-        safeInt((Integer) rs.getObject("specification_score"))
-            + safeInt((Integer) rs.getObject("logic_score"))
-            + safeInt((Integer) rs.getObject("performance_score"))
-            + safeInt((Integer) rs.getObject("design_score"))
-            + safeInt((Integer) rs.getObject("other_score"));
-
+  private ReviewDataRecordRowResponse mapRecordRow(ResultSet rs, int rowNum) throws SQLException {
+    Integer reviewScalePages = (Integer) rs.getObject("review_scale_pages");
+    Integer problemCount = (Integer) rs.getObject("problem_count");
     return new ReviewDataRecordRowResponse(
         rs.getLong("id"),
-        rs.getLong("project_id"),
-        (Long) rs.getObject("merge_request_id"),
-        (Long) rs.getObject("merge_request_iid"),
-        TextQuerySupport.normalizeDisplay(rs.getString("form_title")),
-        TextQuerySupport.normalizeDisplay(rs.getString("template_code")),
-        TextQuerySupport.normalizeDisplay(rs.getString("reviewer")),
-        (Integer) rs.getObject("review_duration_minutes"),
-        totalScore,
-        (Integer) rs.getObject("specification_score"),
-        (Integer) rs.getObject("logic_score"),
-        (Integer) rs.getObject("performance_score"),
-        (Integer) rs.getObject("design_score"),
-        (Integer) rs.getObject("other_score"),
-        TextQuerySupport.normalizeDisplay(rs.getString("remark")),
-        rs.getBoolean("deleted"),
         TextQuerySupport.normalizeDisplay(rs.getString("project_name")),
-        TextQuerySupport.normalizeDisplay(rs.getString("repository_name")),
-        TextQuerySupport.normalizeDisplay(rs.getString("merge_request_title")),
+        TextQuerySupport.normalizeDisplay(rs.getString("title")),
         TextQuerySupport.normalizeDisplay(rs.getString("module_name")),
-        TextQuerySupport.normalizeDisplay(rs.getString("target_branch")),
-        toDouble(rs.getObject("comment_rate")),
-        (Integer) rs.getObject("defect_count"),
-        (Integer) rs.getObject("added_lines"),
-        rs.getTimestamp("created_at") == null ? null : rs.getTimestamp("created_at").toLocalDateTime(),
+        TextQuerySupport.normalizeDisplay(rs.getString("review_type")),
+        rs.getDate("review_date") == null ? null : rs.getDate("review_date").toLocalDate(),
+        TextQuerySupport.normalizeDisplay(rs.getString("review_owner")),
+        TextQuerySupport.normalizeDisplay(rs.getString("review_experts_summary")),
+        reviewScalePages,
+        TextQuerySupport.normalizeDisplay(rs.getString("review_product")),
+        TextQuerySupport.normalizeDisplay(rs.getString("author_name")),
+        TextQuerySupport.normalizeDisplay(rs.getString("review_version")),
+        problemCount == null ? 0 : problemCount,
+        calculateProblemDensity(problemCount, reviewScalePages),
+        rs.getTimestamp("updated_at") == null ? null : rs.getTimestamp("updated_at").toLocalDateTime(),
+        rs.getBoolean("deleted"));
+  }
+
+  private ReviewDataProblemItemResponse mapProblemItem(ResultSet rs, int rowNum) throws SQLException {
+    return new ReviewDataProblemItemResponse(
+        rs.getLong("id"),
+        rs.getLong("review_record_id"),
+        TextQuerySupport.normalizeDisplay(rs.getString("reviewer_name")),
+        rs.getBigDecimal("workload_hours") == null
+            ? 0D
+            : rs.getBigDecimal("workload_hours").doubleValue(),
+        TextQuerySupport.normalizeDisplay(rs.getString("review_category")),
+        TextQuerySupport.normalizeDisplay(rs.getString("document_position")),
+        TextQuerySupport.normalizeDisplay(rs.getString("problem_category")),
+        TextQuerySupport.normalizeDisplay(rs.getString("problem_description")),
+        TextQuerySupport.normalizeDisplay(rs.getString("suggested_solution")),
+        TextQuerySupport.normalizeDisplay(rs.getString("owner_name")),
+        TextQuerySupport.normalizeDisplay(rs.getString("rejection_reason")),
+        TextQuerySupport.normalizeDisplay(rs.getString("problem_status")),
         rs.getTimestamp("updated_at") == null ? null : rs.getTimestamp("updated_at").toLocalDateTime());
   }
 
   private ReviewDataSummaryResponse buildSummary(List<ReviewDataRecordRowResponse> rows) {
     long totalRecords = rows.size();
-    long activeRecords = rows.stream().filter(row -> !row.deleted()).count();
-    long deletedRecords = totalRecords - activeRecords;
-
-    double averageDurationMinutes =
-        average(rows.stream().map(ReviewDataRecordRowResponse::reviewDurationMinutes).toList());
-    double averageTotalScore =
-        average(rows.stream().map(ReviewDataRecordRowResponse::totalScore).toList());
-    double averageCommentRate =
-        average(rows.stream().map(ReviewDataRecordRowResponse::commentRate).toList());
-
+    long totalProblemItems =
+        rows.stream().map(ReviewDataRecordRowResponse::problemCount).filter(Objects::nonNull).mapToLong(Integer::longValue).sum();
+    double averageReviewScalePages =
+        average(rows.stream().map(ReviewDataRecordRowResponse::reviewScalePages).toList());
+    double averageProblemCount =
+        average(rows.stream().map(ReviewDataRecordRowResponse::problemCount).toList());
     return new ReviewDataSummaryResponse(
-        totalRecords,
-        activeRecords,
-        deletedRecords,
-        averageDurationMinutes,
-        averageTotalScore,
-        averageCommentRate);
+        totalRecords, totalProblemItems, averageReviewScalePages, averageProblemCount);
   }
 
   private double average(List<? extends Number> values) {
     List<Double> normalized =
-        values.stream()
-            .filter(value -> value != null)
-            .map(Number::doubleValue)
-            .toList();
+        values.stream().filter(Objects::nonNull).map(Number::doubleValue).toList();
     if (normalized.isEmpty()) {
       return 0D;
     }
     return normalized.stream().mapToDouble(Double::doubleValue).average().orElse(0D);
   }
 
-  private List<OptionItemResponse> toOptions(
-      List<ReviewDataRecordRowResponse> rows,
-      Function<ReviewDataRecordRowResponse, String> extractor) {
-    Set<String> values = new LinkedHashSet<>();
-    rows.forEach(
-        row -> {
-          String value = TextQuerySupport.trimToNull(extractor.apply(row));
-          if (value != null) {
-            values.add(value);
-          }
-        });
-    return values.stream().map(value -> new OptionItemResponse(value, value)).toList();
+  private List<OptionItemResponse> toOptions(List<String> values) {
+    Set<String> distinct = new LinkedHashSet<>();
+    values.stream().map(TextQuerySupport::trimToNull).filter(Objects::nonNull).forEach(distinct::add);
+    return distinct.stream().map(value -> new OptionItemResponse(value, value)).toList();
   }
 
-  private void appendEq(StringBuilder sql, List<Object> args, String column, Long value) {
-    if (value == null || value <= 0) {
-      return;
+  private List<OptionItemResponse> loadExpertOptions() {
+    List<String> experts =
+        jdbcTemplate.query(
+            """
+            select distinct expert_name
+            from review_record_experts
+            where deleted = false and coalesce(expert_name, '') <> ''
+            order by expert_name asc
+            """,
+            (rs, rowNum) -> rs.getString("expert_name"));
+    return toOptions(experts);
+  }
+
+  private List<String> listRecordExperts(Long recordId) {
+    return jdbcTemplate.query(
+        """
+        select expert_name
+        from review_record_experts
+        where review_record_id = ? and deleted = false
+        order by sort_order asc, id asc
+        """,
+        (rs, rowNum) -> rs.getString("expert_name"),
+        recordId);
+  }
+
+  private ReviewDataRecordRowResponse getRecordOrThrow(Long recordId) {
+    try {
+      return jdbcTemplate.queryForObject(
+          BASE_LIST_SQL + " and r.id = ?",
+          this::mapRecordRow,
+          recordId);
+    } catch (EmptyResultDataAccessException exception) {
+      throw new IllegalArgumentException("评审记录不存在: " + recordId);
     }
-    sql.append(" and ").append(column).append(" = ?");
-    args.add(value);
+  }
+
+  private ReviewDataProblemItemResponse getProblemItemOrThrow(Long recordId, Long itemId) {
+    try {
+      return jdbcTemplate.queryForObject(
+          """
+          select
+            id,
+            review_record_id,
+            reviewer_name,
+            workload_hours,
+            review_category,
+            document_position,
+            problem_category,
+            problem_description,
+            suggested_solution,
+            owner_name,
+            rejection_reason,
+            problem_status,
+            updated_at
+          from review_problem_items
+          where id = ? and review_record_id = ? and deleted = false
+          """,
+          this::mapProblemItem,
+          itemId,
+          recordId);
+    } catch (EmptyResultDataAccessException exception) {
+      throw new IllegalArgumentException("评审问题不存在: " + itemId);
+    }
+  }
+
+  private void assertRecordExists(Long recordId) {
+    Integer exists =
+        jdbcTemplate.queryForObject(
+            "select count(*) from review_records where id = ? and deleted = false",
+            Integer.class,
+            recordId);
+    if (exists == null || exists == 0) {
+      throw new IllegalArgumentException("评审记录不存在: " + recordId);
+    }
+  }
+
+  private void assertProblemItemExists(Long recordId, Long itemId) {
+    Integer exists =
+        jdbcTemplate.queryForObject(
+            """
+            select count(*)
+            from review_problem_items
+            where review_record_id = ? and id = ? and deleted = false
+            """,
+            Integer.class,
+            recordId,
+            itemId);
+    if (exists == null || exists == 0) {
+      throw new IllegalArgumentException("评审问题不存在: " + itemId);
+    }
+  }
+
+  private void replaceExperts(Long recordId, List<String> experts) {
+    jdbcTemplate.update("delete from review_record_experts where review_record_id = ?", recordId);
+    List<String> normalized =
+        experts == null
+            ? List.of()
+            : experts.stream()
+                .map(TextQuerySupport::trimToNull)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+    for (int index = 0; index < normalized.size(); index++) {
+      jdbcTemplate.update(
+          """
+          insert into review_record_experts(
+            review_record_id,
+            expert_name,
+            sort_order,
+            deleted,
+            created_at,
+            updated_at
+          ) values (?, ?, ?, false, current_timestamp, current_timestamp)
+          """,
+          recordId,
+          normalized.get(index),
+          index);
+    }
+  }
+
+  private void touchRecord(Long recordId) {
+    jdbcTemplate.update(
+        "update review_records set updated_at = current_timestamp where id = ?",
+        recordId);
   }
 
   private void appendContains(StringBuilder sql, List<Object> args, String column, String value) {
@@ -281,141 +607,145 @@ public class ReviewDataRecordService {
     args.add("%" + normalized.toLowerCase(Locale.ROOT) + "%");
   }
 
-  private void appendMergeRequestIid(StringBuilder sql, List<Object> args, String value) {
+  private void appendEqText(StringBuilder sql, List<Object> args, String column, String value) {
     String normalized = TextQuerySupport.trimToNull(value);
     if (normalized == null) {
       return;
     }
-    sql.append(" and coalesce(mr.merge_request_iid, f.request_iid) = ?");
-    args.add(Long.parseLong(normalized));
+    sql.append(" and ").append(column).append(" = ?");
+    args.add(normalized);
   }
 
-  private void appendUpdatedAtStart(StringBuilder sql, List<Object> args, String value) {
-    LocalDate date = parseDate(value);
-    if (date == null) {
-      return;
-    }
-    sql.append(" and f.updated_at >= ?");
-    args.add(date.atStartOfDay());
-  }
-
-  private void appendUpdatedAtEnd(StringBuilder sql, List<Object> args, String value) {
-    LocalDate date = parseDate(value);
-    if (date == null) {
-      return;
-    }
-    sql.append(" and f.updated_at < ?");
-    args.add(date.plusDays(1).atStartOfDay());
-  }
-
-  private void appendRecordStatus(StringBuilder sql, List<Object> args, String value) {
-    String normalized = TextQuerySupport.trimToNull(value);
-    if ("ACTIVE".equalsIgnoreCase(normalized)) {
-      sql.append(" and f.deleted = false");
-      return;
-    }
-    if ("DELETED".equalsIgnoreCase(normalized)) {
-      sql.append(" and f.deleted = true");
-    }
-  }
-
-  private void appendKeyword(StringBuilder sql, List<Object> args, String keyword) {
-    String normalized = TextQuerySupport.trimToNull(keyword);
+  private void appendProblemStatusFilter(StringBuilder sql, List<Object> args, String problemStatus) {
+    String normalized = TextQuerySupport.trimToNull(problemStatus);
     if (normalized == null) {
       return;
     }
-    sql.append("""
-         and (
-           lower(coalesce(f.form_title, '')) like ?
-           or lower(coalesce(f.reviewer, '')) like ?
-           or lower(coalesce(f.remark, '')) like ?
-           or lower(coalesce(mr.title, '')) like ?
-           or lower(coalesce(mr.project_name, '')) like ?
-           or lower(coalesce(mr.repository_name, '')) like ?
-           or lower(coalesce(mr.module_name, '')) like ?
-         )
+    sql.append(
+        """
+         and exists (
+          select 1
+          from review_problem_items problem_filter
+          where problem_filter.review_record_id = r.id
+            and problem_filter.deleted = false
+            and problem_filter.problem_status = ?
+        )
         """);
-    String like = "%" + normalized.toLowerCase(Locale.ROOT) + "%";
-    args.add(like);
-    args.add(like);
-    args.add(like);
-    args.add(like);
-    args.add(like);
-    args.add(like);
-    args.add(like);
+    args.add(normalized);
+  }
+
+  private void appendReviewExpertFilter(StringBuilder sql, List<Object> args, String reviewExpert) {
+    String normalized = TextQuerySupport.trimToNull(reviewExpert);
+    if (normalized == null) {
+      return;
+    }
+    sql.append(
+        """
+         and exists (
+          select 1
+          from review_record_experts expert_filter
+          where expert_filter.review_record_id = r.id
+            and expert_filter.deleted = false
+            and expert_filter.expert_name = ?
+        )
+        """);
+    args.add(normalized);
   }
 
   private Comparator<ReviewDataRecordRowResponse> buildComparator(String sortField, String sortOrder) {
     Comparator<ReviewDataRecordRowResponse> comparator =
         switch (sortField) {
-          case "projectName" -> comparingString(ReviewDataRecordRowResponse::projectName);
-          case "repositoryName" -> comparingString(ReviewDataRecordRowResponse::repositoryName);
-          case "reviewer" -> comparingString(ReviewDataRecordRowResponse::reviewer);
-          case "moduleName" -> comparingString(ReviewDataRecordRowResponse::moduleName);
-          case "reviewDurationMinutes" -> comparingNumber(ReviewDataRecordRowResponse::reviewDurationMinutes);
-          case "totalScore" -> comparingNumber(ReviewDataRecordRowResponse::totalScore);
-          case "commentRate" -> comparingNumber(ReviewDataRecordRowResponse::commentRate);
-          case "defectCount" -> comparingNumber(ReviewDataRecordRowResponse::defectCount);
-          case "addedLines" -> comparingNumber(ReviewDataRecordRowResponse::addedLines);
-          case "createdAt" -> Comparator.comparing(ReviewDataRecordRowResponse::createdAt, Comparator.nullsLast(LocalDateTime::compareTo));
-          case "updatedAt" -> Comparator.comparing(ReviewDataRecordRowResponse::updatedAt, Comparator.nullsLast(LocalDateTime::compareTo));
-          default -> Comparator.comparing(ReviewDataRecordRowResponse::updatedAt, Comparator.nullsLast(LocalDateTime::compareTo));
+          case "projectName" ->
+              Comparator.comparing(
+                  ReviewDataRecordRowResponse::projectName,
+                  Comparator.nullsLast(String.CASE_INSENSITIVE_ORDER));
+          case "moduleName" ->
+              Comparator.comparing(
+                  ReviewDataRecordRowResponse::moduleName,
+                  Comparator.nullsLast(String.CASE_INSENSITIVE_ORDER));
+          case "reviewType" ->
+              Comparator.comparing(
+                  ReviewDataRecordRowResponse::reviewType,
+                  Comparator.nullsLast(String.CASE_INSENSITIVE_ORDER));
+          case "reviewDate" ->
+              Comparator.comparing(
+                  ReviewDataRecordRowResponse::reviewDate, Comparator.nullsLast(LocalDate::compareTo));
+          case "reviewOwner" ->
+              Comparator.comparing(
+                  ReviewDataRecordRowResponse::reviewOwner,
+                  Comparator.nullsLast(String.CASE_INSENSITIVE_ORDER));
+          case "reviewScalePages" ->
+              Comparator.comparing(
+                  ReviewDataRecordRowResponse::reviewScalePages, Comparator.nullsLast(Integer::compareTo));
+          case "problemCount" ->
+              Comparator.comparing(
+                  ReviewDataRecordRowResponse::problemCount, Comparator.nullsLast(Integer::compareTo));
+          case "problemDensity" ->
+              Comparator.comparing(
+                  ReviewDataRecordRowResponse::problemDensity, Comparator.nullsLast(Double::compareTo));
+          case "updatedAt" ->
+              Comparator.comparing(
+                  ReviewDataRecordRowResponse::updatedAt,
+                  Comparator.nullsLast(LocalDateTime::compareTo));
+          default ->
+              Comparator.comparing(
+                  ReviewDataRecordRowResponse::title,
+                  Comparator.nullsLast(String.CASE_INSENSITIVE_ORDER));
         };
-    return "asc".equalsIgnoreCase(sortOrder) ? comparator : comparator.reversed();
+    if ("desc".equalsIgnoreCase(sortOrder)) {
+      comparator = comparator.reversed();
+    }
+    return comparator.thenComparing(ReviewDataRecordRowResponse::id, Comparator.nullsLast(Long::compareTo));
   }
 
-  private Comparator<ReviewDataRecordRowResponse> comparingString(Function<ReviewDataRecordRowResponse, String> extractor) {
-    return Comparator.comparing(
-        row -> TextQuerySupport.normalizeDisplay(extractor.apply(row)).toLowerCase(Locale.ROOT),
-        Comparator.nullsLast(String::compareTo));
-  }
-
-  private Comparator<ReviewDataRecordRowResponse> comparingNumber(Function<ReviewDataRecordRowResponse, ? extends Number> extractor) {
-    return Comparator.comparing(
-        row -> extractor.apply(row) == null ? null : extractor.apply(row).doubleValue(),
-        Comparator.nullsLast(Double::compareTo));
-  }
-
-  private String normalizeSortField(String value) {
-    return switch (TextQuerySupport.normalizeDisplay(value)) {
-      case "projectName",
-          "repositoryName",
-          "reviewer",
+  private String normalizeSortField(String sortField) {
+    String normalized = TextQuerySupport.trimToNull(sortField);
+    if (normalized == null) {
+      return "updatedAt";
+    }
+    return switch (normalized) {
+      case "title",
+          "projectName",
           "moduleName",
-          "reviewDurationMinutes",
-          "totalScore",
-          "commentRate",
-          "defectCount",
-          "addedLines",
-          "createdAt",
-          "updatedAt" -> value;
+          "reviewType",
+          "reviewDate",
+          "reviewOwner",
+          "reviewScalePages",
+          "problemCount",
+          "problemDensity",
+          "updatedAt" -> normalized;
       default -> "updatedAt";
     };
   }
 
-  private String normalizeSortOrder(String value) {
-    return "asc".equalsIgnoreCase(value) ? "asc" : "desc";
+  private String normalizeSortOrder(String sortOrder) {
+    String normalized = TextQuerySupport.trimToNull(sortOrder);
+    if ("asc".equalsIgnoreCase(normalized)) {
+      return "asc";
+    }
+    return "desc";
   }
 
-  private LocalDate parseDate(String value) {
-    String normalized = TextQuerySupport.trimToNull(value);
-    if (normalized == null) {
-      return null;
+  private Double calculateProblemDensity(Integer problemCount, Integer reviewScalePages) {
+    if (problemCount == null || reviewScalePages == null || reviewScalePages <= 0) {
+      return 0D;
     }
-    return LocalDate.parse(normalized);
+    return problemCount.doubleValue() / reviewScalePages.doubleValue();
+  }
+
+  private String normalizeText(String value) {
+    return Objects.requireNonNullElse(TextQuerySupport.trimToNull(value), "");
+  }
+
+  private String normalizeNullableText(String value) {
+    return TextQuerySupport.trimToNull(value);
   }
 
   private int safeInt(Integer value) {
-    return value == null ? 0 : value;
+    return value == null ? 0 : Math.max(value, 0);
   }
 
-  private Double toDouble(Object value) {
-    if (value == null) {
-      return null;
-    }
-    if (value instanceof Number number) {
-      return number.doubleValue();
-    }
-    return Double.valueOf(String.valueOf(value));
+  private double safeDouble(Double value) {
+    return value == null ? 0D : Math.max(value, 0D);
   }
 }

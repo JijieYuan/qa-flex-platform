@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, useSlots, watch } from 'vue';
 import { Refresh, Search } from '@element-plus/icons-vue';
+import SmartSelect from './SmartSelect.vue';
 import type {
   RecordTableActiveFilterTag,
   RecordTableColumn,
@@ -18,6 +19,8 @@ const props = withDefaults(
     page: number;
     pageSize: number;
     total: number;
+    rowKey?: string;
+    expandedRowKeys?: Array<string | number>;
     pageSizeOptions?: number[];
     searchPlaceholder?: string;
     emptyDescription?: string;
@@ -34,6 +37,8 @@ const props = withDefaults(
     loading: false,
     keyword: '',
     pageSizeOptions: () => [10, 20, 50, 100],
+    rowKey: 'id',
+    expandedRowKeys: () => [],
     searchPlaceholder: '请输入关键字搜索',
     emptyDescription: '当前暂无可展示记录',
     showSearch: true,
@@ -58,6 +63,7 @@ const emit = defineEmits<{
   (event: 'query'): void;
   (event: 'clear-filter', key: string): void;
   (event: 'update:advancedVisible', value: boolean): void;
+  (event: 'expand-change', row: Record<string, unknown>, expandedRows: Record<string, unknown>[]): void;
 }>();
 
 const keywordDraft = ref(props.keyword);
@@ -71,6 +77,7 @@ watch(
 
 const slots = useSlots();
 const hasRowActions = computed(() => Boolean(slots['row-actions']));
+const hasExpand = computed(() => Boolean(slots.expand));
 const hasPrimaryFilters = computed(() => props.primaryFilters.length > 0);
 const hasAdvancedFilters = computed(() => props.advancedFilters.length > 0);
 const hasActiveFilterTags = computed(() => props.activeFilterTags.length > 0);
@@ -147,6 +154,10 @@ function handleFilterChange(key: string, value: string | string[] | null) {
   emit('filter-change', { key, value });
 }
 
+function handleExpandChange(row: Record<string, unknown>, expandedRows: Record<string, unknown>[]) {
+  emit('expand-change', row, expandedRows);
+}
+
 function toggleAdvancedVisible() {
   emit('update:advancedVisible', !props.advancedVisible);
 }
@@ -172,21 +183,16 @@ function getFilterValue(key: string) {
             @clear="handleFilterChange(filter.key, '')"
           />
 
-          <el-select
+          <SmartSelect
             v-else-if="filter.type === 'select'"
             :model-value="String(getFilterValue(filter.key) ?? '')"
             class="record-filter-select"
             :style="{ width: `${filter.width ?? 180}px` }"
             :placeholder="filter.placeholder || filter.label"
+            :options="filter.options ?? []"
+            :compact="filter.selectMode === 'compact'"
             @change="handleFilterChange(filter.key, String($event ?? ''))"
-          >
-            <el-option
-              v-for="option in filter.options ?? []"
-              :key="option.value"
-              :label="option.label"
-              :value="option.value"
-            />
-          </el-select>
+          />
 
           <el-date-picker
             v-else-if="filter.type === 'daterange'"
@@ -217,6 +223,7 @@ function getFilterValue(key: string) {
         </el-input>
 
         <div class="record-filter-primary-actions">
+          <slot name="primary-actions" />
           <el-button v-if="hasAdvancedFilters" @click="toggleAdvancedVisible">
             {{ advancedVisible ? '收起高级筛选' : '高级筛选' }}
           </el-button>
@@ -239,21 +246,16 @@ function getFilterValue(key: string) {
               @clear="handleFilterChange(filter.key, '')"
             />
 
-            <el-select
+            <SmartSelect
               v-else-if="filter.type === 'select'"
               :model-value="String(getFilterValue(filter.key) ?? '')"
               class="record-filter-select"
               :style="{ width: `${filter.width ?? 168}px` }"
               :placeholder="filter.placeholder || filter.label"
+              :options="filter.options ?? []"
+              :compact="filter.selectMode === 'compact'"
               @change="handleFilterChange(filter.key, String($event ?? ''))"
-            >
-              <el-option
-                v-for="option in filter.options ?? []"
-                :key="option.value"
-                :label="option.label"
-                :value="option.value"
-              />
-            </el-select>
+            />
           </template>
         </div>
       </el-collapse-transition>
@@ -288,11 +290,20 @@ function getFilterValue(key: string) {
       <el-table
         v-loading="loading"
         :data="rows"
+        :row-key="rowKey"
+        :expand-row-keys="expandedRowKeys"
         border
         stripe
         class="record-table"
         @sort-change="emit('sort-change', $event)"
+        @expand-change="handleExpandChange"
       >
+        <el-table-column v-if="hasExpand" type="expand" width="42">
+          <template #default="{ row }">
+            <slot name="expand" :row="row" />
+          </template>
+        </el-table-column>
+
         <el-table-column
           v-for="column in columns"
           :key="column.key"
@@ -389,8 +400,7 @@ function getFilterValue(key: string) {
   padding: 14px;
   border: 1px solid rgba(15, 23, 42, 0.08);
   border-radius: 16px;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.98));
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.98));
   box-shadow:
     0 1px 2px rgba(15, 23, 42, 0.04),
     0 12px 28px rgba(15, 23, 42, 0.04);
@@ -424,11 +434,10 @@ function getFilterValue(key: string) {
   gap: 8px;
   flex-wrap: wrap;
   margin-top: 12px;
-  padding-top: 12px;
-  border-top: 1px dashed rgba(15, 23, 42, 0.08);
-  background: rgba(248, 250, 252, 0.88);
-  border-radius: 12px;
   padding: 12px;
+  border-top: 1px dashed rgba(15, 23, 42, 0.08);
+  border-radius: 12px;
+  background: rgba(248, 250, 252, 0.88);
 }
 
 .record-filter-main-date {
@@ -547,21 +556,5 @@ function getFilterValue(key: string) {
 
 :deep(.el-table th.el-table__cell) {
   background: linear-gradient(180deg, #f8fafc, #f1f5f9);
-}
-
-:deep(.el-table .cell) {
-  font-size: 13px;
-}
-
-:deep(.el-empty) {
-  padding: 48px 0 56px;
-}
-
-:deep(.el-empty__description p) {
-  color: rgba(15, 23, 42, 0.5);
-}
-
-:deep(.el-button + .el-button) {
-  margin-left: 0;
 }
 </style>
