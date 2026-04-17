@@ -18,6 +18,17 @@
 新增脚本：
 
 - `scripts/seed-local-review-data-management-demo.sql`
+- `scripts/seed-local-review-data-management-demo.py`
+
+推荐本地执行入口改为 Python 脚本：
+
+- `python scripts/seed-local-review-data-management-demo.py`
+
+这样做的原因是：
+
+- 评审演示数据已切成中文
+- 当前 Windows 控制台到 `psql` 的编码链路不稳定
+- 通过平台自己的评审 API 写入，更接近真实使用路径，也更稳
 
 脚本会补充三类演示数据：
 
@@ -59,6 +70,17 @@
 3. 点击页面上的“刷新”
 4. 先通过“新增评审”录入主记录
 5. 再展开某条记录，在“评审问题清单”里继续新增、编辑、删除
+
+## 额外补充：首字母搜索修正
+
+本轮还修正了 `SmartSelect` 的搜索匹配逻辑：
+
+- 中文姓名支持拼音首字母匹配
+- 例如：`王强` 输入 `wq` 可命中
+- 同时继续保留：
+  - 原文匹配
+  - 全拼匹配
+  - 英文单词首字母匹配
 
 ## 本轮结论不变
 

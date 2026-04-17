@@ -20,8 +20,11 @@
 ## 2. 本轮落地项
 
 1. 新增本地种子脚本
-   - 文件：`scripts/seed-local-review-data-management-demo.sql`
+   - 文件：
+     - `scripts/seed-local-review-data-management-demo.sql`
+     - `scripts/seed-local-review-data-management-demo.py`
    - 目标：快速生成主记录、评审专家、评审问题清单
+   - 说明：中文演示数据优先通过 Python 脚本走平台 API 写入，规避本地终端到 `psql` 的编码不稳定问题
 
 2. 恢复刷新按钮
    - 页面：`frontend/src/views/ReviewDataManagementView.vue`
@@ -38,6 +41,13 @@
      - `docs/current-state/2026-04-17-review-data-management-update.md`
      - `docs/current-state/2026-04-07-current-project-state.md`
 
+5. 修正首字母搜索
+   - 文件：
+     - `frontend/src/components/base/SmartSelect.vue`
+     - `frontend/src/components/base/smart-select-search.ts`
+     - `frontend/src/components/base/smart-select-search.test.ts`
+   - 目标：保证中文姓名支持真实拼音首字母匹配，例如 `王强 -> wq`
+
 ## 3. 验证
 
 - 前端：
@@ -45,4 +55,3 @@
   - `npm run build`
 - 数据：
   - 执行 seed 后，`review_records / review_record_experts / review_problem_items` 均存在演示数据
-

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
-import { pinyin } from 'pinyin-pro';
 import type { RecordTableFilterOption } from '../../types/record-table';
+import { matchesSmartSelectOption } from './smart-select-search';
 
 const props = withDefaults(
   defineProps<{
@@ -59,18 +59,7 @@ function handleChange(value: string | string[]) {
 }
 
 function matchesOption(option: RecordTableFilterOption, normalizedQuery: string) {
-  const label = option.label.toLowerCase();
-  const value = option.value.toLowerCase();
-  const spell = pinyin(option.label, { toneType: 'none', type: 'string' }).replace(/\s+/g, '').toLowerCase();
-  const initials = pinyin(option.label, { pattern: 'first', toneType: 'none', type: 'string' })
-    .replace(/\s+/g, '')
-    .toLowerCase();
-  return (
-    label.includes(normalizedQuery) ||
-    value.includes(normalizedQuery) ||
-    spell.includes(normalizedQuery) ||
-    initials.includes(normalizedQuery)
-  );
+  return matchesSmartSelectOption(option, normalizedQuery);
 }
 </script>
 
