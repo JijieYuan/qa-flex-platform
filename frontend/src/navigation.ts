@@ -66,12 +66,12 @@ export const modules: ShellModule[] = [
     label: '评审数据',
     icon: Document,
     title: '评审数据',
-    description: '预留后续评审数据管理与统计分析页面。',
+    description: '承载评审记录查看、筛选和详情复核的记录类页面。',
     pages: [
       {
         key: 'review-data-home',
-        label: '评审数据',
-        description: '当前模块暂未接入正式业务页面。',
+        label: '评审数据管理',
+        description: '展示评审记录、评分，以及关联的外部指标与更新情况。',
         path: '/review-data/home',
       },
     ],

@@ -9,6 +9,7 @@ import ModulePlaceholderView from './views/ModulePlaceholderView.vue';
 import NotFoundView from './views/NotFoundView.vue';
 import CollectFormView from './views/CollectFormView.vue';
 import CodeReviewIllegalRecordsView from './views/CodeReviewIllegalRecordsView.vue';
+import ReviewDataManagementView from './views/ReviewDataManagementView.vue';
 
 declare module 'vue-router' {
   interface RouteMeta {
@@ -56,12 +57,30 @@ const routes: RouteRecordRaw[] = [
   },
   {
     path: '/review-data/home',
-    component: ModulePlaceholderView,
+    component: ReviewDataManagementView,
     meta: {
       moduleKey: 'review-data',
       pageKey: 'review-data-home',
       title: pageByKey.get('review-data-home')!.label,
       description: pageByKey.get('review-data-home')!.description,
+      allowedQueryKeys: [
+        'page',
+        'pageSize',
+        'sortBy',
+        'sortOrder',
+        'projectId',
+        'projectName',
+        'repositoryName',
+        'moduleName',
+        'reviewer',
+        'templateCode',
+        'targetBranch',
+        'recordStatus',
+        'keyword',
+        'mergeRequestIid',
+        'updatedAtStart',
+        'updatedAtEnd',
+      ],
       persistedQueryKeys: ['projectId'],
     },
   },
