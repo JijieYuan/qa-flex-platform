@@ -19,11 +19,6 @@ import {
   type CodeReviewDemoRule,
 } from './code-review-rule-demo';
 import { useRuleConfigState } from './useRuleConfigState';
-import {
-  RuleGroupOperator,
-  RuleNodeType,
-  type RuleExpressionNode,
-} from './rule-config-core';
 
 const {
   route,
@@ -213,19 +208,11 @@ const demoMatchedRows = computed(() => {
 
 const demoHasConditions = computed(() => demoRuleState.rules.value.length > 0);
 const demoMatchedCount = computed(() => demoMatchedRows.value.length);
-const demoRulePreviewCards = computed(() =>
-  demoRuleState.rules.value.map((rule, index) => ({
-    id: rule.id,
-    title: `条件组 ${index + 1}`,
-    description: describeExpression(rule.expression),
-    outputCount: codeReviewRuleConfigDemoSupport.countMatches(rows.value, rule, demoRuleFields.value),
-  })),
-);
 const demoRuleSummaryText = computed(() => {
   if (!demoRuleState.enabled.value || !demoHasConditions.value) {
-    return '当前未启用 Demo 规则，本页仍展示后端返回的原始结果。';
+    return '预览未启用，当前列表保持后端返回结果。';
   }
-  return `当前页已加载 ${rows.value.length} 条记录，Demo 规则命中 ${demoMatchedCount.value} 条。`;
+  return `当前页已加载 ${rows.value.length} 条记录，筛选后命中 ${demoMatchedCount.value} 条。`;
 });
 const demoSelectedRule = computed(() =>
   demoRuleState.rules.value.find((rule) => rule.id === selectedDemoRuleId.value) ?? null,
@@ -247,7 +234,7 @@ const demoSelectedRuleTitle = computed(() => {
 });
 const tableEmptyDescription = computed(() =>
   demoRuleState.enabled.value && demoHasConditions.value
-    ? '当前页数据未命中 Demo 规则，请调整字段、关系或取值。'
+    ? '当前页数据未命中筛选条件，请调整字段、关系或取值。'
     : '当前筛选条件下没有查询到非法记录。',
 );
 
@@ -320,31 +307,6 @@ const ruleConfigTitle = computed(() => (ruleExplanation.value?.title || '代码�
 
 function demoRuleMatchCount(rule: CodeReviewDemoRule) {
   return codeReviewRuleConfigDemoSupport.countMatches(rows.value, rule, demoRuleFields.value);
-}
-
-function demoRuleSentence(rule: CodeReviewDemoRule) {
-  return describeExpression(rule.expression);
-}
-
-function describeExpression(node: RuleExpressionNode): string {
-  if (node.type === RuleNodeType.CONDITION) {
-    const field = demoRuleFields.value.find((item) => item.key === node.fieldKey);
-    const fieldLabel = field?.label ?? '字段';
-    const operatorLabel = codeReviewRuleConfigDemoSupport.operatorLabel(node.operator);
-    if (!codeReviewRuleConfigDemoSupport.usesValueInput(node.operator)) {
-      return `${fieldLabel}${operatorLabel}`;
-    }
-    return `${fieldLabel}${operatorLabel}${node.value || '未填写'}`;
-  }
-  const childDescriptions = node.children.map((child) => describeExpression(child)).filter(Boolean);
-  if (!childDescriptions.length) {
-    return '当前条件组还没有配置条件';
-  }
-  if (childDescriptions.length === 1) {
-    return childDescriptions[0];
-  }
-  const joiner = node.operator === RuleGroupOperator.AND ? ' 且 ' : ' 或 ';
-  return `(${childDescriptions.join(joiner)})`;
 }
 
 function ensureDemoRulesInitialized() {
@@ -719,50 +681,48 @@ function metricFormulaSummary(metric: { label: string; definition: string; formu
     >
       <template #header>
         <div class="record-detail-header">
-          <div class="record-detail-header-main">
-            <div class="record-detail-header-kicker">规则配置</div>
-            <div class="record-detail-header-title">{{ ruleConfigTitle }}</div>
-            <div class="record-detail-header-meta">
-              <span class="record-detail-meta-item">版本 {{ ruleExplanation?.version || '-' }}</span>
-              <span class="record-detail-meta-dot" />
-              <span class="record-detail-meta-item">前端 Demo</span>
+              <div class="record-detail-header-main">
+                <div class="record-detail-header-kicker">规则配置</div>
+                <div class="record-detail-header-title">{{ ruleConfigTitle }}</div>
+                <div class="record-detail-header-meta">
+                  <span class="record-detail-meta-item">版本 {{ ruleExplanation?.version || '-' }}</span>
+                  <span class="record-detail-meta-dot" />
+                  <span class="record-detail-meta-item">预览模式</span>
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
       </template>
 
       <div v-loading="ruleExplanationLoading" class="record-rule-panel">
         <section class="record-detail-section">
           <div class="record-detail-section-title">组合筛选</div>
-          <div class="rule-refactor-panel">
-            <div class="rule-refactor-toolbar">
-              <div class="rule-refactor-toolbar-main">
-                <div class="rule-refactor-title">非法记录筛选</div>
-                <div class="rule-refactor-subtitle">{{ demoRuleSummaryText }}</div>
+          <div class="rule-editor-panel">
+            <div class="rule-editor-toolbar">
+              <div class="rule-editor-toolbar-main">
+                <div class="rule-editor-title">非法记录筛选</div>
+                <div class="rule-editor-subtitle">{{ demoRuleSummaryText }}</div>
               </div>
-              <div class="rule-refactor-toolbar-actions">
-                <el-switch
-                  v-model="demoRuleState.enabled.value"
-                  inline-prompt
-                  active-text="预览开"
-                  inactive-text="预览关"
-                />
+              <div class="rule-editor-toolbar-actions">
+                <div class="rule-editor-switch">
+                  <span class="rule-editor-switch-label">预览</span>
+                  <el-switch v-model="demoRuleState.enabled.value" />
+                </div>
                 <el-button size="small" :icon="Plus" @click="addDemoRule">新增条件组</el-button>
                 <el-button size="small" text @click="resetDemoRules">恢复默认</el-button>
               </div>
             </div>
 
-            <div v-if="demoRuleState.rules.value.length" class="rule-refactor-groups">
+            <div v-if="demoRuleState.rules.value.length" class="rule-editor-groups">
               <template v-for="(rule, index) in demoRuleState.rules.value" :key="rule.id">
-                <article class="rule-refactor-group">
-                  <div class="rule-refactor-group-header">
-                    <div class="rule-refactor-group-title">条件组 {{ index + 1 }}</div>
-                    <div class="rule-refactor-group-actions">
-                      <el-button class="rule-demo-count-button" text @click="openDemoSample(rule.id)">
+                <article class="rule-editor-group-shell">
+                  <div class="rule-editor-group-shell-header">
+                    <div class="rule-editor-group-shell-title">条件组 {{ index + 1 }}</div>
+                    <div class="rule-editor-group-shell-actions">
+                      <el-button class="rule-editor-hit-button" text @click="openDemoSample(rule.id)">
                         命中 {{ demoRuleMatchCount(rule) }} 条
                       </el-button>
                       <el-button
-                        class="rule-refactor-delete"
+                        class="rule-editor-delete-button"
                         text
                         size="small"
                         :icon="Delete"
@@ -783,16 +743,16 @@ function metricFormulaSummary(metric: { label: string; definition: string; formu
 
                 <div
                   v-if="index < demoRuleState.rules.value.length - 1"
-                  class="rule-refactor-group-divider"
+                  class="rule-editor-group-separator"
                 >
-                  或
+                  <span>或</span>
                 </div>
               </template>
             </div>
 
             <el-empty
               v-else
-              description="当前还没有条件组，可以先新增一组筛选条件。"
+              description="暂无条件组"
             />
           </div>
         </section>
@@ -935,118 +895,84 @@ function metricFormulaSummary(metric: { label: string; definition: string; formu
   gap: 12px;
 }
 
-.rule-demo-header {
+.rule-editor-panel {
+  display: grid;
+  gap: 14px;
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  background: linear-gradient(180deg, rgba(250, 250, 250, 0.96) 0%, rgba(255, 255, 255, 0.98) 78%);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
+}
+
+.rule-editor-toolbar {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 16px;
-}
-
-.rule-demo-header-main {
-  display: grid;
-  gap: 6px;
-}
-
-.rule-demo-kicker {
-  font-size: 12px;
-  font-weight: 700;
-  color: rgba(59, 130, 246, 0.86);
-}
-
-.rule-demo-title {
-  font-size: 16px;
-  font-weight: 700;
-  color: rgba(15, 23, 42, 0.92);
-}
-
-.rule-demo-note,
-.rule-demo-stat {
-  font-size: 12px;
-  line-height: 1.6;
-  color: rgba(15, 23, 42, 0.6);
-}
-
-.rule-demo-header-actions {
-  display: grid;
-  gap: 10px;
-  justify-items: end;
-}
-
-.rule-demo-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
   gap: 12px;
   flex-wrap: wrap;
 }
 
-.rule-demo-toolbar-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.rule-demo-list {
-  display: grid;
-  gap: 8px;
-}
-
-.rule-refactor-panel {
-  display: grid;
-  gap: 12px;
-  padding: 12px;
-  border-radius: 12px;
-  background: #fff;
-  border: 1px solid #ebeef5;
-}
-
-.rule-refactor-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.rule-refactor-toolbar-main {
+.rule-editor-toolbar-main {
   display: grid;
   gap: 4px;
 }
 
-.rule-refactor-title {
+.rule-editor-title {
   font-size: 15px;
   font-weight: 700;
-  color: #1f2937;
+  color: rgba(15, 23, 42, 0.92);
 }
 
-.rule-refactor-subtitle {
+.rule-editor-subtitle {
   font-size: 12px;
   line-height: 1.6;
-  color: #6b7280;
+  color: rgba(15, 23, 42, 0.48);
 }
 
-.rule-refactor-toolbar-actions {
+.rule-editor-toolbar-actions {
   display: flex;
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
 }
 
-.rule-refactor-groups {
-  display: grid;
-  gap: 10px;
+.rule-editor-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  background: rgba(255, 255, 255, 0.92);
 }
 
-.rule-refactor-group {
+.rule-editor-switch-label {
+  font-size: 12px;
+  color: rgba(15, 23, 42, 0.6);
+}
+
+.rule-editor-switch :deep(.el-switch) {
+  --el-switch-on-color: rgba(37, 99, 235, 0.88);
+  --el-switch-off-color: rgba(15, 23, 42, 0.18);
+}
+
+.rule-editor-groups {
   display: grid;
-  gap: 10px;
+  gap: 12px;
+}
+
+.rule-editor-group-shell {
+  display: grid;
+  gap: 12px;
   padding: 12px;
-  border-radius: 10px;
-  background: #fcfcfd;
-  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  background: rgba(255, 255, 255, 0.98);
 }
 
-.rule-refactor-group-header {
+.rule-editor-group-shell-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1054,82 +980,73 @@ function metricFormulaSummary(metric: { label: string; definition: string; formu
   flex-wrap: wrap;
 }
 
-.rule-refactor-group-title {
+.rule-editor-group-shell-title {
   font-size: 13px;
   font-weight: 700;
-  color: #374151;
+  color: rgba(15, 23, 42, 0.82);
 }
 
-.rule-refactor-group-actions {
+.rule-editor-group-shell-actions {
   display: flex;
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
 }
 
-.rule-refactor-group-divider {
+.rule-editor-hit-button,
+.record-rule-card-stat-link {
+  width: fit-content;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(59, 130, 246, 0.16);
+  background: rgba(239, 246, 255, 0.96);
+  color: rgba(37, 99, 235, 0.8);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.rule-editor-hit-button:hover,
+.record-rule-card-stat-link:hover {
+  color: rgba(37, 99, 235, 0.92);
+  border-color: rgba(37, 99, 235, 0.24);
+  background: rgba(219, 234, 254, 0.96);
+}
+
+.rule-editor-delete-button {
+  color: rgba(15, 23, 42, 0.48);
+}
+
+.rule-editor-group-separator {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.rule-editor-group-separator::before {
+  content: '';
+  position: absolute;
+  inset: 50% 0 auto;
+  border-top: 1px dashed rgba(15, 23, 42, 0.12);
+  transform: translateY(-50%);
+}
+
+.rule-editor-group-separator span {
+  position: relative;
+  z-index: 1;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 24px;
-  margin: 0 auto;
+  min-width: 32px;
+  height: 22px;
+  padding: 0 10px;
   border-radius: 999px;
-  border: 1px solid #e5e7eb;
   background: #fff;
-  color: #6b7280;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  color: rgba(15, 23, 42, 0.5);
   font-size: 12px;
   font-weight: 600;
-}
-
-.rule-demo-capture-link,
-.rule-demo-count-button,
-.record-rule-card-stat-link {
-  width: fit-content;
-  padding: 1px 10px;
-  font-weight: 600;
-  border-radius: 999px;
-  color: #595959;
-  background: #fff;
-  border: 1px solid #e8e8e8;
-  font-size: 12px;
-}
-
-.rule-refactor-delete {
-  color: #6b7280;
-}
-
-.rule-demo-capture-text {
-  font-size: 12px;
-  line-height: 1.7;
-  color: #8c8c8c;
-}
-
-.rule-demo-inline-select {
-  width: 180px;
-}
-
-.rule-demo-card-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.rule-demo-card-meta {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
-.rule-demo-card-summary {
-  font-size: 12px;
-  color: #8c8c8c;
-}
-
-.rule-demo-delete {
-  flex-shrink: 0;
 }
 
 .record-page-toolbar-meta {
@@ -1422,23 +1339,8 @@ function metricFormulaSummary(metric: { label: string; definition: string; formu
 
 
 @media (max-width: 960px) {
-  .rule-demo-header,
-  .rule-demo-toolbar {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .rule-demo-header-actions {
-    justify-items: start;
-  }
-
-  .rule-demo-card-footer {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-
-  .rule-refactor-toolbar,
-  .rule-refactor-group-header {
+  .rule-editor-toolbar,
+  .rule-editor-group-shell-header {
     align-items: stretch;
     flex-direction: column;
   }

@@ -47,10 +47,10 @@ const emit = defineEmits<{
 }>();
 
 const modeOptions = [
-  { label: '缺失', value: 'missing' },
-  { label: '匹配', value: 'match' },
-  { label: '排除', value: 'exclude' },
-  { label: '数值', value: 'threshold' },
+  { label: '内容缺失', value: 'missing' },
+  { label: '内容匹配', value: 'match' },
+  { label: '内容排除', value: 'exclude' },
+  { label: '数值判断', value: 'threshold' },
 ] as const;
 
 const thresholdOptions = [
@@ -97,13 +97,13 @@ function inferThresholdDirection(node: RuleConditionNode): ThresholdDirection {
 }
 
 function ensureThresholdField(node: RuleConditionNode) {
-  const field = resolveField(node.fieldKey);
-  if (field?.type === 'number') {
+  const currentField = resolveField(node.fieldKey);
+  if (currentField?.type === 'number') {
     return;
   }
-  const nextField = numberFields()[0];
-  if (nextField) {
-    node.fieldKey = nextField.key;
+  const fallbackField = numberFields()[0];
+  if (fallbackField) {
+    node.fieldKey = fallbackField.key;
   }
 }
 
@@ -140,13 +140,17 @@ function handleThresholdDirectionChange(node: RuleConditionNode, direction: Thre
   props.schema.syncExpressionNode(node, props.fields);
 }
 
+function patternFields(node: RuleConditionNode) {
+  return inferMode(node) === 'threshold' ? numberFields() : props.fields;
+}
+
 function addCondition(group: RuleGroupNode) {
   group.children.push(props.schema.createConditionNode(props.fields[0]));
 }
 
 function addGroup(group: RuleGroupNode) {
   group.children.push(
-    props.schema.createGroupNode(RuleGroupOperator.OR, [props.schema.createConditionNode(props.fields[0])]),
+    props.schema.createGroupNode(RuleGroupOperator.AND, [props.schema.createConditionNode(props.fields[0])]),
   );
 }
 
@@ -160,21 +164,48 @@ function removeChild(group: RuleGroupNode, nodeId: string) {
 function requestRemove() {
   emit('remove', props.node.id);
 }
-
-function patternFields(node: RuleConditionNode) {
-  const mode = inferMode(node);
-  return mode === 'threshold' ? numberFields() : props.fields;
-}
-
-function toggleGroupOperator(group: RuleGroupNode) {
-  group.operator = group.operator === RuleGroupOperator.AND ? RuleGroupOperator.OR : RuleGroupOperator.AND;
-}
 </script>
 
 <template>
-  <div v-if="node.type === RuleNodeType.GROUP" class="compact-group" :class="`compact-group-depth-${Math.min(depth, 2)}`">
-    <div class="compact-group-body">
+  <div
+    v-if="node.type === RuleNodeType.GROUP"
+    class="rule-editor-group"
+    :class="{
+      'rule-editor-group-root': depth === 0,
+      'rule-editor-group-nested': depth > 0,
+    }"
+  >
+    <div class="rule-editor-group-header">
+      <div class="rule-editor-group-header-main">
+        <span class="rule-editor-group-label">{{ depth === 0 ? '条件组' : '嵌套分组' }}</span>
+        <el-radio-group v-model="node.operator" size="small" class="rule-editor-group-operator">
+          <el-radio-button :label="RuleGroupOperator.AND">且</el-radio-button>
+          <el-radio-button :label="RuleGroupOperator.OR">或</el-radio-button>
+        </el-radio-group>
+      </div>
+      <div class="rule-editor-group-actions">
+        <el-button text size="small" :icon="Plus" @click="addCondition(node)">添加条件</el-button>
+        <el-button text size="small" @click="addGroup(node)">添加分组</el-button>
+        <el-button
+          v-if="canRemove"
+          text
+          size="small"
+          type="danger"
+          :icon="Delete"
+          @click="requestRemove"
+        >
+          删除
+        </el-button>
+      </div>
+    </div>
+
+    <div class="rule-editor-group-body">
       <template v-for="(child, index) in node.children" :key="child.id">
+        <div v-if="index > 0" class="rule-editor-joiner">
+          <span class="rule-editor-joiner-chip">
+            {{ node.operator === RuleGroupOperator.AND ? '且' : '或' }}
+          </span>
+        </div>
         <RuleExpressionEditor
           :node="child"
           :fields="fields"
@@ -182,39 +213,16 @@ function toggleGroupOperator(group: RuleGroupNode) {
           :depth="depth + 1"
           @remove="removeChild(node, $event)"
         />
-        <button
-          v-if="index < node.children.length - 1"
-          type="button"
-          class="compact-joiner"
-          @click="toggleGroupOperator(node)"
-        >
-          {{ node.operator === RuleGroupOperator.AND ? '且' : '或' }}
-        </button>
       </template>
-    </div>
-
-    <div class="compact-group-actions">
-      <el-button text size="small" :icon="Plus" @click="addCondition(node)">添加条件</el-button>
-      <el-button text size="small" @click="addGroup(node)">新增条件组</el-button>
-      <el-button
-        v-if="canRemove"
-        text
-        size="small"
-        type="danger"
-        :icon="Delete"
-        @click="requestRemove"
-      >
-        删除
-      </el-button>
     </div>
   </div>
 
-  <div v-else class="compact-condition-row">
+  <div v-else class="rule-editor-condition-row">
     <el-select
       :model-value="inferMode(node)"
       size="small"
-      class="compact-control compact-mode"
-      placeholder="模式"
+      class="rule-editor-control rule-editor-mode"
+      placeholder="类型"
       @change="handleModeChange(node, $event as IllegalPatternMode)"
     >
       <el-option
@@ -228,7 +236,7 @@ function toggleGroupOperator(group: RuleGroupNode) {
     <el-select
       v-model="node.fieldKey"
       size="small"
-      class="compact-control compact-field"
+      class="rule-editor-control rule-editor-field"
       placeholder="字段"
       @change="handleFieldChange(node)"
     >
@@ -244,7 +252,7 @@ function toggleGroupOperator(group: RuleGroupNode) {
       v-if="inferMode(node) === 'threshold'"
       :model-value="inferThresholdDirection(node)"
       size="small"
-      class="compact-control compact-operator"
+      class="rule-editor-control rule-editor-relation"
       placeholder="关系"
       @change="handleThresholdDirectionChange(node, $event as ThresholdDirection)"
     >
@@ -261,8 +269,8 @@ function toggleGroupOperator(group: RuleGroupNode) {
         v-if="isSelectField(resolveField(node.fieldKey))"
         v-model="node.value"
         size="small"
-        class="compact-control compact-value"
-        placeholder="值"
+        class="rule-editor-control rule-editor-value"
+        placeholder="取值"
         clearable
       >
         <el-option
@@ -272,13 +280,14 @@ function toggleGroupOperator(group: RuleGroupNode) {
           :value="option.value"
         />
       </el-select>
+
       <el-input
         v-else
         v-model="node.value"
         size="small"
-        class="compact-control compact-value"
+        class="rule-editor-control rule-editor-value"
         :inputmode="resolveField(node.fieldKey)?.type === 'number' ? 'decimal' : 'text'"
-        :placeholder="resolveField(node.fieldKey)?.type === 'number' ? '阈值' : '关键词'"
+        :placeholder="resolveField(node.fieldKey)?.type === 'number' ? '阈值' : '取值'"
         clearable
       />
     </template>
@@ -295,94 +304,164 @@ function toggleGroupOperator(group: RuleGroupNode) {
 </template>
 
 <style scoped>
-.compact-group {
+.rule-editor-group {
   display: grid;
-  gap: 8px;
-  padding: 8px 10px;
-  border-radius: 8px;
+  gap: 10px;
+}
+
+.rule-editor-group-root {
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
   background: #fff;
-  border: 1px solid #f0f0f0;
 }
 
-.compact-group-depth-1,
-.compact-group-depth-2 {
-  margin-left: 6px;
-  padding: 6px 8px;
-  background: #fcfcfc;
+.rule-editor-group-nested {
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px dashed rgba(15, 23, 42, 0.12);
+  background: rgba(248, 250, 252, 0.7);
 }
 
-.compact-group-body {
-  display: grid;
-  gap: 6px;
-}
-
-.compact-group-actions {
+.rule-editor-group-header {
   display: flex;
   align-items: center;
-  gap: 2px;
+  justify-content: space-between;
+  gap: 12px;
   flex-wrap: wrap;
 }
 
-.compact-joiner {
-  width: fit-content;
-  margin-left: 2px;
-  padding: 0 8px;
-  border: 1px solid #d9d9d9;
-  border-radius: 999px;
-  background: #fafafa;
-  color: #595959;
+.rule-editor-group-header-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.rule-editor-group-label {
   font-size: 12px;
   font-weight: 600;
-  line-height: 22px;
-  cursor: pointer;
-  transition: all 0.2s ease;
+  color: rgba(15, 23, 42, 0.72);
 }
 
-.compact-joiner:hover {
-  border-color: #bfbfbf;
-  color: #262626;
+.rule-editor-group-operator :deep(.el-radio-button__inner) {
+  min-width: 34px;
+  padding: 0 10px;
+  border-color: rgba(15, 23, 42, 0.12);
   background: #fff;
+  color: rgba(15, 23, 42, 0.68);
+  box-shadow: none;
+  font-size: 12px;
+  font-weight: 600;
 }
 
-.compact-condition-row {
+.rule-editor-group-operator :deep(.el-radio-button__original-radio:checked + .el-radio-button__inner) {
+  background: rgba(219, 234, 254, 0.96);
+  border-color: rgba(59, 130, 246, 0.28);
+  color: rgba(30, 64, 175, 0.96);
+  box-shadow: none;
+}
+
+.rule-editor-group-actions {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   flex-wrap: wrap;
 }
 
-.compact-control {
-  min-width: 108px;
+.rule-editor-group-actions :deep(.el-button.is-text) {
+  padding-inline: 6px;
+  color: rgba(15, 23, 42, 0.6);
 }
 
-.compact-field,
-.compact-value {
-  min-width: 156px;
+.rule-editor-group-actions :deep(.el-button.is-text:hover) {
+  color: rgba(37, 99, 235, 0.9);
 }
 
-.compact-condition-row :deep(.el-input__inner),
-.compact-condition-row :deep(.el-select__placeholder) {
+.rule-editor-group-body {
+  display: grid;
+  gap: 8px;
+}
+
+.rule-editor-joiner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.rule-editor-joiner::before {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: rgba(15, 23, 42, 0.08);
+}
+
+.rule-editor-joiner::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: rgba(15, 23, 42, 0.08);
+}
+
+.rule-editor-joiner-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  background: #fff;
+  color: rgba(15, 23, 42, 0.52);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.rule-editor-condition-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.rule-editor-control {
+  min-width: 120px;
+}
+
+.rule-editor-field,
+.rule-editor-value {
+  min-width: 160px;
+}
+
+.rule-editor-condition-row :deep(.el-input__wrapper),
+.rule-editor-condition-row :deep(.el-select__wrapper) {
+  min-height: 34px;
+  border-radius: 8px;
+  box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.08) inset;
+  background: rgba(255, 255, 255, 0.96);
+}
+
+.rule-editor-condition-row :deep(.el-input__inner),
+.rule-editor-condition-row :deep(.el-select__selected-item),
+.rule-editor-condition-row :deep(.el-select__placeholder) {
   font-size: 14px;
 }
 
-.compact-group :deep(.el-button.is-text) {
-  color: #595959;
-  padding-inline: 6px;
-}
-
-.compact-group :deep(.el-button.is-text:hover) {
-  color: #262626;
-}
-
 @media (max-width: 900px) {
-  .compact-condition-row {
+  .rule-editor-group-header {
     align-items: stretch;
     flex-direction: column;
   }
 
-  .compact-control,
-  .compact-field,
-  .compact-value {
+  .rule-editor-condition-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .rule-editor-control,
+  .rule-editor-field,
+  .rule-editor-value {
     width: 100%;
     min-width: 0;
   }
