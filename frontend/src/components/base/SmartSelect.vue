@@ -39,9 +39,30 @@ const filteredOptions = computed(() => {
   return props.options.filter((option) => matchesOption(option, normalizedQuery));
 });
 
-const popperClass = computed(() =>
-  props.compact ? 'smart-select-dropdown smart-select-dropdown--compact' : 'smart-select-dropdown',
-);
+const popperClass = computed(() => {
+  const classNames = ['smart-select-dropdown'];
+  if (props.compact) {
+    classNames.push('smart-select-dropdown--compact');
+  }
+  if (props.compact && props.multiple) {
+    classNames.push('smart-select-dropdown--compact-multiple');
+  }
+  return classNames.join(' ');
+});
+
+const selectClass = computed(() => {
+  const classNames = ['smart-select'];
+  if (props.compact) {
+    classNames.push('smart-select--compact');
+  }
+  if (props.multiple) {
+    classNames.push('smart-select--multiple');
+  }
+  if (props.compact && props.multiple) {
+    classNames.push('smart-select--compact-multiple');
+  }
+  return classNames;
+});
 
 function handleFilter(keyword: string) {
   query.value = keyword;
@@ -65,6 +86,7 @@ function matchesOption(option: RecordTableFilterOption, normalizedQuery: string)
 
 <template>
   <el-select
+    :class="selectClass"
     :model-value="modelValue"
     filterable
     :filter-method="handleFilter"
@@ -74,6 +96,7 @@ function matchesOption(option: RecordTableFilterOption, normalizedQuery: string)
     :collapse-tags="collapseTags"
     collapse-tags-tooltip
     :disabled="disabled"
+    :fit-input-width="compact && multiple"
     :popper-class="popperClass"
     @change="handleChange"
     @visible-change="handleVisibleChange"
@@ -148,5 +171,48 @@ function matchesOption(option: RecordTableFilterOption, normalizedQuery: string)
   font-size: 13px;
   line-height: 1.35;
   white-space: normal;
+}
+
+.smart-select-dropdown--compact-multiple .el-select-dropdown__list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 8px;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow-x: hidden;
+}
+
+.smart-select-dropdown--compact-multiple .el-select-dropdown__wrap {
+  overflow-x: hidden;
+}
+
+.smart-select-dropdown--compact-multiple .el-select-dropdown__item {
+  flex: 0 1 auto;
+  width: fit-content;
+  min-width: 64px;
+  max-width: 100%;
+  min-height: 34px;
+  height: auto;
+  line-height: 1.35;
+  padding: 7px 12px;
+  border-radius: 9px;
+  justify-content: center;
+}
+
+.smart-select-dropdown--compact-multiple .smart-select-option {
+  justify-content: center;
+  text-align: center;
+}
+
+.smart-select-dropdown--compact-multiple .smart-select-option-label {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: center;
 }
 </style>
