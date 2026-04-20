@@ -88,6 +88,31 @@ export function buildReviewDataTableRows(rows: ReviewDataRecordRowResponse[]) {
   }));
 }
 
+export function buildReviewDataExportCsv(rows: ReviewDataRecordRowResponse[]) {
+  const columns: Array<{ label: string; value: (row: ReviewDataRecordRowResponse) => unknown }> = [
+    { label: '标题', value: (row) => row.title },
+    { label: '项目', value: (row) => row.projectName },
+    { label: '模块', value: (row) => row.moduleName },
+    { label: '评审类型', value: (row) => row.reviewType },
+    { label: '评审日期', value: (row) => formatDate(row.reviewDate) },
+    { label: '负责人', value: (row) => row.reviewOwner },
+    { label: '评审专家', value: (row) => row.reviewExpertsSummary },
+    { label: '页数', value: (row) => row.reviewScalePages },
+    { label: '评审工作产品', value: (row) => row.reviewProduct },
+    { label: '作者', value: (row) => row.authorName },
+    { label: '评审版本', value: (row) => row.reviewVersion },
+    { label: '问题合计(个)', value: (row) => row.problemCount },
+    { label: '缺陷密度(个/页)', value: (row) => formatNullableNumber(row.problemDensity, 2) },
+    { label: '更新时间', value: (row) => formatDateTime(row.updatedAt) },
+    { label: '状态', value: (row) => (row.deleted ? '已删除' : '有效') },
+  ];
+
+  return [
+    columns.map((column) => escapeCsvCell(column.label)).join(','),
+    ...rows.map((row) => columns.map((column) => escapeCsvCell(column.value(row))).join(',')),
+  ].join('\r\n');
+}
+
 export function buildProblemItemTableRows(rows: ReviewDataProblemItemResponse[]) {
   return rows.map((row) => ({
     __raw: row,
@@ -241,4 +266,10 @@ function formatDateTime(value?: string | null) {
 
 function formatDate(value?: string | null) {
   return value ? value.slice(0, 10) : '-';
+}
+
+function escapeCsvCell(value: unknown) {
+  const text = String(value ?? '').trim();
+  const safeText = /^[=+\-@]/.test(text) ? `'${text}` : text;
+  return `"${safeText.replace(/"/g, '""')}"`;
 }

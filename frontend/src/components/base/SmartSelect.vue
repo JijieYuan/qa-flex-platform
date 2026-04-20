@@ -170,10 +170,10 @@ function isOptionSelected(value: string) {
   font-weight: 600;
 }
 
-.smart-select-dropdown--multiple .el-select-dropdown__item.smart-select-option-item--selected,
-.smart-select-dropdown--multiple .el-select-dropdown__item.selected,
-.smart-select-dropdown--multiple .el-select-dropdown__item.is-selected,
-.smart-select-dropdown--multiple .el-select-dropdown__item[aria-selected='true'] {
+.smart-select-dropdown .el-select-dropdown__item.smart-select-option-item--selected,
+.smart-select-dropdown .el-select-dropdown__item.selected,
+.smart-select-dropdown .el-select-dropdown__item.is-selected,
+.smart-select-dropdown .el-select-dropdown__item[aria-selected='true'] {
   border-color: #2563eb !important;
   background: #2563eb !important;
   color: #fff !important;
@@ -181,25 +181,23 @@ function isOptionSelected(value: string) {
   box-shadow: 0 6px 14px rgba(37, 99, 235, 0.18);
 }
 
-.smart-select-dropdown--multiple .el-select-dropdown__item.smart-select-option-item--selected.hover,
-.smart-select-dropdown--multiple .el-select-dropdown__item.smart-select-option-item--selected:hover,
-.smart-select-dropdown--multiple .el-select-dropdown__item.selected.hover,
-.smart-select-dropdown--multiple .el-select-dropdown__item.selected:hover,
-.smart-select-dropdown--multiple .el-select-dropdown__item.is-selected.hover,
-.smart-select-dropdown--multiple .el-select-dropdown__item.is-selected:hover,
-.smart-select-dropdown--multiple .el-select-dropdown__item[aria-selected='true'].hover,
-.smart-select-dropdown--multiple .el-select-dropdown__item[aria-selected='true']:hover {
+.smart-select-dropdown .el-select-dropdown__item.smart-select-option-item--selected.hover,
+.smart-select-dropdown .el-select-dropdown__item.smart-select-option-item--selected:hover,
+.smart-select-dropdown .el-select-dropdown__item.selected.hover,
+.smart-select-dropdown .el-select-dropdown__item.selected:hover,
+.smart-select-dropdown .el-select-dropdown__item.is-selected.hover,
+.smart-select-dropdown .el-select-dropdown__item.is-selected:hover,
+.smart-select-dropdown .el-select-dropdown__item[aria-selected='true'].hover,
+.smart-select-dropdown .el-select-dropdown__item[aria-selected='true']:hover {
   border-color: #1d4ed8 !important;
   background: #1d4ed8 !important;
   color: #fff !important;
 }
 
-.smart-select-dropdown--multiple
-  .el-select-dropdown__item.smart-select-option-item--selected
-  .smart-select-option-label,
-.smart-select-dropdown--multiple .el-select-dropdown__item.selected .smart-select-option-label,
-.smart-select-dropdown--multiple .el-select-dropdown__item.is-selected .smart-select-option-label,
-.smart-select-dropdown--multiple .el-select-dropdown__item[aria-selected='true'] .smart-select-option-label {
+.smart-select-dropdown .el-select-dropdown__item.smart-select-option-item--selected .smart-select-option-label,
+.smart-select-dropdown .el-select-dropdown__item.selected .smart-select-option-label,
+.smart-select-dropdown .el-select-dropdown__item.is-selected .smart-select-option-label,
+.smart-select-dropdown .el-select-dropdown__item[aria-selected='true'] .smart-select-option-label {
   color: #fff !important;
   font-weight: 400;
 }

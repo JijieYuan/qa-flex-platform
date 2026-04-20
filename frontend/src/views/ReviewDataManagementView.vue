@@ -12,7 +12,7 @@ import {
   ElMessageBox,
   ElTag,
 } from 'element-plus';
-import { ArrowDown, Document, Plus } from '@element-plus/icons-vue';
+import { ArrowDown, Document, Download, Plus } from '@element-plus/icons-vue';
 import BaseRecordTable from '../components/base/BaseRecordTable.vue';
 import ReviewProblemItemFormDialog from './review-data/ReviewProblemItemFormDialog.vue';
 import ReviewRecordFormDialog from './review-data/ReviewRecordFormDialog.vue';
@@ -30,6 +30,7 @@ import { useRouteTableState } from '../composables/useRouteTableState';
 import type { RecordTableFilterField } from '../types/record-table';
 import {
   buildProblemItemTableRows,
+  buildReviewDataExportCsv,
   buildReviewDataFilterTags,
   buildReviewDataSummaryCards,
   buildReviewDataTableRows,
@@ -75,6 +76,7 @@ const recordDialogSaving = ref(false);
 const recordEditMode = ref(false);
 const editingRecordId = ref<number | null>(null);
 const recordForm = ref<ReviewRecordFormModel>(createEmptyReviewRecordForm());
+const exportLoading = ref(false);
 
 const problemDialogVisible = ref(false);
 const problemDialogSaving = ref(false);
@@ -179,7 +181,17 @@ async function loadFilterOptions() {
 }
 
 async function loadRows() {
-  const response = await api.getReviewDataRecords({
+  const response = await api.getReviewDataRecords(buildReviewDataRecordQueryParams({
+    page: page.value,
+    size: pageSize.value,
+  }));
+  rows.value = response.records;
+  total.value = response.total;
+  summary.value = response.summary;
+}
+
+function buildReviewDataRecordQueryParams(overrides: { page?: number; size?: number } = {}) {
+  return {
     title: String(route.query.title ?? ''),
     projectName: String(route.query.projectName ?? ''),
     moduleName: String(route.query.moduleName ?? ''),
@@ -187,14 +199,11 @@ async function loadRows() {
     reviewType: String(route.query.reviewType ?? ''),
     problemStatus: String(route.query.problemStatus ?? ''),
     reviewExpert: String(route.query.reviewExpert ?? ''),
-    page: page.value,
-    size: pageSize.value,
+    page: overrides.page ?? page.value,
+    size: overrides.size ?? pageSize.value,
     sortBy: sortBy.value,
     sortOrder: (sortOrder.value as 'asc' | 'desc' | null) ?? 'desc',
-  });
-  rows.value = response.records;
-  total.value = response.total;
-  summary.value = response.summary;
+  };
 }
 
 async function handleRefresh() {
@@ -270,10 +279,58 @@ async function handleExpandChange(row: Record<string, unknown>, expandedRows: Re
   if (!raw) {
     return;
   }
-  expandedRowKeys.value = expandedRows.map((item) => Number((item.__raw as ReviewDataRecordRowResponse).id));
-  if (expandedRowKeys.value.includes(raw.id) && !problemItemsMap.value[raw.id]) {
+  const rowIsExpanded = expandedRows.some((item) => Number((item.__raw as ReviewDataRecordRowResponse | undefined)?.id) === raw.id);
+  expandedRowKeys.value = rowIsExpanded ? [raw.id] : expandedRowKeys.value.filter((item) => Number(item) !== raw.id);
+  if (rowIsExpanded && !problemItemsMap.value[raw.id]) {
     await loadProblemItems(raw.id);
   }
+}
+
+async function handleExportExcel() {
+  exportLoading.value = true;
+  try {
+    const exportRows: ReviewDataRecordRowResponse[] = [];
+    let nextPage = 1;
+    let expectedTotal = Math.max(total.value, rows.value.length);
+    do {
+      const response = await api.getReviewDataRecords(buildReviewDataRecordQueryParams({ page: nextPage, size: 100 }));
+      exportRows.push(...response.records);
+      expectedTotal = response.total;
+      nextPage += 1;
+    } while (exportRows.length < expectedTotal && nextPage < 1000);
+
+    const csv = buildReviewDataExportCsv(exportRows);
+    downloadCsv(csv, `评审数据管理_${formatExportFileDate(new Date())}.csv`);
+    ElMessage.success(`已导出 ${exportRows.length} 条评审记录`);
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '评审数据导出失败');
+  } finally {
+    exportLoading.value = false;
+  }
+}
+
+function downloadCsv(csv: string, filename: string) {
+  const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+  URL.revokeObjectURL(url);
+}
+
+function formatExportFileDate(date: Date) {
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return [
+    date.getFullYear(),
+    pad(date.getMonth() + 1),
+    pad(date.getDate()),
+    pad(date.getHours()),
+    pad(date.getMinutes()),
+    pad(date.getSeconds()),
+  ].join('');
 }
 
 function isProblemExpanded(recordId: number) {
@@ -287,10 +344,10 @@ function recordFromTableRow(row: Record<string, unknown>) {
 
 async function toggleProblemPanel(recordId: number) {
   if (isProblemExpanded(recordId)) {
-    expandedRowKeys.value = expandedRowKeys.value.filter((item) => item !== recordId);
+    expandedRowKeys.value = [];
     return;
   }
-  expandedRowKeys.value = [...expandedRowKeys.value.filter((item) => item !== recordId), recordId];
+  expandedRowKeys.value = [recordId];
   if (!problemItemsMap.value[recordId]) {
     await loadProblemItems(recordId);
   }
@@ -519,6 +576,7 @@ function formatDate(value?: string | null) {
     >
       <template #primary-actions>
         <el-button type="primary" :icon="Plus" @click="handleCreateRecord">新增评审</el-button>
+        <el-button plain :icon="Download" :loading="exportLoading" @click="handleExportExcel">导出Excel</el-button>
       </template>
 
       <template #cell-title="{ row }">

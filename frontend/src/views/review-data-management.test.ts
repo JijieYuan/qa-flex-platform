@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { ReviewDataProblemItemResponse, ReviewDataRecordRowResponse } from '../api';
 import {
   buildProblemItemTableRows,
+  buildReviewDataExportCsv,
   buildReviewDataSummaryCards,
   buildReviewDataTableRows,
   createEmptyProblemItemForm,
@@ -50,6 +51,35 @@ describe('review-data-management helpers', () => {
     expect(tableRows[0].problemDensity).toBe('0.21');
     expect(tableRows[0].reviewDate).toBe('2026-04-10');
     expect(tableRows[0].updatedAt).toBe('2026-04-12 10:00:00');
+  });
+
+  it('should export review data rows as Excel friendly csv', () => {
+    const rows: ReviewDataRecordRowResponse[] = [
+      {
+        id: 1,
+        projectName: 'CrownCAD',
+        title: '=风险标题',
+        moduleName: '草图',
+        reviewType: '会议评审',
+        reviewDate: '2026-04-10',
+        reviewOwner: '王强',
+        reviewExpertsSummary: '张晓涵、崔雪峰',
+        reviewScalePages: 24,
+        reviewProduct: '设计说明书',
+        authorName: '路士坤',
+        reviewVersion: 'V1.0',
+        problemCount: 5,
+        problemDensity: 0.2083,
+        updatedAt: '2026-04-12T10:00:00',
+        deleted: false,
+      },
+    ];
+
+    const csv = buildReviewDataExportCsv(rows);
+    expect(csv).toContain('"标题","项目","模块"');
+    expect(csv).toContain('"\'=风险标题"');
+    expect(csv).toContain('"0.21"');
+    expect(csv).toContain('"有效"');
   });
 
   it('should map problem item rows to child table rows', () => {
