@@ -21,6 +21,8 @@ const props = withDefaults(
     total: number;
     rowKey?: string;
     expandedRowKeys?: Array<string | number>;
+    expandColumnVisible?: boolean;
+    rowActionsWidth?: number;
     pageSizeOptions?: number[];
     searchPlaceholder?: string;
     emptyDescription?: string;
@@ -39,6 +41,8 @@ const props = withDefaults(
     pageSizeOptions: () => [10, 20, 50, 100],
     rowKey: 'id',
     expandedRowKeys: () => [],
+    expandColumnVisible: true,
+    rowActionsWidth: 120,
     searchPlaceholder: '请输入关键字搜索',
     emptyDescription: '当前暂无可展示记录',
     showSearch: true,
@@ -298,7 +302,13 @@ function getFilterValue(key: string) {
         @sort-change="emit('sort-change', $event)"
         @expand-change="handleExpandChange"
       >
-        <el-table-column v-if="hasExpand" type="expand" width="42">
+        <el-table-column
+          v-if="hasExpand"
+          type="expand"
+          :width="expandColumnVisible ? 42 : 1"
+          :class-name="expandColumnVisible ? undefined : 'record-table-expand-column-hidden'"
+          :label-class-name="expandColumnVisible ? undefined : 'record-table-expand-column-hidden'"
+        >
           <template #default="{ row }">
             <slot name="expand" :row="row" />
           </template>
@@ -366,7 +376,7 @@ function getFilterValue(key: string) {
           </template>
         </el-table-column>
 
-        <el-table-column v-if="hasRowActions" label="操作" width="120" fixed="right">
+        <el-table-column v-if="hasRowActions" label="操作" :width="rowActionsWidth" fixed="right">
           <template #default="{ row }">
             <slot name="row-actions" :row="row" />
           </template>
@@ -556,5 +566,19 @@ function getFilterValue(key: string) {
 
 :deep(.el-table th.el-table__cell) {
   background: linear-gradient(180deg, #f8fafc, #f1f5f9);
+}
+
+:deep(.record-table-expand-column-hidden) {
+  padding: 0 !important;
+}
+
+:deep(.record-table-expand-column-hidden .cell) {
+  width: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+:deep(.record-table-expand-column-hidden .el-table__expand-icon) {
+  display: none;
 }
 </style>

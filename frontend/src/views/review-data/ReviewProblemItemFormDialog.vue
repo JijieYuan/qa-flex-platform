@@ -129,8 +129,8 @@ function handleClose() {
         <el-form-item label="问题状态" prop="problemStatus">
           <SmartSelect v-model="form.problemStatus" :options="problemStatusOptions" compact placeholder="请选择问题状态" />
         </el-form-item>
-        <el-form-item label="在文档中的位置" prop="documentPosition" class="span-2">
-          <el-input v-model="form.documentPosition" placeholder="请输入在文档中的位置" />
+        <el-form-item label="文档中的位置" prop="documentPosition" class="span-2">
+          <el-input v-model="form.documentPosition" placeholder="请输入文档中的位置" />
         </el-form-item>
         <el-form-item label="问题类别" prop="problemCategory">
           <SmartSelect v-model="form.problemCategory" :options="problemCategoryOptions" compact placeholder="请选择问题类别" />

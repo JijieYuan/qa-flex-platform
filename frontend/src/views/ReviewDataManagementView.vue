@@ -7,11 +7,12 @@ import {
   ElDropdown,
   ElDropdownItem,
   ElDropdownMenu,
+  ElIcon,
   ElMessage,
   ElMessageBox,
   ElTag,
 } from 'element-plus';
-import { Document, Plus, View } from '@element-plus/icons-vue';
+import { ArrowDown, Document, Plus, View } from '@element-plus/icons-vue';
 import BaseRecordTable from '../components/base/BaseRecordTable.vue';
 import ReviewProblemItemFormDialog from './review-data/ReviewProblemItemFormDialog.vue';
 import ReviewRecordFormDialog from './review-data/ReviewRecordFormDialog.vue';
@@ -275,6 +276,47 @@ async function handleExpandChange(row: Record<string, unknown>, expandedRows: Re
   }
 }
 
+function isProblemExpanded(recordId: number) {
+  return expandedRowKeys.value.includes(recordId);
+}
+
+function recordFromTableRow(row: Record<string, unknown>) {
+  const raw = row.__raw as ReviewDataRecordRowResponse | undefined;
+  return typeof raw?.id === 'number' ? raw : null;
+}
+
+async function toggleProblemPanel(recordId: number) {
+  if (isProblemExpanded(recordId)) {
+    expandedRowKeys.value = expandedRowKeys.value.filter((item) => item !== recordId);
+    return;
+  }
+  expandedRowKeys.value = [...expandedRowKeys.value.filter((item) => item !== recordId), recordId];
+  if (!problemItemsMap.value[recordId]) {
+    await loadProblemItems(recordId);
+  }
+}
+
+async function toggleProblemPanelByRow(row: Record<string, unknown>) {
+  const raw = recordFromTableRow(row);
+  if (!raw) {
+    return;
+  }
+  await toggleProblemPanel(raw.id);
+}
+
+function isProblemExpandedByRow(row: Record<string, unknown>) {
+  const raw = recordFromTableRow(row);
+  return raw ? isProblemExpanded(raw.id) : false;
+}
+
+async function handleCreateProblemItemByRow(row: Record<string, unknown>) {
+  const raw = recordFromTableRow(row);
+  if (!raw) {
+    return;
+  }
+  await handleCreateProblemItem(raw.id);
+}
+
 async function handleOpenDetail(row: Record<string, unknown>) {
   const raw = row.__raw as ReviewDataRecordRowResponse | undefined;
   if (!raw) {
@@ -460,6 +502,8 @@ function formatDate(value?: string | null) {
       :active-filter-tags="activeFilterTags"
       :advanced-visible="advancedVisible"
       :expanded-row-keys="expandedRowKeys"
+      :expand-column-visible="false"
+      :row-actions-width="176"
       query-button-text="查询"
       empty-description="当前筛选条件下没有可展示的评审记录。"
       @filter-change="handleFilterChange"
@@ -554,13 +598,23 @@ function formatDate(value?: string | null) {
 
       <template #row-actions="{ row }">
         <div class="record-actions">
+          <el-button
+            type="primary"
+            link
+            @click="toggleProblemPanelByRow(row)"
+          >
+            {{ isProblemExpandedByRow(row) ? '收起清单' : '问题清单' }}
+          </el-button>
           <el-button type="primary" link :icon="View" @click="handleOpenDetail(row)">查看</el-button>
           <el-dropdown>
-            <span class="record-actions-more">更多</span>
+            <span class="record-actions-more">
+              更多
+              <el-icon><ArrowDown /></el-icon>
+            </span>
             <template #dropdown>
               <el-dropdown-menu>
                 <el-dropdown-item @click="handleEditRecord(row)">编辑评审</el-dropdown-item>
-                <el-dropdown-item @click="handleCreateProblemItem((row.__raw as ReviewDataRecordRowResponse).id)">新增问题</el-dropdown-item>
+                <el-dropdown-item @click="handleCreateProblemItemByRow(row)">新增问题</el-dropdown-item>
                 <el-dropdown-item divided @click="handleDeleteRecord(row)">删除评审</el-dropdown-item>
               </el-dropdown-menu>
             </template>
@@ -687,10 +741,14 @@ function formatDate(value?: string | null) {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
+  gap: 8px;
+  flex-wrap: nowrap;
 }
 
 .record-actions-more {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
   cursor: pointer;
   font-size: 13px;
   color: #409eff;
