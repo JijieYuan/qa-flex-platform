@@ -12,7 +12,7 @@ import {
   ElMessageBox,
   ElTag,
 } from 'element-plus';
-import { ArrowDown, Document, Plus, View } from '@element-plus/icons-vue';
+import { ArrowDown, Document, Plus } from '@element-plus/icons-vue';
 import BaseRecordTable from '../components/base/BaseRecordTable.vue';
 import ReviewProblemItemFormDialog from './review-data/ReviewProblemItemFormDialog.vue';
 import ReviewRecordFormDialog from './review-data/ReviewRecordFormDialog.vue';
@@ -503,7 +503,7 @@ function formatDate(value?: string | null) {
       :advanced-visible="advancedVisible"
       :expanded-row-keys="expandedRowKeys"
       :expand-column-visible="false"
-      :row-actions-width="176"
+      :row-actions-width="168"
       query-button-text="查询"
       empty-description="当前筛选条件下没有可展示的评审记录。"
       @filter-change="handleFilterChange"
@@ -599,13 +599,15 @@ function formatDate(value?: string | null) {
       <template #row-actions="{ row }">
         <div class="record-actions">
           <el-button
+            class="record-actions-chip"
+            :class="{ active: isProblemExpandedByRow(row) }"
             type="primary"
             link
             @click="toggleProblemPanelByRow(row)"
           >
-            {{ isProblemExpandedByRow(row) ? '收起清单' : '问题清单' }}
+            {{ isProblemExpandedByRow(row) ? '收起' : '清单' }}
           </el-button>
-          <el-button type="primary" link :icon="View" @click="handleOpenDetail(row)">查看</el-button>
+          <el-button class="record-actions-link" type="primary" link @click="handleOpenDetail(row)">查看</el-button>
           <el-dropdown>
             <span class="record-actions-more">
               更多
@@ -738,20 +740,69 @@ function formatDate(value?: string | null) {
 }
 
 .record-actions {
-  display: flex;
+  display: grid;
+  grid-template-columns: 48px 40px 48px;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  flex-wrap: nowrap;
+  column-gap: 8px;
+}
+
+.record-actions :deep(.el-button + .el-button) {
+  margin-left: 0;
+}
+
+.record-actions-chip {
+  height: 24px;
+  width: 48px;
+  padding: 0 8px;
+  border-radius: 6px;
+  background: rgba(37, 99, 235, 0.08);
+  color: #2563eb;
+  font-size: 12px;
+  font-weight: 600;
+  justify-content: center;
+  line-height: 24px;
+}
+
+.record-actions-chip:hover,
+.record-actions-chip.active {
+  background: rgba(37, 99, 235, 0.13);
+  color: #1d4ed8;
+}
+
+.record-actions-link {
+  height: 24px;
+  width: 40px;
+  padding: 0;
+  color: #2563eb;
+  font-size: 12px;
+  font-weight: 500;
+  justify-content: center;
+  line-height: 24px;
+}
+
+.record-actions-link:hover {
+  color: #1d4ed8;
 }
 
 .record-actions-more {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 2px;
+  height: 24px;
+  width: 48px;
+  padding: 0;
+  border-radius: 6px;
   cursor: pointer;
-  font-size: 13px;
-  color: #409eff;
+  font-size: 12px;
+  color: rgba(37, 99, 235, 0.88);
+  line-height: 24px;
+}
+
+.record-actions-more:hover {
+  background: rgba(37, 99, 235, 0.08);
+  color: #1d4ed8;
 }
 
 .problem-panel {

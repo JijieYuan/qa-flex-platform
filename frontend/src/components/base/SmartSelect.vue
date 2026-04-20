@@ -44,6 +44,9 @@ const popperClass = computed(() => {
   if (props.compact) {
     classNames.push('smart-select-dropdown--compact');
   }
+  if (props.multiple) {
+    classNames.push('smart-select-dropdown--multiple');
+  }
   if (props.compact && props.multiple) {
     classNames.push('smart-select-dropdown--compact-multiple');
   }
@@ -82,6 +85,10 @@ function handleChange(value: string | string[]) {
 function matchesOption(option: RecordTableFilterOption, normalizedQuery: string) {
   return matchesSmartSelectOption(option, normalizedQuery);
 }
+
+function isOptionSelected(value: string) {
+  return Array.isArray(props.modelValue) ? props.modelValue.includes(value) : props.modelValue === value;
+}
 </script>
 
 <template>
@@ -106,6 +113,7 @@ function matchesOption(option: RecordTableFilterOption, normalizedQuery: string)
       :key="option.value"
       :label="option.label"
       :value="option.value"
+      :class="{ 'smart-select-option-item--selected': isOptionSelected(option.value) }"
     >
       <div class="smart-select-option">
         <span class="smart-select-option-label">{{ option.label }}</span>
@@ -160,6 +168,40 @@ function matchesOption(option: RecordTableFilterOption, normalizedQuery: string)
   background: rgba(64, 158, 255, 0.12);
   color: #1d4ed8;
   font-weight: 600;
+}
+
+.smart-select-dropdown--multiple .el-select-dropdown__item.smart-select-option-item--selected,
+.smart-select-dropdown--multiple .el-select-dropdown__item.selected,
+.smart-select-dropdown--multiple .el-select-dropdown__item.is-selected,
+.smart-select-dropdown--multiple .el-select-dropdown__item[aria-selected='true'] {
+  border-color: #2563eb !important;
+  background: #2563eb !important;
+  color: #fff !important;
+  font-weight: 400 !important;
+  box-shadow: 0 6px 14px rgba(37, 99, 235, 0.18);
+}
+
+.smart-select-dropdown--multiple .el-select-dropdown__item.smart-select-option-item--selected.hover,
+.smart-select-dropdown--multiple .el-select-dropdown__item.smart-select-option-item--selected:hover,
+.smart-select-dropdown--multiple .el-select-dropdown__item.selected.hover,
+.smart-select-dropdown--multiple .el-select-dropdown__item.selected:hover,
+.smart-select-dropdown--multiple .el-select-dropdown__item.is-selected.hover,
+.smart-select-dropdown--multiple .el-select-dropdown__item.is-selected:hover,
+.smart-select-dropdown--multiple .el-select-dropdown__item[aria-selected='true'].hover,
+.smart-select-dropdown--multiple .el-select-dropdown__item[aria-selected='true']:hover {
+  border-color: #1d4ed8 !important;
+  background: #1d4ed8 !important;
+  color: #fff !important;
+}
+
+.smart-select-dropdown--multiple
+  .el-select-dropdown__item.smart-select-option-item--selected
+  .smart-select-option-label,
+.smart-select-dropdown--multiple .el-select-dropdown__item.selected .smart-select-option-label,
+.smart-select-dropdown--multiple .el-select-dropdown__item.is-selected .smart-select-option-label,
+.smart-select-dropdown--multiple .el-select-dropdown__item[aria-selected='true'] .smart-select-option-label {
+  color: #fff !important;
+  font-weight: 400;
 }
 
 .smart-select-dropdown--compact .smart-select-option {
