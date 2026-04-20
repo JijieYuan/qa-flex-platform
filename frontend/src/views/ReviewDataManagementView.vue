@@ -12,7 +12,7 @@ import {
   ElMessageBox,
   ElTag,
 } from 'element-plus';
-import { ArrowDown, Document, Download, Plus } from '@element-plus/icons-vue';
+import { ArrowDown, Document, Download, EditPen, Plus } from '@element-plus/icons-vue';
 import BaseRecordTable from '../components/base/BaseRecordTable.vue';
 import ReviewProblemItemFormDialog from './review-data/ReviewProblemItemFormDialog.vue';
 import ReviewRecordFormDialog from './review-data/ReviewRecordFormDialog.vue';
@@ -560,7 +560,7 @@ function formatDate(value?: string | null) {
       :advanced-visible="advancedVisible"
       :expanded-row-keys="expandedRowKeys"
       :expand-column-visible="false"
-      :row-actions-width="168"
+      :row-actions-width="188"
       query-button-text="查询"
       empty-description="当前筛选条件下没有可展示的评审记录。"
       @filter-change="handleFilterChange"
@@ -632,22 +632,29 @@ function formatDate(value?: string | null) {
               </template>
             </el-table-column>
 
-            <el-table-column label="操作" width="120" fixed="right" align="center">
+            <el-table-column label="操作" width="136" fixed="right" align="center">
               <template #default="{ row: problemRow }">
-                <el-button
-                  type="primary"
-                  link
-                  @click="handleEditProblemItem((row.__raw as ReviewDataRecordRowResponse).id, problemRow.__raw as ReviewDataProblemItemResponse)"
-                >
-                  编辑
-                </el-button>
-                <el-button
-                  type="danger"
-                  link
-                  @click="handleDeleteProblemItem((row.__raw as ReviewDataRecordRowResponse).id, (problemRow.__raw as ReviewDataProblemItemResponse).id)"
-                >
-                  删除
-                </el-button>
+                <div class="problem-actions">
+                  <el-button
+                    class="problem-action-edit"
+                    type="primary"
+                    plain
+                    size="small"
+                    :icon="EditPen"
+                    @click="handleEditProblemItem((row.__raw as ReviewDataRecordRowResponse).id, problemRow.__raw as ReviewDataProblemItemResponse)"
+                  >
+                    编辑
+                  </el-button>
+                  <el-button
+                    class="problem-action-delete"
+                    type="danger"
+                    text
+                    size="small"
+                    @click="handleDeleteProblemItem((row.__raw as ReviewDataRecordRowResponse).id, (problemRow.__raw as ReviewDataProblemItemResponse).id)"
+                  >
+                    删除
+                  </el-button>
+                </div>
               </template>
             </el-table-column>
           </el-table>
@@ -660,12 +667,13 @@ function formatDate(value?: string | null) {
             class="record-actions-chip"
             :class="{ active: isProblemExpandedByRow(row) }"
             type="primary"
-            link
+            plain
+            size="small"
             @click="toggleProblemPanelByRow(row)"
           >
             {{ isProblemExpandedByRow(row) ? '收起' : '清单' }}
           </el-button>
-          <el-button class="record-actions-link" type="primary" link @click="handleOpenDetail(row)">查看</el-button>
+          <el-button class="record-actions-link" type="primary" plain size="small" @click="handleOpenDetail(row)">查看</el-button>
           <el-dropdown>
             <span class="record-actions-more">
               更多
@@ -799,10 +807,10 @@ function formatDate(value?: string | null) {
 
 .record-actions {
   display: grid;
-  grid-template-columns: 48px 40px 48px;
+  grid-template-columns: 52px 52px 48px;
   align-items: center;
   justify-content: center;
-  column-gap: 8px;
+  column-gap: 7px;
 }
 
 .record-actions :deep(.el-button + .el-button) {
@@ -810,36 +818,43 @@ function formatDate(value?: string | null) {
 }
 
 .record-actions-chip {
-  height: 24px;
-  width: 48px;
-  padding: 0 8px;
-  border-radius: 6px;
+  height: 26px;
+  width: 52px;
+  padding: 0 10px;
+  border-color: rgba(37, 99, 235, 0.2);
+  border-radius: 7px;
   background: rgba(37, 99, 235, 0.08);
   color: #2563eb;
   font-size: 12px;
   font-weight: 600;
   justify-content: center;
-  line-height: 24px;
+  line-height: 26px;
 }
 
 .record-actions-chip:hover,
 .record-actions-chip.active {
-  background: rgba(37, 99, 235, 0.13);
-  color: #1d4ed8;
+  border-color: #2563eb;
+  background: #2563eb;
+  color: #fff;
 }
 
 .record-actions-link {
-  height: 24px;
-  width: 40px;
-  padding: 0;
+  height: 26px;
+  width: 52px;
+  padding: 0 10px;
+  border-color: rgba(37, 99, 235, 0.14);
+  border-radius: 7px;
+  background: rgba(37, 99, 235, 0.04);
   color: #2563eb;
   font-size: 12px;
-  font-weight: 500;
+  font-weight: 600;
   justify-content: center;
-  line-height: 24px;
+  line-height: 26px;
 }
 
 .record-actions-link:hover {
+  border-color: rgba(37, 99, 235, 0.28);
+  background: rgba(37, 99, 235, 0.1);
   color: #1d4ed8;
 }
 
@@ -848,14 +863,14 @@ function formatDate(value?: string | null) {
   align-items: center;
   justify-content: center;
   gap: 2px;
-  height: 24px;
+  height: 26px;
   width: 48px;
   padding: 0;
-  border-radius: 6px;
+  border-radius: 7px;
   cursor: pointer;
   font-size: 12px;
-  color: rgba(37, 99, 235, 0.88);
-  line-height: 24px;
+  color: rgba(37, 99, 235, 0.72);
+  line-height: 26px;
 }
 
 .record-actions-more:hover {
@@ -888,6 +903,50 @@ function formatDate(value?: string | null) {
 .problem-subtable {
   border-radius: 12px;
   overflow: hidden;
+}
+
+.problem-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+}
+
+.problem-actions :deep(.el-button + .el-button) {
+  margin-left: 0;
+}
+
+.problem-action-edit {
+  height: 26px;
+  padding: 0 10px;
+  border-color: rgba(37, 99, 235, 0.2);
+  border-radius: 7px;
+  background: rgba(37, 99, 235, 0.08);
+  color: #2563eb;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.problem-action-edit:hover,
+.problem-action-edit:focus {
+  border-color: #2563eb;
+  background: #2563eb;
+  color: #fff;
+}
+
+.problem-action-delete {
+  height: 26px;
+  padding: 0 6px;
+  color: rgba(220, 38, 38, 0.72);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.problem-action-delete:hover,
+.problem-action-delete:focus {
+  background: rgba(220, 38, 38, 0.08);
+  color: #dc2626;
 }
 
 .detail-section {
