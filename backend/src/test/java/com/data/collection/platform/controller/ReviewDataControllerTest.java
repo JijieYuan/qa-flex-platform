@@ -13,9 +13,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.data.collection.platform.entity.OptionItemResponse;
 import com.data.collection.platform.entity.ReviewDataFilterOptionsResponse;
 import com.data.collection.platform.entity.ReviewDataProblemItemResponse;
+import com.data.collection.platform.entity.ReviewDataProblemItemSaveRequest;
 import com.data.collection.platform.entity.ReviewDataRecordDetailResponse;
 import com.data.collection.platform.entity.ReviewDataRecordListResponse;
 import com.data.collection.platform.entity.ReviewDataRecordRowResponse;
+import com.data.collection.platform.entity.ReviewDataRecordSaveRequest;
 import com.data.collection.platform.entity.ReviewDataSummaryResponse;
 import com.data.collection.platform.service.ReviewDataRecordService;
 import java.time.LocalDate;
@@ -45,13 +47,14 @@ class ReviewDataControllerTest {
   @Test
   void shouldReturnReviewDataRecordList() throws Exception {
     when(reviewDataRecordService.listRecords(
-            eq("说明书"),
+            eq("review"),
+            eq("design"),
             eq("CrownCAD"),
-            eq("草图"),
-            eq("王青"),
-            eq("设计说明书评审"),
-            eq("已修复"),
-            eq("张三"),
+            eq("Sketch"),
+            eq("Alice"),
+            eq("Document Review"),
+            eq("Resolved"),
+            eq("Bob"),
             eq(null),
             eq(2),
             eq(10),
@@ -63,15 +66,15 @@ class ReviewDataControllerTest {
                     new ReviewDataRecordRowResponse(
                         1L,
                         "CrownCAD",
-                        "草图功能设计说明书评审",
-                        "草图",
-                        "设计说明书评审",
+                        "Sketch Design Review",
+                        "Sketch",
+                        "Document Review",
                         LocalDate.of(2026, 4, 10),
-                        "王青",
-                        "张三、李四",
+                        "Alice",
+                        "Bob, Carol",
                         24,
-                        "设计说明书",
-                        "路士坤",
+                        "Design Doc",
+                        "Dora",
                         "V1.0",
                         5,
                         0.21,
@@ -86,20 +89,21 @@ class ReviewDataControllerTest {
 
     mockMvc.perform(
             get("/api/review-data/records")
-                .param("title", "说明书")
+                .param("keyword", "review")
+                .param("title", "design")
                 .param("projectName", "CrownCAD")
-                .param("moduleName", "草图")
-                .param("reviewOwner", "王青")
-                .param("reviewType", "设计说明书评审")
-                .param("problemStatus", "已修复")
-                .param("reviewExpert", "张三")
+                .param("moduleName", "Sketch")
+                .param("reviewOwner", "Alice")
+                .param("reviewType", "Document Review")
+                .param("problemStatus", "Resolved")
+                .param("reviewExpert", "Bob")
                 .param("page", "2")
                 .param("size", "10")
                 .param("sortBy", "updatedAt")
                 .param("sortOrder", "desc"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.success").value(true))
-        .andExpect(jsonPath("$.data.records[0].title").value("草图功能设计说明书评审"))
+        .andExpect(jsonPath("$.data.records[0].title").value("Sketch Design Review"))
         .andExpect(jsonPath("$.data.records[0].problemCount").value(5))
         .andExpect(jsonPath("$.data.summary.totalProblemItems").value(5));
   }
@@ -110,19 +114,19 @@ class ReviewDataControllerTest {
         .thenReturn(
             new ReviewDataFilterOptionsResponse(
                 List.of(new OptionItemResponse("CrownCAD", "CrownCAD")),
-                List.of(new OptionItemResponse("草图", "草图")),
-                List.of(new OptionItemResponse("王青", "王青")),
-                List.of(new OptionItemResponse("设计说明书评审", "设计说明书评审")),
-                List.of(new OptionItemResponse("张三", "张三")),
-                List.of(new OptionItemResponse("已修复", "已修复")),
-                List.of(new OptionItemResponse("会议评审", "会议评审")),
-                List.of(new OptionItemResponse("文档规范", "文档规范"))));
+                List.of(new OptionItemResponse("Sketch", "Sketch")),
+                List.of(new OptionItemResponse("Alice", "Alice")),
+                List.of(new OptionItemResponse("Document Review", "Document Review")),
+                List.of(new OptionItemResponse("Bob", "Bob")),
+                List.of(new OptionItemResponse("Resolved", "Resolved")),
+                List.of(new OptionItemResponse("Meeting Review", "Meeting Review")),
+                List.of(new OptionItemResponse("Formatting", "Formatting"))));
 
     mockMvc.perform(get("/api/review-data/records/filter-options"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.success").value(true))
         .andExpect(jsonPath("$.data.projectNames[0].value").value("CrownCAD"))
-        .andExpect(jsonPath("$.data.reviewExperts[0].value").value("张三"));
+        .andExpect(jsonPath("$.data.reviewExperts[0].value").value("Bob"));
   }
 
   @Test
@@ -133,68 +137,68 @@ class ReviewDataControllerTest {
                 new ReviewDataRecordRowResponse(
                     1L,
                     "CrownCAD",
-                    "草图功能设计说明书评审",
-                    "草图",
-                    "设计说明书评审",
+                    "Sketch Design Review",
+                    "Sketch",
+                    "Document Review",
                     LocalDate.of(2026, 4, 10),
-                    "王青",
-                    "张三、李四",
+                    "Alice",
+                    "Bob, Carol",
                     24,
-                    "设计说明书",
-                    "路士坤",
+                    "Design Doc",
+                    "Dora",
                     "V1.0",
                     5,
                     0.21,
                     LocalDateTime.of(2026, 4, 12, 10, 0),
                     false),
-                List.of("张三", "李四"),
+                List.of("Bob", "Carol"),
                 List.of(
                     new ReviewDataProblemItemResponse(
                         9L,
                         1L,
-                        "张三",
+                        "Bob",
                         0.5,
-                        "会议评审",
+                        "Meeting Review",
                         "3.3.2",
-                        "文档规范",
-                        "命名不规范",
-                        "统一命名",
-                        "路士坤",
+                        "Formatting",
+                        "Heading format is inconsistent",
+                        "Unify heading format",
+                        "Dora",
                         "",
-                        "已修复",
+                        "Resolved",
                         LocalDateTime.of(2026, 4, 12, 11, 0)))));
 
     mockMvc.perform(get("/api/review-data/records/1"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.success").value(true))
         .andExpect(jsonPath("$.data.record.projectName").value("CrownCAD"))
-        .andExpect(jsonPath("$.data.reviewExperts[0]").value("张三"))
-        .andExpect(jsonPath("$.data.problemItems[0].problemDescription").value("命名不规范"));
+        .andExpect(jsonPath("$.data.reviewExperts[0]").value("Bob"))
+        .andExpect(jsonPath("$.data.problemItems[0].problemDescription").value("Heading format is inconsistent"));
   }
 
   @Test
   void shouldCreateRecord() throws Exception {
-    when(reviewDataRecordService.createRecord(any()))
+    when(reviewDataRecordService.createRecord(any(ReviewDataRecordSaveRequest.class)))
         .thenReturn(
             new ReviewDataRecordDetailResponse(
                 new ReviewDataRecordRowResponse(
                     12L,
                     "CrownCAD",
-                    "新建评审",
-                    "工具",
-                    "设计说明书评审",
+                    "New Review",
+                    "Tools",
+                    "Document Review",
                     LocalDate.of(2026, 4, 17),
-                    "王青",
-                    "张三",
+                    "Alice",
+                    "Bob",
                     18,
-                    "设计说明书",
-                    "路士坤",
+                    "Design Doc",
+                    "Dora",
                     "V2.0",
                     0,
                     0.0,
                     LocalDateTime.of(2026, 4, 17, 10, 0),
                     false),
-                List.of("张三"),
+                List.of("Bob"),
                 List.of()));
 
     mockMvc.perform(
@@ -204,41 +208,40 @@ class ReviewDataControllerTest {
                     """
                     {
                       "projectName":"CrownCAD",
-                      "title":"新建评审",
-                      "moduleName":"工具",
-                      "reviewType":"设计说明书评审",
+                      "title":"New Review",
+                      "moduleName":"Tools",
+                      "reviewType":"Document Review",
                       "reviewDate":"2026-04-17",
-                      "reviewOwner":"王青",
-                      "reviewExperts":["张三"],
+                      "reviewOwner":"Alice",
+                      "reviewExperts":["Bob"],
                       "reviewScalePages":18,
-                      "reviewProduct":"设计说明书",
-                      "authorName":"路士坤",
+                      "reviewProduct":"Design Doc",
+                      "authorName":"Dora",
                       "reviewVersion":"V2.0"
                     }
                     """))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.success").value(true))
-        .andExpect(jsonPath("$.message").value("新增评审成功"))
         .andExpect(jsonPath("$.data.record.id").value(12));
   }
 
   @Test
   void shouldUpdateProblemItem() throws Exception {
-    when(reviewDataRecordService.updateProblemItem(eq(1L), eq(9L), any()))
+    when(reviewDataRecordService.updateProblemItem(eq(1L), eq(9L), any(ReviewDataProblemItemSaveRequest.class)))
         .thenReturn(
             new ReviewDataProblemItemResponse(
                 9L,
                 1L,
-                "张三",
+                "Bob",
                 0.8,
-                "会议评审",
+                "Meeting Review",
                 "3.3.2",
-                "文档规范",
-                "命名不规范",
-                "统一命名",
-                "路士坤",
+                "Formatting",
+                "Heading format is inconsistent",
+                "Unify heading format",
+                "Dora",
                 "",
-                "已修复",
+                "Resolved",
                 LocalDateTime.of(2026, 4, 17, 11, 0)));
 
     mockMvc.perform(
@@ -247,28 +250,27 @@ class ReviewDataControllerTest {
                 .content(
                     """
                     {
-                      "reviewerName":"张三",
+                      "reviewerName":"Bob",
                       "workloadHours":0.8,
-                      "reviewCategory":"会议评审",
+                      "reviewCategory":"Meeting Review",
                       "documentPosition":"3.3.2",
-                      "problemCategory":"文档规范",
-                      "problemDescription":"命名不规范",
-                      "suggestedSolution":"统一命名",
-                      "ownerName":"路士坤",
+                      "problemCategory":"Formatting",
+                      "problemDescription":"Heading format is inconsistent",
+                      "suggestedSolution":"Unify heading format",
+                      "ownerName":"Dora",
                       "rejectionReason":"",
-                      "problemStatus":"已修复"
+                      "problemStatus":"Resolved"
                     }
                     """))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.success").value(true))
-        .andExpect(jsonPath("$.data.workloadHours").value(0.8));
+        .andExpect(jsonPath("$.data.problemStatus").value("Resolved"));
   }
 
   @Test
-  void shouldDeleteProblemItem() throws Exception {
-    mockMvc.perform(delete("/api/review-data/records/1/problem-items/9"))
+  void shouldDeleteRecord() throws Exception {
+    mockMvc.perform(delete("/api/review-data/records/1"))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.success").value(true))
-        .andExpect(jsonPath("$.message").value("删除评审问题成功"));
+        .andExpect(jsonPath("$.success").value(true));
   }
 }

@@ -130,6 +130,7 @@ public class ReviewDataRecordService {
   }
 
   public ReviewDataRecordListResponse listRecords(
+      String keyword,
       String title,
       String projectName,
       String moduleName,
@@ -148,7 +149,7 @@ public class ReviewDataRecordService {
     String safeSortOrder = normalizeSortOrder(sortOrder);
 
     List<ReviewDataRecordRowResponse> legacyFiltered =
-        loadRecords(title, projectName, moduleName, reviewOwner, reviewType, problemStatus, reviewExpert);
+        loadRecords(keyword, title, projectName, moduleName, reviewOwner, reviewType, problemStatus, reviewExpert);
     StatisticFilterGroup filterGroup = parseFilterGroup(filterGroupJson);
     Map<Long, List<String>> problemStatusesByRecordId =
         needsField(filterGroup, "problemStatus") ? loadProblemStatusesByRecordIds(legacyFiltered) : Map.of();
@@ -172,7 +173,7 @@ public class ReviewDataRecordService {
   }
 
   public ReviewDataFilterOptionsResponse getFilterOptions() {
-    List<ReviewDataRecordRowResponse> records = loadRecords(null, null, null, null, null, null, null);
+    List<ReviewDataRecordRowResponse> records = loadRecords(null, null, null, null, null, null, null, null);
 
     return new ReviewDataFilterOptionsResponse(
         toOptions(records.stream().map(ReviewDataRecordRowResponse::projectName).toList()),
@@ -410,6 +411,7 @@ public class ReviewDataRecordService {
   }
 
   private List<ReviewDataRecordRowResponse> loadRecords(
+      String keyword,
       String title,
       String projectName,
       String moduleName,
@@ -420,6 +422,7 @@ public class ReviewDataRecordService {
     StringBuilder sql = new StringBuilder(BASE_LIST_SQL);
     List<Object> args = new ArrayList<>();
 
+    appendKeywordFilter(sql, args, keyword);
     appendContains(sql, args, "r.title", title);
     appendContains(sql, args, "r.project_name", projectName);
     appendContains(sql, args, "r.module_name", moduleName);
@@ -825,6 +828,37 @@ public class ReviewDataRecordService {
     }
     sql.append(" and lower(coalesce(").append(column).append(", '')) like ?");
     args.add("%" + normalized.toLowerCase(Locale.ROOT) + "%");
+  }
+
+  private void appendKeywordFilter(StringBuilder sql, List<Object> args, String keyword) {
+    String normalized = TextQuerySupport.trimToNull(keyword);
+    if (normalized == null) {
+      return;
+    }
+    String likeValue = "%" + normalized.toLowerCase(Locale.ROOT) + "%";
+    sql.append(
+        """
+         and (
+          lower(coalesce(r.title, '')) like ?
+          or lower(coalesce(r.project_name, '')) like ?
+          or lower(coalesce(r.module_name, '')) like ?
+          or lower(coalesce(r.review_owner, '')) like ?
+          or lower(coalesce(r.review_type, '')) like ?
+          or exists (
+            select 1
+            from review_record_experts keyword_expert
+            where keyword_expert.review_record_id = r.id
+              and keyword_expert.deleted = false
+              and lower(coalesce(keyword_expert.expert_name, '')) like ?
+          )
+        )
+        """);
+    args.add(likeValue);
+    args.add(likeValue);
+    args.add(likeValue);
+    args.add(likeValue);
+    args.add(likeValue);
+    args.add(likeValue);
   }
 
   private void appendEqText(StringBuilder sql, List<Object> args, String column, String value) {

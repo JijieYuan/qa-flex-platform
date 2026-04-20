@@ -4,6 +4,7 @@ import { ElMessage } from 'element-plus';
 import { Edit, Refresh, Search, WarningFilled } from '@element-plus/icons-vue';
 import { api, type DatabaseTableOption, type DatabaseTableRowsResponse } from '../api';
 import SyncMetaBadge from './realtime/SyncMetaBadge.vue';
+import SmartSelect from './base/SmartSelect.vue';
 import { useRouteTableState } from '../composables/useRouteTableState';
 
 const tablesLoading = ref(false);
@@ -41,6 +42,12 @@ const columns = computed(() => rowsResponse.value?.columns ?? []);
 const rows = computed(() => rowsResponse.value?.rows ?? []);
 const total = computed(() => rowsResponse.value?.total ?? 0);
 const selectedOption = computed(() => tableOptions.value.find((option) => option.tableName === selectedTable.value) ?? null);
+const smartTableOptions = computed(() =>
+  tableOptions.value.map((option) => ({
+    label: `${option.label} (${option.tableName})`,
+    value: option.tableName,
+  })),
+);
 const isCollectFormTable = computed(() => selectedTable.value === 'collect_form_records');
 const syncStatusTagType = computed(() => {
   const status = rowsResponse.value?.syncStatus ?? selectedOption.value?.syncStatus;
@@ -121,6 +128,15 @@ async function handleSearch() {
   await patchQuery({
     keyword: keywordDraft.value.trim(),
     page: 1,
+  });
+}
+
+async function handleTableSelectChange(value: string | string[]) {
+  await patchQuery({
+    table: Array.isArray(value) ? value[0] ?? '' : value,
+    page: 1,
+    sortBy: '',
+    sortOrder: '',
   });
 }
 
@@ -274,21 +290,14 @@ onBeforeUnmount(() => {
   <div class="db-browser-card">
     <div class="db-toolbar">
       <div class="db-toolbar-filters">
-        <el-select
+        <SmartSelect
           :model-value="selectedTable"
           class="db-table-select"
           placeholder="请选择要查看的本地表"
-          filterable
           :loading="tablesLoading"
-          @change="(value:string) => patchQuery({ table: value, page: 1, sortBy: '', sortOrder: '' })"
-        >
-          <el-option
-            v-for="option in tableOptions"
-            :key="option.tableName"
-            :label="`${option.label} (${option.tableName})`"
-            :value="option.tableName"
-          />
-        </el-select>
+          :options="smartTableOptions"
+          @change="handleTableSelectChange"
+        />
 
         <el-input
           v-model="keywordDraft"

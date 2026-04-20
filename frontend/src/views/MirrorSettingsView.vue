@@ -14,6 +14,7 @@ import {
   type SyncSubmissionResponse,
   type TableWhitelistOption,
 } from '../api';
+import SmartSelect from '../components/base/SmartSelect.vue';
 
 const loading = ref(false);
 const refreshing = ref(false);
@@ -52,6 +53,12 @@ const form = ref<GitlabSyncConfig>({
 });
 
 const recommendedCount = computed(() => whitelistOptions.value.filter((item) => item.recommended).length);
+const whitelistSelectOptions = computed(() =>
+  whitelistOptions.value.map((option) => ({
+    label: `${option.label} (${option.tableName})`,
+    value: option.tableName,
+  })),
+);
 const isDockerMode = computed(() => form.value.sourceMode === 'DOCKER');
 const syncEnabled = computed(() => form.value.autoSyncEnabled);
 const progress = computed<SyncProgress | null>(() => status.value?.progress ?? null);
@@ -628,21 +635,14 @@ onBeforeUnmount(() => {
           </el-radio-group>
         </el-form-item>
         <el-form-item v-if="form.whitelistMode === 'CUSTOM'" label="自定义白名单">
-          <el-select
+          <SmartSelect
             v-model="form.whitelistTables"
             multiple
-            filterable
             style="width: 100%"
             :loading="whitelistOptionsLoading"
+            :options="whitelistSelectOptions"
             @visible-change="(visible:boolean) => visible && ensureWhitelistOptions()"
-          >
-            <el-option
-              v-for="option in whitelistOptions"
-              :key="option.tableName"
-              :label="`${option.label} (${option.tableName})`"
-              :value="option.tableName"
-            />
-          </el-select>
+          />
           <div class="form-help-text">
             {{
               whitelistOptionsLoaded

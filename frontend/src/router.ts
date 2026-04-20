@@ -50,6 +50,8 @@ const statisticBoardQueryKeys = [
   'detailVisible',
   'detailRowKey',
   'detailColumnKey',
+  'filterGroup',
+  'filterLogic',
   'projectId',
 ];
 
@@ -99,6 +101,9 @@ const routes: RouteRecordRaw[] = [
         'pageSize',
         'sortBy',
         'sortOrder',
+        'keyword',
+        'filterGroup',
+        'filterLogic',
         'title',
         'projectName',
         'moduleName',
@@ -107,6 +112,7 @@ const routes: RouteRecordRaw[] = [
         'problemStatus',
         'reviewExpert',
       ],
+      allowedQueryPrefixes: ['filters.'],
       persistedQueryKeys: ['projectId'],
     },
   },
@@ -213,7 +219,7 @@ function sameStringArray(left: string[], right: string[]) {
   return left.length === right.length && left.every((value, index) => value === right[index]);
 }
 
-function normalizeQuery(to: RouteLocationNormalized, from?: RouteLocationNormalized) {
+export function normalizeQuery(to: RouteLocationNormalized, from?: RouteLocationNormalized) {
   const allowedKeys = to.meta.allowedQueryKeys ?? [];
   const allowedPrefixes = to.meta.allowedQueryPrefixes ?? [];
   const persistedKeys = to.meta.persistedQueryKeys ?? [];

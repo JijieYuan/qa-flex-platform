@@ -74,6 +74,34 @@ describe('statistic board route query', () => {
     expect(String(patch.filterGroup)).toContain('"fieldKey":"moduleName"');
   });
 
+  it('only serializes completed filter conditions into route query patch', () => {
+    const patch = buildFilterQueryPatch(
+      {},
+      {
+        logic: 'AND',
+        conditions: [
+          {
+            id: '1',
+            fieldKey: 'moduleName',
+            operator: 'eq',
+            value: 'module-a',
+            secondaryValue: '',
+          },
+          {
+            id: '2',
+            fieldKey: 'reviewOwner',
+            operator: 'eq',
+            value: '',
+            secondaryValue: '',
+          },
+        ],
+      },
+    );
+
+    expect(String(patch.filterGroup)).toContain('"fieldKey":"moduleName"');
+    expect(String(patch.filterGroup)).not.toContain('"fieldKey":"reviewOwner"');
+  });
+
   it('builds reset patch for both serialized and legacy filters', () => {
     const patch = buildResetFilterQueryPatch({
       filterGroup: '{"logic":"AND","conditions":[]}',

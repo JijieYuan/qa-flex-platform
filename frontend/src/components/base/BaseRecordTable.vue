@@ -64,7 +64,7 @@ const emit = defineEmits<{
   (event: 'current-change', page: number): void;
   (event: 'sort-change', payload: { prop: string; order: 'ascending' | 'descending' | null }): void;
   (event: 'filter-change', payload: { key: string; value: string | string[] | null }): void;
-  (event: 'query'): void;
+  (event: 'query', keyword: string): void;
   (event: 'clear-filter', key: string): void;
   (event: 'update:advancedVisible', value: boolean): void;
   (event: 'expand-change', row: Record<string, unknown>, expandedRows: Record<string, unknown>[]): void;
@@ -150,7 +150,9 @@ function formatCellValue(value: unknown) {
 }
 
 function handleSearch() {
-  emit('search', keywordDraft.value.trim());
+  const normalizedKeyword = keywordDraft.value.trim();
+  emit('search', normalizedKeyword);
+  emit('query', normalizedKeyword);
 }
 
 function handleReset() {
@@ -232,13 +234,22 @@ function getFilterValue(key: string) {
           </template>
         </el-input>
 
-        <div class="record-filter-primary-actions">
+        <div
+          class="record-filter-primary-actions"
+          :class="{ 'record-filter-primary-actions-inline': hasFilterBuilder }"
+        >
           <slot name="primary-actions" />
           <el-button v-if="hasAdvancedFilters" @click="toggleAdvancedVisible">
             {{ advancedVisible ? '收起高级筛选' : '高级筛选' }}
           </el-button>
           <el-button @click="handleReset">重置</el-button>
-          <el-button type="primary" @click="emit('query')">{{ queryButtonText }}</el-button>
+          <el-button
+            type="primary"
+            :class="{ 'record-filter-query-button-separated': hasFilterBuilder }"
+            @click="emit('query', keywordDraft.trim())"
+          >
+            {{ queryButtonText }}
+          </el-button>
         </div>
       </div>
 
@@ -442,6 +453,17 @@ function getFilterValue(key: string) {
   gap: 8px;
   margin-left: auto;
   flex-wrap: wrap;
+}
+
+.record-filter-primary-actions-inline {
+  margin-left: 0;
+  flex: 1 1 auto;
+}
+
+.record-filter-query-button-separated {
+  order: -1;
+  margin-left: 0;
+  margin-right: auto;
 }
 
 .record-filter-advanced {

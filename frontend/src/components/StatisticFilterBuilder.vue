@@ -1,5 +1,7 @@
 <script setup lang="ts">
+import SmartSelect from './base/SmartSelect.vue';
 import type { StatisticFilterField, StatisticFilterOperator } from '../api';
+import type { RecordTableFilterOption } from '../types/record-table';
 import {
   createFilterConditionDraft,
   operatorLabel,
@@ -93,6 +95,27 @@ function fieldOptions(condition: StatisticFilterConditionDraft) {
 function needsValue(condition: StatisticFilterConditionDraft) {
   return condition.operator !== 'isEmpty' && condition.operator !== 'isNotEmpty';
 }
+
+function fieldSelectOptions(): RecordTableFilterOption[] {
+  return props.fields.map((field) => ({ label: field.label, value: field.key }));
+}
+
+function operatorSelectOptions(condition: StatisticFilterConditionDraft): RecordTableFilterOption[] {
+  return operatorOptionsForCondition(condition).map((operator) => ({ label: operatorLabel(operator), value: operator }));
+}
+
+function handleFieldSelectChange(condition: StatisticFilterConditionDraft, value: string | string[]) {
+  condition.fieldKey = String(Array.isArray(value) ? value[0] ?? '' : value ?? '');
+  handleConditionFieldChange(condition);
+}
+
+function handleOperatorSelectChange(condition: StatisticFilterConditionDraft, value: string | string[]) {
+  condition.operator = String(Array.isArray(value) ? value[0] ?? '' : value ?? '') as StatisticFilterOperator | '';
+}
+
+function handleValueSelectChange(condition: StatisticFilterConditionDraft, value: string | string[]) {
+  condition.value = String(Array.isArray(value) ? value[0] ?? '' : value ?? '');
+}
 </script>
 
 <template>
@@ -105,38 +128,29 @@ function needsValue(condition: StatisticFilterConditionDraft) {
     />
     <div v-if="modelValue.conditions.length" class="stat-filter-list">
       <div v-for="condition in modelValue.conditions" :key="condition.id" class="stat-filter-row">
-        <el-select
-          v-model="condition.fieldKey"
+        <SmartSelect
+          :model-value="condition.fieldKey"
           class="stat-filter-field"
           placeholder="字段"
-          @change="handleConditionFieldChange(condition)"
-        >
-          <el-option v-for="field in fields" :key="field.key" :label="field.label" :value="field.key" />
-        </el-select>
-        <el-select v-model="condition.operator" class="stat-filter-operator" placeholder="关系">
-          <el-option
-            v-for="operator in operatorOptionsForCondition(condition)"
-            :key="operator"
-            :label="operatorLabel(operator)"
-            :value="operator"
-          />
-        </el-select>
+          :options="fieldSelectOptions()"
+          @change="handleFieldSelectChange(condition, $event)"
+        />
+        <SmartSelect
+          :model-value="condition.operator"
+          class="stat-filter-operator"
+          placeholder="关系"
+          :options="operatorSelectOptions(condition)"
+          @change="handleOperatorSelectChange(condition, $event)"
+        />
         <template v-if="needsValue(condition)">
-          <el-select
+          <SmartSelect
             v-if="isSelectField(condition)"
-            v-model="condition.value"
+            :model-value="String(condition.value ?? '')"
             class="stat-filter-value"
             placeholder="值"
-            clearable
-            filterable
-          >
-            <el-option
-              v-for="option in fieldOptions(condition)"
-              :key="option.value"
-              :label="option.label"
-              :value="option.value"
-            />
-          </el-select>
+            :options="fieldOptions(condition)"
+            @change="handleValueSelectChange(condition, $event)"
+          />
           <el-input-number
             v-else-if="isNumericField(condition)"
             v-model="condition.value"

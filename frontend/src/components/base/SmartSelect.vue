@@ -13,6 +13,7 @@ const props = withDefaults(
     collapseTags?: boolean;
     compact?: boolean;
     disabled?: boolean;
+    loading?: boolean;
   }>(),
   {
     placeholder: '',
@@ -21,12 +22,14 @@ const props = withDefaults(
     collapseTags: false,
     compact: false,
     disabled: false,
+    loading: false,
   },
 );
 
 const emit = defineEmits<{
   (event: 'update:modelValue', value: string | string[]): void;
   (event: 'change', value: string | string[]): void;
+  (event: 'visible-change', value: boolean): void;
 }>();
 
 const query = ref('');
@@ -72,6 +75,7 @@ function handleFilter(keyword: string) {
 }
 
 function handleVisibleChange(visible: boolean) {
+  emit('visible-change', visible);
   if (!visible) {
     query.value = '';
   }
@@ -103,6 +107,7 @@ function isOptionSelected(value: string) {
     :collapse-tags="collapseTags"
     collapse-tags-tooltip
     :disabled="disabled"
+    :loading="loading"
     :fit-input-width="compact && multiple"
     :popper-class="popperClass"
     @change="handleChange"

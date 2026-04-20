@@ -728,6 +728,7 @@ export const api = {
       });
     },
     getReviewDataRecords(params: {
+      keyword?: string;
       title?: string;
       projectName?: string;
       moduleName?: string;
@@ -744,6 +745,7 @@ export const api = {
       const query = new URLSearchParams({
         page: String(params.page ?? 1),
         size: String(params.size ?? 20),
+        ...(params.keyword ? { keyword: params.keyword } : {}),
         ...(params.title ? { title: params.title } : {}),
         ...(params.projectName ? { projectName: params.projectName } : {}),
         ...(params.moduleName ? { moduleName: params.moduleName } : {}),

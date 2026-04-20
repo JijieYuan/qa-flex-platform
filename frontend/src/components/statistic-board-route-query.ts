@@ -3,6 +3,7 @@ import type { StatisticFilterGroup, StatisticFilterOperator } from '../api';
 import type { SortDirection } from './statistic-board-sorting';
 import {
   createEmptyFilterGroup,
+  sanitizeFilterDraftGroup,
   type StatisticFilterConditionDraft,
   type StatisticFilterDraftGroup,
 } from './statistic-board-filters';
@@ -101,9 +102,13 @@ export function buildFilterGroupFromRouteQuery(query: LocationQuery) {
 }
 
 export function buildFilterQueryPatch(query: LocationQuery, filterDraft: Pick<StatisticFilterDraftGroup, 'logic' | 'conditions'>) {
+  const sanitizedFilterGroup = sanitizeFilterDraftGroup({
+    logic: filterDraft.logic,
+    conditions: [...filterDraft.conditions],
+  });
   const patch: Record<string, string | number | null> = {
     filterLogic: null,
-    [FILTER_GROUP_QUERY_KEY]: filterDraft.conditions.length ? stringifyRouteFilterGroup(filterDraft) : null,
+    [FILTER_GROUP_QUERY_KEY]: sanitizedFilterGroup ? stringifyRouteFilterGroup(sanitizedFilterGroup) : null,
   };
   for (const key of Object.keys(query)) {
     if (key.startsWith('filters.')) {
@@ -149,7 +154,9 @@ function parseRouteFilterGroup(value: string): StatisticFilterGroup | null {
   }
 }
 
-function stringifyRouteFilterGroup(filterDraft: Pick<StatisticFilterDraftGroup, 'logic' | 'conditions'>) {
+function stringifyRouteFilterGroup(
+  filterDraft: Pick<StatisticFilterDraftGroup, 'logic' | 'conditions'> | StatisticFilterGroup,
+) {
   return JSON.stringify({
     logic: filterDraft.logic === 'OR' ? 'OR' : 'AND',
     conditions: filterDraft.conditions.map((condition) => ({

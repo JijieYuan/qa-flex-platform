@@ -32,6 +32,7 @@ public class ReviewDataController {
 
   @GetMapping("/records")
   public ApiResponse<ReviewDataRecordListResponse> listRecords(
+      @RequestParam(required = false) String keyword,
       @RequestParam(required = false) String title,
       @RequestParam(required = false) String projectName,
       @RequestParam(required = false) String moduleName,
@@ -46,6 +47,7 @@ public class ReviewDataController {
       @RequestParam(required = false) String sortOrder) {
     return ApiResponse.success(
         reviewDataRecordService.listRecords(
+            keyword,
             title,
             projectName,
             moduleName,

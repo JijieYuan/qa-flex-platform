@@ -27,12 +27,14 @@ import {
   type ReviewDataRecordSaveRequest,
   type ReviewDataSummaryResponse,
   type StatisticFilterField,
+  type StatisticFilterGroup,
 } from '../api';
 import { useRouteTableState } from '../composables/useRouteTableState';
 import {
   buildFilterGroupFromRouteQuery,
   buildFilterQueryPatch,
   buildResetFilterQueryPatch,
+  mergeRouteQuery,
 } from '../components/statistic-board-route-query';
 import {
   createEmptyFilterGroup,
@@ -57,7 +59,7 @@ import {
   type ReviewRecordFormModel,
 } from './review-data-management';
 
-const { route, page, pageSize, sortBy, sortOrder, patchQuery, bindLoader, isTableLoading } = useRouteTableState({
+const { route, page, pageSize, sortBy, sortOrder, keyword, patchQuery, bindLoader, isTableLoading } = useRouteTableState({
   defaults: {
     page: 1,
     pageSize: 20,
@@ -180,6 +182,7 @@ const reviewFilterFields = computed<StatisticFilterField[]>(() => [
     operators: ['day', 'before', 'after', 'between'],
   },
 ]);
+const appliedFilterGroup = ref<StatisticFilterGroup | null>(null);
 const summaryCards = computed(() => buildReviewDataSummaryCards(summary.value));
 const tableRows = computed(() => buildReviewDataTableRows(rows.value));
 
@@ -209,7 +212,8 @@ async function loadRows() {
 
 function buildReviewDataRecordQueryParams(overrides: { page?: number; size?: number } = {}) {
   return {
-    filterGroup: sanitizeFilterDraftGroup(filterDraft),
+    keyword: keyword.value.trim(),
+    filterGroup: appliedFilterGroup.value,
     page: overrides.page ?? page.value,
     size: overrides.size ?? pageSize.value,
     sortBy: sortBy.value,
@@ -220,6 +224,7 @@ function buildReviewDataRecordQueryParams(overrides: { page?: number; size?: num
 function syncFilterDraftFromRoute() {
   const nextDraft = normalizeFilterDraftGroup(buildFilterGroupFromRouteQuery(route.query), reviewFilterFields.value);
   replaceFilterDraftGroup(filterDraft, nextDraft);
+  appliedFilterGroup.value = sanitizeFilterDraftGroup(nextDraft);
 }
 
 async function handleRefresh() {
@@ -246,7 +251,9 @@ async function loadProblemItems(recordId: number) {
 
 async function handleReset() {
   resetFilterDraftGroup(filterDraft);
+  appliedFilterGroup.value = null;
   await patchQuery({
+    keyword: '',
     ...buildResetFilterQueryPatch(route.query),
     title: '',
     projectName: '',
@@ -261,11 +268,20 @@ async function handleReset() {
   });
 }
 
-async function handleQuery() {
-  await patchQuery({
+async function handleQuery(nextKeyword = keyword.value) {
+  appliedFilterGroup.value = sanitizeFilterDraftGroup(filterDraft);
+  const patch = {
+    keyword: nextKeyword.trim(),
     ...buildFilterQueryPatch(route.query, filterDraft),
     page: 1,
-  });
+  };
+  const nextQuery = mergeRouteQuery(route.query, patch);
+  const currentQuery = mergeRouteQuery(route.query, {});
+  const queryChanged = JSON.stringify(nextQuery) !== JSON.stringify(currentQuery);
+  await patchQuery(patch);
+  if (!queryChanged) {
+    await loadRows();
+  }
 }
 
 async function handleSortChange(payload: { prop: string; order: 'ascending' | 'descending' | null }) {
@@ -560,6 +576,7 @@ function formatDate(value?: string | null) {
       :columns="columns"
       :rows="tableRows"
       :loading="isTableLoading"
+      :keyword="keyword"
       :page="page"
       :page-size="pageSize"
       :total="total"
