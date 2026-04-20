@@ -52,6 +52,7 @@ class ReviewDataControllerTest {
             eq("设计说明书评审"),
             eq("已修复"),
             eq("张三"),
+            eq(null),
             eq(2),
             eq(10),
             eq("updatedAt"),

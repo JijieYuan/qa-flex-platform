@@ -80,6 +80,22 @@ describe('statistic-board-filters', () => {
     expect(usesSecondaryValue('eq')).toBe(false);
   });
 
+  it('keeps empty checks without a primary value', () => {
+    const group = createEmptyFilterGroup();
+    group.conditions.push({
+      id: 'condition-empty',
+      fieldKey: 'tableName',
+      operator: 'isEmpty',
+      value: '',
+      secondaryValue: '',
+    });
+
+    expect(sanitizeFilterDraftGroup(group)).toEqual({
+      logic: 'AND',
+      conditions: [{ fieldKey: 'tableName', operator: 'isEmpty', value: '', secondaryValue: '' }],
+    });
+  });
+
   it('replaces and resets draft group in place', () => {
     const group = createEmptyFilterGroup();
     group.conditions.push(createFilterConditionDraft(FIELDS[0]));

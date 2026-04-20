@@ -735,6 +735,7 @@ export const api = {
       reviewType?: string;
       problemStatus?: string;
       reviewExpert?: string;
+      filterGroup?: StatisticFilterGroup | null;
       page?: number;
       size?: number;
       sortBy?: string;
@@ -750,6 +751,7 @@ export const api = {
         ...(params.reviewType ? { reviewType: params.reviewType } : {}),
         ...(params.problemStatus ? { problemStatus: params.problemStatus } : {}),
         ...(params.reviewExpert ? { reviewExpert: params.reviewExpert } : {}),
+        ...(params.filterGroup ? { filterGroup: JSON.stringify(params.filterGroup) } : {}),
         ...(params.sortBy ? { sortBy: params.sortBy } : {}),
         ...(params.sortOrder ? { sortOrder: params.sortOrder } : {}),
       });

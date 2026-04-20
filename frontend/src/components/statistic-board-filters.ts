@@ -75,7 +75,7 @@ export function sanitizeFilterDraftGroup(draft: StatisticFilterDraftGroup): Stat
       value: normalizeScalar(condition.value),
       secondaryValue: normalizeScalar(condition.secondaryValue),
     }))
-    .filter((condition) => condition.fieldKey && condition.operator && condition.value)
+    .filter((condition) => condition.fieldKey && condition.operator && (!requiresPrimaryValue(condition.operator) || condition.value))
     .filter((condition) => (condition.operator === 'between' ? !!condition.secondaryValue : true));
 
   if (!conditions.length) {
@@ -106,6 +106,8 @@ export function operatorLabel(operator: StatisticFilterOperator | '') {
       at: '某时刻',
       before: '早于',
       after: '晚于',
+      isEmpty: '为空',
+      isNotEmpty: '不为空',
     } as Record<string, string>
   )[operator] ?? '条件';
 }
@@ -119,4 +121,8 @@ function normalizeScalar(value: string | number | null) {
     return '';
   }
   return typeof value === 'number' ? String(value) : value.trim();
+}
+
+function requiresPrimaryValue(operator: StatisticFilterOperator | '') {
+  return operator !== 'isEmpty' && operator !== 'isNotEmpty';
 }

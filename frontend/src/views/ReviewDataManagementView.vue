@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, reactive, ref } from 'vue';
 import {
   ElButton,
   ElDescriptions,
@@ -12,8 +12,9 @@ import {
   ElMessageBox,
   ElTag,
 } from 'element-plus';
-import { ArrowDown, Document, Download, EditPen, Plus } from '@element-plus/icons-vue';
+import { ArrowDown, Document, Download, EditPen, Plus, Refresh } from '@element-plus/icons-vue';
 import BaseRecordTable from '../components/base/BaseRecordTable.vue';
+import StatisticFilterBuilder from '../components/StatisticFilterBuilder.vue';
 import ReviewProblemItemFormDialog from './review-data/ReviewProblemItemFormDialog.vue';
 import ReviewRecordFormDialog from './review-data/ReviewRecordFormDialog.vue';
 import {
@@ -25,13 +26,25 @@ import {
   type ReviewDataRecordRowResponse,
   type ReviewDataRecordSaveRequest,
   type ReviewDataSummaryResponse,
+  type StatisticFilterField,
 } from '../api';
 import { useRouteTableState } from '../composables/useRouteTableState';
-import type { RecordTableFilterField } from '../types/record-table';
+import {
+  buildFilterGroupFromRouteQuery,
+  buildFilterQueryPatch,
+  buildResetFilterQueryPatch,
+} from '../components/statistic-board-route-query';
+import {
+  createEmptyFilterGroup,
+  normalizeFilterDraftGroup,
+  replaceFilterDraftGroup,
+  resetFilterDraftGroup,
+  sanitizeFilterDraftGroup,
+  type StatisticFilterDraftGroup,
+} from '../components/statistic-board-filters';
 import {
   buildProblemItemTableRows,
   buildReviewDataExportCsv,
-  buildReviewDataFilterTags,
   buildReviewDataSummaryCards,
   buildReviewDataTableRows,
   createEmptyProblemItemForm,
@@ -53,7 +66,6 @@ const { route, page, pageSize, sortBy, sortOrder, patchQuery, bindLoader, isTabl
   },
 });
 
-const advancedVisible = ref(false);
 const rows = ref<ReviewDataRecordRowResponse[]>([]);
 const total = ref(0);
 const summary = ref<ReviewDataSummaryResponse | null>(null);
@@ -89,88 +101,93 @@ const problemForm = ref<ReviewProblemItemFormModel>(createEmptyProblemItemForm()
 const expandedRowKeys = ref<Array<number | string>>([]);
 const problemItemsMap = ref<Record<number, ReviewDataProblemItemResponse[]>>({});
 const problemLoadingMap = ref<Record<number, boolean>>({});
+const filterDraft = reactive<StatisticFilterDraftGroup>(createEmptyFilterGroup());
 
 const columns = reviewDataColumns();
 const problemColumns = reviewProblemItemColumns();
 
-const filterValues = computed<Record<string, unknown>>(() => ({
-  title: String(route.query.title ?? ''),
-  projectName: String(route.query.projectName ?? ''),
-  moduleName: String(route.query.moduleName ?? ''),
-  reviewOwner: String(route.query.reviewOwner ?? ''),
-  reviewType: String(route.query.reviewType ?? ''),
-  problemStatus: String(route.query.problemStatus ?? ''),
-  reviewExpert: String(route.query.reviewExpert ?? ''),
-}));
-
-const primaryFilters = computed<RecordTableFilterField[]>(() => [
+const reviewFilterFields = computed<StatisticFilterField[]>(() => [
   {
     key: 'title',
     label: '标题',
-    type: 'input',
-    width: 220,
-    placeholder: '标题',
+    type: 'text',
+    operators: ['contains', 'eq', 'ne', 'isEmpty', 'isNotEmpty'],
   },
   {
     key: 'projectName',
     label: '项目',
     type: 'select',
-    width: 180,
-    selectMode: 'compact',
-    options: [{ label: '全部项目', value: '' }, ...filterOptions.value.projectNames],
+    operators: ['eq', 'ne', 'isEmpty', 'isNotEmpty'],
+    options: filterOptions.value.projectNames,
   },
   {
     key: 'moduleName',
     label: '模块',
     type: 'select',
-    width: 168,
-    selectMode: 'compact',
-    options: [{ label: '全部模块', value: '' }, ...filterOptions.value.moduleNames],
+    operators: ['eq', 'ne', 'isEmpty', 'isNotEmpty'],
+    options: filterOptions.value.moduleNames,
   },
   {
     key: 'reviewOwner',
     label: '负责人',
     type: 'select',
-    width: 168,
-    selectMode: 'compact',
-    options: [{ label: '全部负责人', value: '' }, ...filterOptions.value.reviewOwners],
+    operators: ['eq', 'ne', 'isEmpty', 'isNotEmpty'],
+    options: filterOptions.value.reviewOwners,
   },
-]);
-
-const advancedFilters = computed<RecordTableFilterField[]>(() => [
   {
     key: 'reviewType',
     label: '评审类型',
     type: 'select',
-    width: 180,
-    selectMode: 'compact',
-    options: [{ label: '全部评审类型', value: '' }, ...filterOptions.value.reviewTypes],
-  },
-  {
-    key: 'problemStatus',
-    label: '问题状态',
-    type: 'select',
-    width: 168,
-    selectMode: 'compact',
-    options: [{ label: '全部问题状态', value: '' }, ...filterOptions.value.problemStatuses],
+    operators: ['eq', 'ne', 'isEmpty', 'isNotEmpty'],
+    options: filterOptions.value.reviewTypes,
   },
   {
     key: 'reviewExpert',
     label: '评审专家',
     type: 'select',
-    width: 168,
-    selectMode: 'compact',
-    options: [{ label: '全部评审专家', value: '' }, ...filterOptions.value.reviewExperts],
+    operators: ['eq', 'ne', 'isEmpty', 'isNotEmpty'],
+    options: filterOptions.value.reviewExperts,
+  },
+  {
+    key: 'problemStatus',
+    label: '问题状态',
+    type: 'select',
+    operators: ['eq', 'ne', 'isEmpty', 'isNotEmpty'],
+    options: filterOptions.value.problemStatuses,
+  },
+  {
+    key: 'reviewScalePages',
+    label: '页数',
+    type: 'number',
+    operators: ['eq', 'gt', 'gte', 'lt', 'lte', 'between'],
+  },
+  {
+    key: 'problemCount',
+    label: '问题合计',
+    type: 'number',
+    operators: ['eq', 'gt', 'gte', 'lt', 'lte', 'between'],
+  },
+  {
+    key: 'problemDensity',
+    label: '缺陷密度',
+    type: 'number',
+    operators: ['eq', 'gt', 'gte', 'lt', 'lte', 'between'],
+  },
+  {
+    key: 'reviewDate',
+    label: '评审日期',
+    type: 'datetime',
+    operators: ['day', 'before', 'after', 'between'],
   },
 ]);
-
-const activeFilterTags = computed(() => buildReviewDataFilterTags(filterValues.value));
 const summaryCards = computed(() => buildReviewDataSummaryCards(summary.value));
 const tableRows = computed(() => buildReviewDataTableRows(rows.value));
 
 bindLoader(async () => {
   try {
-    await Promise.all([loadFilterOptions(), loadRows()]);
+    await loadFilterOptions();
+    syncFilterDraftFromRoute();
+    await loadRows();
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '评审数据加载失败');
   }
@@ -192,18 +209,17 @@ async function loadRows() {
 
 function buildReviewDataRecordQueryParams(overrides: { page?: number; size?: number } = {}) {
   return {
-    title: String(route.query.title ?? ''),
-    projectName: String(route.query.projectName ?? ''),
-    moduleName: String(route.query.moduleName ?? ''),
-    reviewOwner: String(route.query.reviewOwner ?? ''),
-    reviewType: String(route.query.reviewType ?? ''),
-    problemStatus: String(route.query.problemStatus ?? ''),
-    reviewExpert: String(route.query.reviewExpert ?? ''),
+    filterGroup: sanitizeFilterDraftGroup(filterDraft),
     page: overrides.page ?? page.value,
     size: overrides.size ?? pageSize.value,
     sortBy: sortBy.value,
     sortOrder: (sortOrder.value as 'asc' | 'desc' | null) ?? 'desc',
   };
+}
+
+function syncFilterDraftFromRoute() {
+  const nextDraft = normalizeFilterDraftGroup(buildFilterGroupFromRouteQuery(route.query), reviewFilterFields.value);
+  replaceFilterDraftGroup(filterDraft, nextDraft);
 }
 
 async function handleRefresh() {
@@ -228,15 +244,10 @@ async function loadProblemItems(recordId: number) {
   }
 }
 
-async function handleFilterChange(payload: { key: string; value: string | string[] | null }) {
-  await patchQuery({
-    [payload.key]: Array.isArray(payload.value) ? payload.value.join(',') : payload.value ?? '',
-    page: 1,
-  });
-}
-
 async function handleReset() {
+  resetFilterDraftGroup(filterDraft);
   await patchQuery({
+    ...buildResetFilterQueryPatch(route.query),
     title: '',
     projectName: '',
     moduleName: '',
@@ -251,7 +262,10 @@ async function handleReset() {
 }
 
 async function handleQuery() {
-  await patchQuery({ page: 1 });
+  await patchQuery({
+    ...buildFilterQueryPatch(route.query, filterDraft),
+    page: 1,
+  });
 }
 
 async function handleSortChange(payload: { prop: string; order: 'ascending' | 'descending' | null }) {
@@ -268,10 +282,6 @@ async function handlePageChange(nextPage: number) {
 
 async function handleSizeChange(nextSize: number) {
   await patchQuery({ pageSize: nextSize, page: 1 });
-}
-
-async function clearFilter(key: string) {
-  await patchQuery({ [key]: '', page: 1 });
 }
 
 async function handleExpandChange(row: Record<string, unknown>, expandedRows: Record<string, unknown>[]) {
@@ -553,30 +563,27 @@ function formatDate(value?: string | null) {
       :page="page"
       :page-size="pageSize"
       :total="total"
-      :primary-filters="primaryFilters"
-      :advanced-filters="advancedFilters"
-      :filter-values="filterValues"
-      :active-filter-tags="activeFilterTags"
-      :advanced-visible="advancedVisible"
       :expanded-row-keys="expandedRowKeys"
       :expand-column-visible="false"
       :row-actions-width="188"
+      :show-refresh="false"
       query-button-text="查询"
       empty-description="当前筛选条件下没有可展示的评审记录。"
-      @filter-change="handleFilterChange"
       @reset="handleReset"
-      @refresh="handleRefresh"
       @query="handleQuery"
-      @clear-filter="clearFilter"
-      @update:advanced-visible="advancedVisible = $event"
       @sort-change="handleSortChange"
       @current-change="handlePageChange"
       @size-change="handleSizeChange"
       @expand-change="handleExpandChange"
     >
+      <template #filter-builder>
+        <StatisticFilterBuilder :model-value="filterDraft" :fields="reviewFilterFields" />
+      </template>
+
       <template #primary-actions>
         <el-button type="primary" :icon="Plus" @click="handleCreateRecord">新增评审</el-button>
         <el-button plain :icon="Download" :loading="exportLoading" @click="handleExportExcel">导出Excel</el-button>
+        <el-button :icon="Refresh" @click="handleRefresh">刷新</el-button>
       </template>
 
       <template #cell-title="{ row }">

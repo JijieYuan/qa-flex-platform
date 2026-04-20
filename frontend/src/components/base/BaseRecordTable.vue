@@ -82,6 +82,10 @@ watch(
 const slots = useSlots();
 const hasRowActions = computed(() => Boolean(slots['row-actions']));
 const hasExpand = computed(() => Boolean(slots.expand));
+const hasFilterBuilder = computed(() => Boolean(slots['filter-builder']));
+const hasPrimaryActions = computed(() => Boolean(slots['primary-actions']));
+const hasToolbarPrefix = computed(() => Boolean(slots['toolbar-prefix']));
+const hasToolbarActions = computed(() => Boolean(slots['toolbar-actions']));
 const hasPrimaryFilters = computed(() => props.primaryFilters.length > 0);
 const hasAdvancedFilters = computed(() => props.advancedFilters.length > 0);
 const hasActiveFilterTags = computed(() => props.activeFilterTags.length > 0);
@@ -173,8 +177,10 @@ function getFilterValue(key: string) {
 
 <template>
   <div class="record-table-workspace">
-    <section v-if="hasPrimaryFilters || hasAdvancedFilters || showSearch" class="record-filter-panel">
+    <section v-if="hasFilterBuilder || hasPrimaryActions || hasPrimaryFilters || hasAdvancedFilters || showSearch" class="record-filter-panel">
       <div class="record-filter-primary">
+        <slot name="filter-builder" />
+
         <template v-for="filter in primaryFilters" :key="filter.key">
           <el-input
             v-if="filter.type === 'input'"
@@ -279,7 +285,7 @@ function getFilterValue(key: string) {
       </el-tag>
     </section>
 
-    <div class="record-table-toolbar">
+    <div v-if="hasToolbarPrefix || hasToolbarActions || showRefresh" class="record-table-toolbar">
       <div class="record-table-toolbar-main">
         <slot name="toolbar-prefix" />
       </div>

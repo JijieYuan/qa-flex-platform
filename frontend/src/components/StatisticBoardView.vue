@@ -4,6 +4,7 @@ import { ArrowDown, ArrowUp, Download, InfoFilled, RefreshRight, Search, Sort } 
 import { ElMessage } from 'element-plus';
 import { useRoute, useRouter } from 'vue-router';
 import BaseStatisticTable from './base/BaseStatisticTable.vue';
+import StatisticFilterBuilder from './StatisticFilterBuilder.vue';
 import SyncMetaBadge from './realtime/SyncMetaBadge.vue';
 import {
   api,
@@ -15,8 +16,6 @@ import {
   type StatisticCellData,
   type StatisticDetailColumn,
   type StatisticDetailResponse,
-  type StatisticFilterField,
-  type StatisticFilterOperator,
   type StatisticRowData,
 } from '../api';
 import {
@@ -39,14 +38,10 @@ import {
 } from './statistic-board-sorting';
 import {
   createEmptyFilterGroup,
-  createFilterConditionDraft,
   replaceFilterDraftGroup,
   resetFilterDraftGroup,
   normalizeFilterDraftGroup,
-  operatorLabel,
   sanitizeFilterDraftGroup,
-  usesSecondaryValue,
-  type StatisticFilterConditionDraft,
   type StatisticFilterDraftGroup,
 } from './statistic-board-filters';
 import {
@@ -551,11 +546,6 @@ function sortIconForDirection(direction: SortDirection) {
   return Sort;
 }
 
-function addFilterCondition() {
-  const field = activeFilterFields.value[0];
-  filterDraft.conditions.push(createFilterConditionDraft(field));
-}
-
 async function applyFiltersToRoute() {
   await replaceRouteQuery({
     ...buildFilterQueryPatch(route.query, filterDraft),
@@ -594,73 +584,6 @@ function openRuleExplanation() {
 
 function handleRuleExplanationVisibleChange(visible: boolean) {
   ruleExplanationVisible.value = visible;
-}
-
-function removeFilterCondition(conditionId: string) {
-  const index = filterDraft.conditions.findIndex((condition) => condition.id === conditionId);
-  if (index >= 0) {
-    filterDraft.conditions.splice(index, 1);
-  }
-}
-
-function fieldForCondition(fieldKey: string) {
-  return activeFilterFields.value.find((field) => field.key === fieldKey) ?? null;
-}
-
-function handleConditionFieldChange(condition: StatisticFilterConditionDraft) {
-  const field = fieldForCondition(condition.fieldKey);
-  condition.operator = (field?.operators?.[0] ?? '') as StatisticFilterOperator | '';
-  condition.value = '';
-  condition.secondaryValue = '';
-}
-
-function operatorOptionsForCondition(condition: StatisticFilterConditionDraft) {
-  return fieldForCondition(condition.fieldKey)?.operators ?? [];
-}
-
-function usesDatePicker(condition: StatisticFilterConditionDraft) {
-  return fieldForCondition(condition.fieldKey)?.type === 'datetime';
-}
-
-function datePickerType(condition: StatisticFilterConditionDraft) {
-  return (
-    {
-      year: 'year',
-      month: 'month',
-      day: 'date',
-      at: 'datetime',
-      before: 'datetime',
-      after: 'datetime',
-      between: 'datetime',
-    } as Record<string, string>
-  )[condition.operator] ?? 'datetime';
-}
-
-function dateValueFormat(condition: StatisticFilterConditionDraft) {
-  return (
-    {
-      year: 'YYYY',
-      month: 'YYYY-MM',
-      day: 'YYYY-MM-DD',
-      at: 'YYYY-MM-DD HH:mm:ss',
-      before: 'YYYY-MM-DD HH:mm:ss',
-      after: 'YYYY-MM-DD HH:mm:ss',
-      between: 'YYYY-MM-DD HH:mm:ss',
-    } as Record<string, string>
-  )[condition.operator] ?? 'YYYY-MM-DD HH:mm:ss';
-}
-
-function isNumericField(condition: StatisticFilterConditionDraft) {
-  return fieldForCondition(condition.fieldKey)?.type === 'number';
-}
-
-function isSelectField(condition: StatisticFilterConditionDraft) {
-  const type = fieldForCondition(condition.fieldKey)?.type;
-  return type === 'select';
-}
-
-function fieldOptions(condition: StatisticFilterConditionDraft) {
-  return fieldForCondition(condition.fieldKey)?.options ?? [];
 }
 
 watch(detailVisible, (visible) => {
@@ -714,34 +637,7 @@ watch(
       <div class="stat-board-query-shell">
         <div class="stat-board-toolbar" :class="props.uiHooks.toolbarClass">
           <div class="stat-board-toolbar-main" :class="props.uiHooks.toolbarMainClass">
-            <div class="stat-filter-builder">
-              <el-segmented
-                v-model="filterDraft.logic"
-                :options="[{ label: '满足全部', value: 'AND' }, { label: '满足任意', value: 'OR' }]"
-                class="stat-filter-logic"
-              />
-              <div v-if="filterDraft.conditions.length" class="stat-filter-list">
-                <div v-for="condition in filterDraft.conditions" :key="condition.id" class="stat-filter-row">
-                  <el-select v-model="condition.fieldKey" class="stat-filter-field" placeholder="字段" @change="handleConditionFieldChange(condition)">
-                    <el-option v-for="field in activeFilterFields" :key="field.key" :label="field.label" :value="field.key" />
-                  </el-select>
-                  <el-select v-model="condition.operator" class="stat-filter-operator" placeholder="关系">
-                    <el-option v-for="operator in operatorOptionsForCondition(condition)" :key="operator" :label="operatorLabel(operator)" :value="operator" />
-                  </el-select>
-                  <el-select v-if="isSelectField(condition)" v-model="condition.value" class="stat-filter-value" placeholder="值" clearable filterable>
-                    <el-option v-for="option in fieldOptions(condition)" :key="option.value" :label="option.label" :value="option.value" />
-                  </el-select>
-                  <el-input-number v-else-if="isNumericField(condition)" v-model="condition.value" class="stat-filter-value" controls-position="right" placeholder="值" />
-                  <el-date-picker v-else-if="usesDatePicker(condition)" v-model="condition.value" class="stat-filter-value" :type="datePickerType(condition)" :value-format="dateValueFormat(condition)" placeholder="时间" />
-                  <el-input v-else v-model="condition.value" class="stat-filter-value" placeholder="值" clearable />
-                  <el-input-number v-if="usesSecondaryValue(condition.operator) && isNumericField(condition)" v-model="condition.secondaryValue" class="stat-filter-value secondary" controls-position="right" placeholder="结束值" />
-                  <el-date-picker v-else-if="usesSecondaryValue(condition.operator) && usesDatePicker(condition)" v-model="condition.secondaryValue" class="stat-filter-value secondary" :type="datePickerType(condition)" :value-format="dateValueFormat(condition)" placeholder="结束时间" />
-                  <el-input v-else-if="usesSecondaryValue(condition.operator)" v-model="condition.secondaryValue" class="stat-filter-value secondary" placeholder="结束值" clearable />
-                  <el-button text type="danger" @click="removeFilterCondition(condition.id)">删除</el-button>
-                </div>
-              </div>
-              <el-button plain @click="addFilterCondition">添加条件</el-button>
-            </div>
+            <StatisticFilterBuilder :model-value="filterDraft" :fields="activeFilterFields" />
           </div>
 
           <div class="stat-board-toolbar-actions" :class="props.uiHooks.toolbarActionsClass">
