@@ -440,14 +440,6 @@ function formatDate(value?: string | null) {
 
 <template>
   <section class="review-data-page">
-    <header class="review-data-hero">
-      <div>
-        <p class="review-data-eyebrow">评审数据管理</p>
-        <h1 class="review-data-title">评审数据管理</h1>
-        <p class="review-data-desc">围绕评审主记录统一查看筛选、维护评审问题清单，并在同一页完成新增、编辑和删除。</p>
-      </div>
-    </header>
-
     <section class="review-data-summary">
       <article v-for="card in summaryCards" :key="card.key" class="summary-card">
         <span class="summary-card-label">{{ card.label }}</span>
@@ -643,50 +635,20 @@ function formatDate(value?: string | null) {
 <style scoped>
 .review-data-page {
   display: grid;
-  gap: 14px;
-}
-
-.review-data-hero {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 4px 2px;
-}
-
-.review-data-eyebrow {
-  margin: 0 0 6px;
-  font-size: 12px;
-  font-weight: 600;
-  color: rgba(37, 99, 235, 0.82);
-}
-
-.review-data-title {
-  margin: 0;
-  font-size: 26px;
-  line-height: 1.2;
-  color: #0f172a;
-}
-
-.review-data-desc {
-  margin: 8px 0 0;
-  max-width: 760px;
-  font-size: 14px;
-  line-height: 1.7;
-  color: rgba(15, 23, 42, 0.64);
+  gap: 8px;
 }
 
 .review-data-summary {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: 12px;
+  gap: 10px;
 }
 
 .summary-card {
   display: grid;
-  gap: 8px;
-  min-height: 88px;
-  padding: 16px 18px;
+  gap: 6px;
+  min-height: 72px;
+  padding: 12px 16px;
   border: 1px solid rgba(15, 23, 42, 0.06);
   border-radius: 16px;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.94));
@@ -700,7 +662,7 @@ function formatDate(value?: string | null) {
 }
 
 .summary-card-value {
-  font-size: 24px;
+  font-size: 22px;
   font-weight: 700;
   line-height: 1.1;
   color: #0f172a;
