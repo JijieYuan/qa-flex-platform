@@ -24,6 +24,35 @@ declare module 'vue-router' {
   }
 }
 
+function buildPlaceholderRoute(path: string, moduleKey: ModuleKey, pageKey: PageKey): RouteRecordRaw {
+  return {
+    path,
+    component: ModulePlaceholderView,
+    meta: {
+      moduleKey,
+      pageKey,
+      title: pageByKey.get(pageKey)!.label,
+      description: pageByKey.get(pageKey)!.description,
+      persistedQueryKeys: ['projectId'],
+    },
+  };
+}
+
+const statisticBoardQueryKeys = [
+  'sortBy',
+  'sortOrder',
+  'tablePage',
+  'tablePageSize',
+  'detailPage',
+  'detailPageSize',
+  'detailSortBy',
+  'detailSortOrder',
+  'detailVisible',
+  'detailRowKey',
+  'detailColumnKey',
+  'projectId',
+];
+
 const routes: RouteRecordRaw[] = [
   {
     path: '/',
@@ -35,8 +64,8 @@ const routes: RouteRecordRaw[] = [
     meta: {
       moduleKey: 'code-review',
       pageKey: 'code-review-illegal-records',
-      title: '代码走查表',
-      description: '通过独立链接打开的代码走查表单页。',
+      title: '代码走查表单',
+      description: '通过独立链接打开的代码走查表单页面。',
       standalone: true,
       allowedQueryKeys: ['gitlabBaseUrl', 'projectId', 'mrIid'],
       persistedQueryKeys: [],
@@ -50,11 +79,13 @@ const routes: RouteRecordRaw[] = [
       pageKey: 'quality-board-home',
       title: pageByKey.get('quality-board-home')!.label,
       description: pageByKey.get('quality-board-home')!.description,
-      allowedQueryKeys: ['sortBy', 'sortOrder', 'tablePage', 'tablePageSize', 'detailPage', 'detailPageSize', 'detailSortBy', 'detailSortOrder', 'detailVisible', 'detailRowKey', 'detailColumnKey', 'projectId'],
+      allowedQueryKeys: statisticBoardQueryKeys,
       allowedQueryPrefixes: ['filters.'],
       persistedQueryKeys: ['projectId'],
     },
   },
+  buildPlaceholderRoute('/quality-board/rd-quality-board', 'quality-board', 'quality-board-rd-quality-board'),
+  buildPlaceholderRoute('/quality-board/other-board', 'quality-board', 'quality-board-other-board'),
   {
     path: '/review-data/home',
     component: ReviewDataManagementView,
@@ -113,17 +144,8 @@ const routes: RouteRecordRaw[] = [
       persistedQueryKeys: ['projectId'],
     },
   },
-  {
-    path: '/integration-test/home',
-    component: ModulePlaceholderView,
-    meta: {
-      moduleKey: 'integration-test',
-      pageKey: 'integration-test-home',
-      title: pageByKey.get('integration-test-home')!.label,
-      description: pageByKey.get('integration-test-home')!.description,
-      persistedQueryKeys: ['projectId'],
-    },
-  },
+  buildPlaceholderRoute('/code-review/multi-board', 'code-review', 'code-review-multi-board'),
+  buildPlaceholderRoute('/integration-test/home', 'integration-test', 'integration-test-home'),
   {
     path: '/question-metrics/home',
     component: StatisticBoardPage,
@@ -132,22 +154,24 @@ const routes: RouteRecordRaw[] = [
       pageKey: 'question-metrics-home',
       title: pageByKey.get('question-metrics-home')!.label,
       description: pageByKey.get('question-metrics-home')!.description,
-      allowedQueryKeys: ['sortBy', 'sortOrder', 'tablePage', 'tablePageSize', 'detailPage', 'detailPageSize', 'detailSortBy', 'detailSortOrder', 'detailVisible', 'detailRowKey', 'detailColumnKey', 'projectId'],
+      allowedQueryKeys: statisticBoardQueryKeys,
       allowedQueryPrefixes: ['filters.'],
       persistedQueryKeys: ['projectId'],
     },
   },
-  {
-    path: '/customer-issues/home',
-    component: ModulePlaceholderView,
-    meta: {
-      moduleKey: 'customer-issues',
-      pageKey: 'customer-issues-home',
-      title: pageByKey.get('customer-issues-home')!.label,
-      description: pageByKey.get('customer-issues-home')!.description,
-      persistedQueryKeys: ['projectId'],
-    },
-  },
+  buildPlaceholderRoute('/question-metrics/multi-board', 'question-metrics', 'question-metrics-multi-board'),
+  buildPlaceholderRoute('/question-metrics/delay-analysis', 'question-metrics', 'question-metrics-delay-analysis'),
+  buildPlaceholderRoute('/question-metrics/illegal-records', 'question-metrics', 'question-metrics-illegal-records'),
+  buildPlaceholderRoute('/question-metrics/defect-cause', 'question-metrics', 'question-metrics-defect-cause'),
+  buildPlaceholderRoute('/question-metrics/phase-statistics', 'question-metrics', 'question-metrics-phase-statistics'),
+  buildPlaceholderRoute('/question-metrics/issue-search', 'question-metrics', 'question-metrics-issue-search'),
+  buildPlaceholderRoute('/customer-issues/home', 'customer-issues', 'customer-issues-home'),
+  buildPlaceholderRoute('/customer-issues/illegal-records', 'customer-issues', 'customer-issues-illegal-records'),
+  buildPlaceholderRoute('/customer-issues/defect-cause', 'customer-issues', 'customer-issues-defect-cause'),
+  buildPlaceholderRoute('/customer-issues/cc-product-issues', 'customer-issues', 'customer-issues-cc-product-issues'),
+  buildPlaceholderRoute('/customer-issues/delay-issues', 'customer-issues', 'customer-issues-delay-issues'),
+  buildPlaceholderRoute('/customer-issues/response-efficiency', 'customer-issues', 'customer-issues-response-efficiency'),
+  buildPlaceholderRoute('/customer-issues/issue-by-function', 'customer-issues', 'customer-issues-issue-by-function'),
   {
     path: '/system-settings/mirror-settings',
     component: MirrorSettingsView,
@@ -171,17 +195,8 @@ const routes: RouteRecordRaw[] = [
       persistedQueryKeys: ['projectId'],
     },
   },
-  {
-    path: '/system-settings/module-management',
-    component: ModulePlaceholderView,
-    meta: {
-      moduleKey: 'system-settings',
-      pageKey: 'module-management',
-      title: pageByKey.get('module-management')!.label,
-      description: pageByKey.get('module-management')!.description,
-      persistedQueryKeys: ['projectId'],
-    },
-  },
+  buildPlaceholderRoute('/system-settings/module-management', 'system-settings', 'module-management'),
+  buildPlaceholderRoute('/system-settings/testing-phase-definition', 'system-settings', 'testing-phase-definition'),
   {
     path: '/:pathMatch(.*)*',
     component: NotFoundView,
