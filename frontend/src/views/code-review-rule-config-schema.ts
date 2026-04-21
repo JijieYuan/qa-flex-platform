@@ -18,6 +18,24 @@ export function buildCodeReviewRuleFields(
       operators: ['isEmpty'],
     },
     {
+      key: 'reviewRecordMissing',
+      label: '缺少代码走查记录',
+      type: 'text',
+      operators: ['isMissingReview'],
+    },
+    {
+      key: 'scanNotDone',
+      label: '未完成代码扫描',
+      type: 'text',
+      operators: ['isNotScanned'],
+    },
+    {
+      key: 'scanIssueOpen',
+      label: '扫描问题未关闭',
+      type: 'number',
+      operators: ['hasOpenScanIssue'],
+    },
+    {
       key: 'targetBranch',
       label: '目标分支不合规',
       type: 'multi-select',

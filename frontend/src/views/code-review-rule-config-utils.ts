@@ -9,6 +9,17 @@ import type {
 let groupSeed = 0;
 let conditionSeed = 0;
 
+const DEFAULT_ACTIVE_RULE_KEYS = [
+  'moduleName',
+  'owner',
+  'reviewRecordMissing',
+  'scanNotDone',
+  'scanIssueOpen',
+  'commentRateMissing',
+  'defectCountMissing',
+  'addedLinesMissing',
+] as const;
+
 function nextGroupId() {
   groupSeed += 1;
   return `code-review-rule-group-${groupSeed}`;
@@ -34,7 +45,7 @@ export function createCodeReviewRuleCondition(field?: CodeReviewRuleFieldDefinit
   return {
     id: nextConditionId(),
     fieldKey: field?.key ?? '',
-    operator: field?.operators[0] ?? 'contains',
+    operator: field?.operators?.[0] ?? 'contains',
     value: '',
   };
 }
@@ -47,16 +58,35 @@ export function createCodeReviewRuleGroup(field?: CodeReviewRuleFieldDefinition)
   };
 }
 
-export function createDefaultCodeReviewRuleConfig(field?: CodeReviewRuleFieldDefinition): CodeReviewRuleConfig {
+export function createDefaultCodeReviewRuleConfig(
+  fieldOrFields?: CodeReviewRuleFieldDefinition | CodeReviewRuleFieldDefinition[],
+): CodeReviewRuleConfig {
+  if (Array.isArray(fieldOrFields)) {
+    const conditions = DEFAULT_ACTIVE_RULE_KEYS
+      .map((key) => fieldOrFields.find((field) => field.key === key))
+      .filter((field): field is CodeReviewRuleFieldDefinition => Boolean(field))
+      .map(createCodeReviewRuleCondition);
+    return {
+      enabled: false,
+      groups: [
+        {
+          id: nextGroupId(),
+          matchMode: 'any',
+          conditions,
+        },
+      ],
+      updatedAt: null,
+    };
+  }
   return {
     enabled: false,
-    groups: [createCodeReviewRuleGroup(field)],
+    groups: [createCodeReviewRuleGroup(fieldOrFields)],
     updatedAt: null,
   };
 }
 
 export function usesConditionValue(operator: CodeReviewRuleOperator) {
-  return operator !== 'isEmpty' && operator !== 'isNotEmpty';
+  return !['isEmpty', 'isNotEmpty', 'isMissingReview', 'isNotScanned', 'hasOpenScanIssue'].includes(operator);
 }
 
 export function normalizeCodeReviewRuleConfig(
@@ -183,6 +213,9 @@ function operatorText(operator: CodeReviewRuleOperator) {
     contains: '包含',
     notContains: '不包含',
     notIn: '不在允许范围：',
+    isMissingReview: '缺失时判定',
+    isNotScanned: '未扫描时判定',
+    hasOpenScanIssue: '大于 0 时判定',
     gt: '大于',
     gte: '大于等于',
     lt: '小于',
@@ -203,4 +236,32 @@ export function describeCodeReviewRuleGroup(
   }
   const joiner = group.matchMode === 'all' ? '，并且' : '，或者';
   return readyConditions.map((condition) => describeCodeReviewRuleCondition(condition, fields)).join(joiner);
+}
+
+export function listActiveCodeReviewRuleConditions(config: CodeReviewRuleConfig) {
+  return config.groups.flatMap((group) => group.conditions);
+}
+
+export function listInactiveCodeReviewRuleFields(
+  config: CodeReviewRuleConfig,
+  fields: CodeReviewRuleFieldDefinition[],
+) {
+  const activeFieldKeys = new Set(listActiveCodeReviewRuleConditions(config).map((condition) => condition.fieldKey));
+  return fields.filter((field) => !activeFieldKeys.has(field.key));
+}
+
+export function setCodeReviewRuleConditions(
+  config: CodeReviewRuleConfig,
+  conditions: CodeReviewRuleCondition[],
+): CodeReviewRuleConfig {
+  return {
+    ...cloneCodeReviewRuleConfig(config),
+    groups: [
+      {
+        id: config.groups[0]?.id ?? nextGroupId(),
+        matchMode: 'any',
+        conditions,
+      },
+    ],
+  };
 }

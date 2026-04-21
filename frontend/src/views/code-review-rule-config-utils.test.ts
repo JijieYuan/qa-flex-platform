@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { CodeReviewRuleConfig } from '../types/code-review-rule-config';
 import { buildCodeReviewRuleFields } from './code-review-rule-config-schema';
-import { normalizeCodeReviewRuleConfig } from './code-review-rule-config-utils';
+import {
+  createDefaultCodeReviewRuleConfig,
+  normalizeCodeReviewRuleConfig,
+} from './code-review-rule-config-utils';
 
 const fields = buildCodeReviewRuleFields({
   requestTypes: [],
@@ -21,6 +24,9 @@ describe('code review rule config templates', () => {
     expect(fields.map((field) => field.key)).toEqual([
       'moduleName',
       'owner',
+      'reviewRecordMissing',
+      'scanNotDone',
+      'scanIssueOpen',
       'targetBranch',
       'mergeRequestContent',
       'commentRateMissing',
@@ -33,6 +39,24 @@ describe('code review rule config templates', () => {
     expect(fields.find((field) => field.key === 'moduleName')?.operators).toEqual(['isEmpty']);
     expect(fields.find((field) => field.key === 'targetBranch')?.operators).toEqual(['notIn']);
     expect(fields.every((field) => !field.operators.includes('isNotEmpty'))).toBe(true);
+  });
+
+  it('creates default config from currently applied judgement rules', () => {
+    const config = createDefaultCodeReviewRuleConfig(fields);
+    const activeRuleKeys = config.groups.flatMap((group) => group.conditions.map((condition) => condition.fieldKey));
+
+    expect(config.groups[0].matchMode).toBe('any');
+    expect(activeRuleKeys).toEqual([
+      'moduleName',
+      'owner',
+      'reviewRecordMissing',
+      'scanNotDone',
+      'scanIssueOpen',
+      'commentRateMissing',
+      'defectCountMissing',
+      'addedLinesMissing',
+    ]);
+    expect(activeRuleKeys).not.toContain('targetBranch');
   });
 
   it('normalizes old meaningless conditions back to a valid judgement rule', () => {

@@ -8,10 +8,11 @@ import type {
   CodeReviewRuleFieldDefinition,
 } from '../../types/code-review-rule-config';
 import {
-  cloneCodeReviewRuleConfig,
   createCodeReviewRuleCondition,
-  createCodeReviewRuleGroup,
-  describeCodeReviewRuleGroup,
+  describeCodeReviewRuleCondition,
+  listActiveCodeReviewRuleConditions,
+  listInactiveCodeReviewRuleFields,
+  setCodeReviewRuleConditions,
   usesConditionValue,
 } from '../../views/code-review-rule-config-utils';
 
@@ -24,13 +25,9 @@ const emit = defineEmits<{
   (event: 'update:modelValue', value: CodeReviewRuleConfig): void;
 }>();
 
-const fieldOptions = computed(() => props.fields.map((field) => ({ label: field.label, value: field.key })));
-
-function updateConfig(mutator: (draft: CodeReviewRuleConfig) => void) {
-  const next = cloneCodeReviewRuleConfig(props.modelValue);
-  mutator(next);
-  emit('update:modelValue', next);
-}
+const activeRules = computed(() => listActiveCodeReviewRuleConditions(props.modelValue));
+const inactiveFields = computed(() => listInactiveCodeReviewRuleFields(props.modelValue, props.fields));
+const activeCountText = computed(() => `${activeRules.value.length} 条规则正在生效`);
 
 function findField(fieldKey: string) {
   return props.fields.find((item) => item.key === fieldKey) ?? null;
@@ -40,85 +37,43 @@ function selectOptions(fieldKey: string) {
   return findField(fieldKey)?.options ?? [];
 }
 
-function updateGroupMatchMode(groupId: string, matchMode: 'all' | 'any') {
-  updateConfig((draft) => {
-    const group = draft.groups.find((item) => item.id === groupId);
-    if (group) {
-      group.matchMode = matchMode;
-    }
-  });
+function updateConditions(conditions: CodeReviewRuleCondition[]) {
+  emit('update:modelValue', setCodeReviewRuleConditions(props.modelValue, conditions));
 }
 
-function addGroup() {
-  updateConfig((draft) => {
-    draft.groups.push(createCodeReviewRuleGroup(props.fields[0]));
-  });
+function addRule(field: CodeReviewRuleFieldDefinition) {
+  updateConditions([...activeRules.value, createCodeReviewRuleCondition(field)]);
 }
 
-function removeGroup(groupId: string) {
-  updateConfig((draft) => {
-    draft.groups = draft.groups.filter((group) => group.id !== groupId);
-    if (!draft.groups.length) {
-      draft.groups = [createCodeReviewRuleGroup(props.fields[0])];
-    }
-  });
+function removeRule(conditionId: string) {
+  updateConditions(activeRules.value.filter((condition) => condition.id !== conditionId));
 }
 
-function addCondition(groupId: string) {
-  updateConfig((draft) => {
-    const group = draft.groups.find((item) => item.id === groupId);
-    if (group) {
-      group.conditions.push(createCodeReviewRuleCondition(props.fields[0]));
-    }
-  });
-}
-
-function removeCondition(groupId: string, conditionId: string) {
-  updateConfig((draft) => {
-    const group = draft.groups.find((item) => item.id === groupId);
-    if (!group) {
-      return;
-    }
-    group.conditions = group.conditions.filter((condition) => condition.id !== conditionId);
-    if (!group.conditions.length) {
-      group.conditions = [createCodeReviewRuleCondition(props.fields[0])];
-    }
-  });
-}
-
-function updateConditionField(groupId: string, conditionId: string, fieldKey: string) {
-  updateConfig((draft) => {
-    const condition = findCondition(draft, groupId, conditionId);
-    if (!condition) {
-      return;
-    }
-    const field = findField(fieldKey);
-    condition.fieldKey = fieldKey;
-    condition.operator = field?.operators[0] ?? 'contains';
-    condition.value = '';
-  });
-}
-
-function updateConditionValue(groupId: string, conditionId: string, value: string | string[]) {
-  updateConfig((draft) => {
-    const condition = findCondition(draft, groupId, conditionId);
-    if (condition) {
-      condition.value = Array.isArray(value) ? value.join(',') : value;
-    }
-  });
-}
-
-function findCondition(draft: CodeReviewRuleConfig, groupId: string, conditionId: string): CodeReviewRuleCondition | null {
-  const group = draft.groups.find((item) => item.id === groupId);
-  return group?.conditions.find((condition) => condition.id === conditionId) ?? null;
+function updateConditionValue(conditionId: string, value: string | string[]) {
+  const nextValue = Array.isArray(value) ? value.join(',') : value;
+  updateConditions(
+    activeRules.value.map((condition) =>
+      condition.id === conditionId
+        ? {
+            ...condition,
+            value: nextValue,
+          }
+        : condition,
+    ),
+  );
 }
 
 function valuePlaceholder(condition: CodeReviewRuleCondition) {
-  const field = findField(condition.fieldKey);
   if (condition.operator === 'contains') {
     return '请输入风险词，例如：临时、绕过、测试';
   }
-  return field?.type === 'number' ? '请输入阈值数字' : '请输入规则值';
+  if (condition.operator === 'lt') {
+    return '请输入最低要求，例如：0.2';
+  }
+  if (condition.operator === 'gt') {
+    return '请输入上限，例如：500';
+  }
+  return '请输入规则值';
 }
 
 function conditionValueModel(condition: CodeReviewRuleCondition) {
@@ -132,24 +87,30 @@ function conditionValueModel(condition: CodeReviewRuleCondition) {
     .filter(Boolean);
 }
 
-function ruleActionText(condition: CodeReviewRuleCondition) {
+function ruleSentence(condition: CodeReviewRuleCondition) {
   const field = findField(condition.fieldKey);
   if (!field) {
-    return '请选择一项判定规则';
+    return '这条规则暂时不可用，可以删除后重新添加。';
   }
   switch (condition.operator) {
     case 'isEmpty':
-      return '为空时，判定为非法数据';
+      return `${field.label}时，判定为非法数据`;
+    case 'isMissingReview':
+      return '没有形成有效代码走查记录时，判定为非法数据';
+    case 'isNotScanned':
+      return '明确标记为未完成代码扫描时，判定为非法数据';
+    case 'hasOpenScanIssue':
+      return '静态扫描问题数大于 0 时，判定为非法数据';
     case 'notIn':
-      return '不在允许范围内时，判定为非法数据';
+      return '目标分支不在允许范围内时，判定为非法数据';
     case 'contains':
-      return '包含这些词时，判定为非法数据';
+      return '合并内容包含风险词时，判定为非法数据';
     case 'lt':
-      return '低于这个值时，判定为非法数据';
+      return `${field.label}时，低于填写值就判定为非法数据`;
     case 'gt':
-      return '高于这个值时，判定为非法数据';
+      return `${field.label}时，高于填写值就判定为非法数据`;
     default:
-      return '满足这项规则时，判定为非法数据';
+      return '满足这条规则时，判定为非法数据';
   }
 }
 </script>
@@ -158,72 +119,78 @@ function ruleActionText(condition: CodeReviewRuleCondition) {
   <section class="rule-editor-shell">
     <header class="rule-editor-head">
       <div class="rule-editor-head-main">
-        <h3 class="rule-editor-title">怎么判定</h3>
-        <p class="rule-editor-subtitle">这里只保留有业务意义的判定规则。改完后，右侧会告诉你哪些记录会被重新判定为非法数据。</p>
+        <h3 class="rule-editor-title">当前正在生效的规则</h3>
+        <p class="rule-editor-subtitle">
+          表格会按下面这些规则重新判定非法数据。关闭或新增规则后，右侧会立即预览结果变化。
+        </p>
       </div>
-      <el-button type="primary" plain :icon="Plus" @click="addGroup">新增一组规则</el-button>
+      <div class="rule-editor-head-actions">
+        <el-tag effect="plain" type="success">{{ activeCountText }}</el-tag>
+        <el-popover placement="bottom-end" width="360" trigger="click">
+          <template #reference>
+            <el-button type="primary" plain :icon="Plus">添加规则</el-button>
+          </template>
+          <div class="rule-add-panel">
+            <div class="rule-add-title">可添加的规则</div>
+            <div v-if="inactiveFields.length" class="rule-add-list">
+              <button
+                v-for="field in inactiveFields"
+                :key="field.key"
+                type="button"
+                class="rule-add-item"
+                @click="addRule(field)"
+              >
+                <span>{{ field.label }}</span>
+                <small>加入当前判定规则</small>
+              </button>
+            </div>
+            <el-empty v-else description="所有可配置规则都已经在生效列表中。" :image-size="80" />
+          </div>
+        </el-popover>
+      </div>
     </header>
 
-    <div class="rule-editor-groups">
-      <article v-for="(group, groupIndex) in modelValue.groups" :key="group.id" class="rule-editor-group">
-        <header class="rule-editor-group-head">
-          <div class="rule-editor-group-title">规则组 {{ groupIndex + 1 }}</div>
-          <div class="rule-editor-group-tools">
-            <span class="rule-editor-group-label">这组规则需要</span>
-            <el-segmented
-              :model-value="group.matchMode"
-              :options="[
-                { label: '同时满足', value: 'all' },
-                { label: '满足任一项', value: 'any' },
-              ]"
-              @change="updateGroupMatchMode(group.id, $event as 'all' | 'any')"
-            />
-            <el-button text :icon="Delete" @click="removeGroup(group.id)">删除这组</el-button>
-          </div>
-        </header>
-
-        <div class="rule-editor-condition-list">
-          <div v-for="condition in group.conditions" :key="condition.id" class="rule-editor-condition-row">
-            <SmartSelect
-              :model-value="condition.fieldKey"
-              :options="fieldOptions"
-              compact
-              placeholder="选择判定规则"
-              @change="updateConditionField(group.id, condition.id, String($event ?? ''))"
-            />
-
-            <div class="rule-editor-action">{{ ruleActionText(condition) }}</div>
-
-            <SmartSelect
-              v-if="findField(condition.fieldKey)?.type === 'multi-select' && usesConditionValue(condition.operator)"
-              :model-value="conditionValueModel(condition)"
-              :options="selectOptions(condition.fieldKey)"
-              compact
-              multiple
-              collapse-tags
-              placeholder="选择允许范围"
-              @change="updateConditionValue(group.id, condition.id, $event as string | string[])"
-            />
-
-            <el-input
-              v-else-if="usesConditionValue(condition.operator)"
-              :model-value="condition.value"
-              :placeholder="valuePlaceholder(condition)"
-              @input="updateConditionValue(group.id, condition.id, String($event ?? ''))"
-            />
-
-            <div v-else class="rule-editor-no-value">这项规则不需要填写额外值</div>
-
-            <el-button text :icon="Delete" @click="removeCondition(group.id, condition.id)">删除</el-button>
-          </div>
+    <div v-if="activeRules.length" class="rule-card-list">
+      <article v-for="condition in activeRules" :key="condition.id" class="rule-card">
+        <div class="rule-card-main">
+          <div class="rule-card-kicker">已启用</div>
+          <div class="rule-card-title">{{ findField(condition.fieldKey)?.label || '未知规则' }}</div>
+          <div class="rule-card-sentence">{{ ruleSentence(condition) }}</div>
+          <div class="rule-card-summary">{{ describeCodeReviewRuleCondition(condition, fields) }}</div>
         </div>
 
-        <footer class="rule-editor-group-foot">
-          <div class="rule-editor-group-summary">这组规则当前表达的是：{{ describeCodeReviewRuleGroup(group, fields) }}</div>
-          <el-button plain size="small" :icon="Plus" @click="addCondition(group.id)">新增规则项</el-button>
-        </footer>
+        <div class="rule-card-control">
+          <SmartSelect
+            v-if="findField(condition.fieldKey)?.type === 'multi-select' && usesConditionValue(condition.operator)"
+            :model-value="conditionValueModel(condition)"
+            :options="selectOptions(condition.fieldKey)"
+            compact
+            multiple
+            collapse-tags
+            placeholder="选择允许范围"
+            @change="updateConditionValue(condition.id, $event as string | string[])"
+          />
+
+          <el-input
+            v-else-if="usesConditionValue(condition.operator)"
+            :model-value="condition.value"
+            :placeholder="valuePlaceholder(condition)"
+            @input="updateConditionValue(condition.id, String($event ?? ''))"
+          />
+
+          <div v-else class="rule-card-fixed">这条规则不需要填写额外值</div>
+        </div>
+
+        <el-button text :icon="Delete" class="rule-card-remove" @click="removeRule(condition.id)">
+          停用
+        </el-button>
       </article>
     </div>
+
+    <el-empty
+      v-else
+      description="当前没有启用任何个人判定规则。你可以点击“添加规则”选择要生效的规则。"
+    />
   </section>
 </template>
 
@@ -245,6 +212,14 @@ function ruleActionText(condition: CodeReviewRuleCondition) {
   gap: 6px;
 }
 
+.rule-editor-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .rule-editor-title {
   margin: 0;
   font-size: 18px;
@@ -259,72 +234,62 @@ function ruleActionText(condition: CodeReviewRuleCondition) {
   color: rgba(31, 41, 55, 0.64);
 }
 
-.rule-editor-groups {
-  display: grid;
-  gap: 14px;
-}
-
-.rule-editor-group {
+.rule-card-list {
   display: grid;
   gap: 12px;
+}
+
+.rule-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 320px) auto;
+  gap: 14px;
+  align-items: center;
   padding: 16px;
   border: 1px solid rgba(15, 23, 42, 0.08);
   border-radius: 18px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(249, 250, 251, 0.96));
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(249, 250, 251, 0.96)),
+    radial-gradient(circle at top left, rgba(219, 234, 254, 0.5), transparent 36%);
   box-shadow: 0 8px 20px rgba(15, 23, 42, 0.04);
 }
 
-.rule-editor-group-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
+.rule-card-main {
+  display: grid;
+  gap: 6px;
 }
 
-.rule-editor-group-title {
-  font-size: 14px;
+.rule-card-kicker {
+  width: fit-content;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(22, 163, 74, 0.1);
+  color: #15803d;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.rule-card-title {
+  font-size: 15px;
   font-weight: 700;
   color: #111827;
 }
 
-.rule-editor-group-tools {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
+.rule-card-sentence {
+  font-size: 13px;
+  line-height: 1.6;
+  color: rgba(31, 41, 55, 0.8);
 }
 
-.rule-editor-group-label {
+.rule-card-summary {
   font-size: 12px;
-  color: rgba(31, 41, 55, 0.58);
+  color: rgba(31, 41, 55, 0.56);
 }
 
-.rule-editor-condition-list {
-  display: grid;
-  gap: 10px;
+.rule-card-control {
+  min-width: 0;
 }
 
-.rule-editor-condition-row {
-  display: grid;
-  grid-template-columns: minmax(140px, 180px) minmax(120px, 150px) minmax(200px, 1fr) auto;
-  gap: 10px;
-  align-items: center;
-}
-
-.rule-editor-action {
-  display: flex;
-  align-items: center;
-  min-height: 40px;
-  padding: 0 12px;
-  border-radius: 10px;
-  background: rgba(239, 246, 255, 0.88);
-  border: 1px solid rgba(59, 130, 246, 0.14);
-  font-size: 12px;
-  color: #1d4ed8;
-}
-
-.rule-editor-no-value {
+.rule-card-fixed {
   display: flex;
   align-items: center;
   min-height: 40px;
@@ -336,28 +301,68 @@ function ruleActionText(condition: CodeReviewRuleCondition) {
   color: rgba(71, 85, 105, 0.8);
 }
 
-.rule-editor-group-foot {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+.rule-card-remove {
+  justify-self: end;
+}
+
+.rule-add-panel {
+  display: grid;
   gap: 12px;
-  flex-wrap: wrap;
-  padding-top: 4px;
 }
 
-.rule-editor-group-summary {
+.rule-add-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #111827;
+}
+
+.rule-add-list {
+  display: grid;
+  gap: 8px;
+  max-height: 360px;
+  overflow: auto;
+}
+
+.rule-add-item {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  padding: 12px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 12px;
+  background: #fff;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 0.18s ease,
+    background-color 0.18s ease,
+    transform 0.18s ease;
+}
+
+.rule-add-item:hover {
+  border-color: rgba(37, 99, 235, 0.3);
+  background: rgba(239, 246, 255, 0.72);
+  transform: translateY(-1px);
+}
+
+.rule-add-item span {
+  font-size: 13px;
+  font-weight: 700;
+  color: #111827;
+}
+
+.rule-add-item small {
   font-size: 12px;
-  line-height: 1.7;
-  color: rgba(31, 41, 55, 0.72);
-}
-
-:deep(.el-segmented) {
-  --el-segmented-padding: 3px;
+  color: rgba(31, 41, 55, 0.56);
 }
 
 @media (max-width: 1200px) {
-  .rule-editor-condition-row {
+  .rule-card {
     grid-template-columns: 1fr;
+  }
+
+  .rule-card-remove {
+    justify-self: start;
   }
 }
 </style>

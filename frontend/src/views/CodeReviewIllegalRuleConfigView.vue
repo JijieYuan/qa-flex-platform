@@ -92,7 +92,7 @@ async function loadFilterOptions() {
 function syncDraftFromStorage() {
   const stored = loadStoredCodeReviewRuleConfig();
   const normalized = normalizeCodeReviewRuleConfig(
-    stored ?? createDefaultCodeReviewRuleConfig(fields.value[0]),
+    stored ?? createDefaultCodeReviewRuleConfig(fields.value),
     fields.value,
   );
   draftConfig.value = normalized;
@@ -149,7 +149,7 @@ async function initialize() {
 }
 
 function handleReset() {
-  draftConfig.value = createDefaultCodeReviewRuleConfig(fields.value[0]);
+  draftConfig.value = createDefaultCodeReviewRuleConfig(fields.value);
 }
 
 function handleSave() {

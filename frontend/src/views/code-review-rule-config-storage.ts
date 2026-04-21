@@ -1,10 +1,10 @@
 import type { CodeReviewRuleConfig } from '../types/code-review-rule-config';
 import { cloneCodeReviewRuleConfig } from './code-review-rule-config-utils';
 
-const STORAGE_KEY = 'code-review-illegal-records.rule-config.v1';
+const STORAGE_KEY = 'code-review-illegal-records.rule-config.v2';
 
 interface StoredCodeReviewRuleConfig {
-  version: 1;
+  version: 2;
   config: CodeReviewRuleConfig;
 }
 
@@ -18,7 +18,7 @@ export function loadStoredCodeReviewRuleConfig() {
   }
   try {
     const parsed = JSON.parse(raw) as Partial<StoredCodeReviewRuleConfig>;
-    if (parsed.version !== 1 || !parsed.config) {
+    if (parsed.version !== 2 || !parsed.config) {
       return null;
     }
     return cloneCodeReviewRuleConfig(parsed.config);
@@ -32,7 +32,7 @@ export function saveStoredCodeReviewRuleConfig(config: CodeReviewRuleConfig) {
     return;
   }
   const payload: StoredCodeReviewRuleConfig = {
-    version: 1,
+    version: 2,
     config: cloneCodeReviewRuleConfig(config),
   };
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));

@@ -82,6 +82,9 @@ final class CodeReviewRuleConfigSupport {
     return switch (fieldKey) {
       case "moduleName", "owner", "commentRateMissing", "defectCountMissing", "addedLinesMissing" ->
           "isEmpty".equals(operator);
+      case "reviewRecordMissing" -> "isMissingReview".equals(operator);
+      case "scanNotDone" -> "isNotScanned".equals(operator);
+      case "scanIssueOpen" -> "hasOpenScanIssue".equals(operator);
       case "targetBranch" -> "notIn".equals(operator);
       case "mergeRequestContent" -> "contains".equals(operator);
       case "commentRateLow" -> "lt".equals(operator);
@@ -92,7 +95,7 @@ final class CodeReviewRuleConfigSupport {
 
   private static boolean usesConditionValue(CodeReviewRuleConfigCondition condition) {
     return switch (condition.operator()) {
-      case "isEmpty" -> false;
+      case "isEmpty", "isMissingReview", "isNotScanned", "hasOpenScanIssue" -> false;
       default -> true;
     };
   }
@@ -101,6 +104,9 @@ final class CodeReviewRuleConfigSupport {
     return switch (condition.fieldKey()) {
       case "moduleName" -> !StringUtils.hasText(row.moduleName());
       case "owner" -> !StringUtils.hasText(row.owner());
+      case "reviewRecordMissing" -> !StringUtils.hasText(row.reviewStatus()) || row.reviewDurationMinutes() == null;
+      case "scanNotDone" -> isNotScanned(row.scanStatus());
+      case "scanIssueOpen" -> row.scanBugCount() != null && row.scanBugCount() > 0;
       case "targetBranch" -> matchesNotIn(row.targetBranch(), condition.value());
       case "mergeRequestContent" -> containsAny(row.mergeRequestContent(), condition.value());
       case "commentRateMissing" -> row.commentRate() == null;
@@ -111,6 +117,14 @@ final class CodeReviewRuleConfigSupport {
       case "addedLinesHigh" -> matchesNumber(toDouble(row.addedLines()), condition.value(), NumberRule.GREATER_THAN);
       default -> false;
     };
+  }
+
+  private static boolean isNotScanned(String scanStatus) {
+    String normalizedStatus = TextQuerySupport.trimToNull(scanStatus);
+    return normalizedStatus != null
+        && List.of("NOT_SCANNED", "UNSCANNED", "未扫描", "未代码扫描", "未进行代码扫描")
+            .stream()
+            .anyMatch(status -> TextQuerySupport.equalsNormalized(status, normalizedStatus));
   }
 
   private static boolean matchesNotIn(String value, String allowedValuesText) {
@@ -177,6 +191,9 @@ final class CodeReviewRuleConfigSupport {
     return switch (condition.fieldKey()) {
       case "moduleName" -> "模块名为空";
       case "owner" -> "责任人为空";
+      case "reviewRecordMissing" -> "缺少代码走查记录";
+      case "scanNotDone" -> "未完成代码扫描";
+      case "scanIssueOpen" -> "扫描问题数大于 0";
       case "targetBranch" -> "目标分支不在允许范围内：" + condition.value();
       case "mergeRequestContent" -> "合并内容包含风险词：" + condition.value();
       case "commentRateMissing" -> "注释率缺失";
