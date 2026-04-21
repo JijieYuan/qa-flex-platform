@@ -613,12 +613,22 @@ function openRuleExplanation() {
       </template>
 
       <template #primary-actions>
+        <el-button
+          class="review-rule-trigger"
+          data-testid="review-rule-explanation-trigger"
+          plain
+          size="small"
+          :icon="InfoFilled"
+          @click="openRuleExplanation"
+        >
+          规则说明
+        </el-button>
         <el-button type="primary" :icon="Plus" @click="handleCreateRecord">新增评审</el-button>
         <el-button plain :icon="Download" :loading="exportLoading" @click="handleExportExcel">导出Excel</el-button>
         <el-button :icon="Refresh" @click="handleRefresh">刷新</el-button>
       </template>
 
-      <template #toolbar-actions>
+      <template v-if="false" #toolbar-actions>
         <el-button
           class="review-rule-trigger"
           data-testid="review-rule-explanation-trigger"
