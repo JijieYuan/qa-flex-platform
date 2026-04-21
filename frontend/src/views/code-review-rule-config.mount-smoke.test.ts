@@ -3,6 +3,15 @@ import { mount, flushPromises } from '@vue/test-utils';
 import { createRouter, createWebHashHistory } from 'vue-router';
 import ElementPlus from 'element-plus';
 import CodeReviewIllegalRuleConfigView from './CodeReviewIllegalRuleConfigView.vue';
+import ruleConfigViewSource from './CodeReviewIllegalRuleConfigView.vue?raw';
+import ruleConfigEditorSource from '../components/rule-config/CodeReviewRuleConfigEditor.vue?raw';
+import ruleConfigPreviewSource from '../components/rule-config/CodeReviewRuleConfigPreview.vue?raw';
+
+function cssBlock(source: string, selector: string) {
+  const start = source.indexOf(`${selector} {`);
+  const end = source.indexOf('\n}', start);
+  return start >= 0 && end > start ? source.slice(start, end) : '';
+}
 
 function jsonResponse(data: unknown) {
   return Promise.resolve({ ok: true, text: () => Promise.resolve(JSON.stringify({ success: true, data })) } as Response);
@@ -45,6 +54,18 @@ describe('CodeReviewIllegalRuleConfigView mount smoke', () => {
     });
     await flushPromises();
     expect(wrapper.exists()).toBe(true);
+    expect(wrapper.find('.rule-config-main').exists()).toBe(true);
+    expect(wrapper.find('.rule-config-context-grid').exists()).toBe(true);
+    expect(wrapper.find('.rule-config-sidebar').exists()).toBe(false);
     vi.unstubAllGlobals();
+  });
+
+  it('keeps the page fixed while repeated lists own vertical scrolling', () => {
+    expect(cssBlock(ruleConfigViewSource, '.rule-config-page')).toContain('overflow: hidden');
+    expect(cssBlock(ruleConfigViewSource, '.rule-config-page')).toContain('height: calc(100vh - 98px)');
+    expect(cssBlock(ruleConfigViewSource, '.rule-config-layout')).toContain('overflow: hidden');
+    expect(cssBlock(ruleConfigEditorSource, '.rule-card-list')).toContain('overflow-y: auto');
+    expect(cssBlock(ruleConfigPreviewSource, '.rule-preview-sample-list')).toContain('overflow-y: auto');
+    expect(`${ruleConfigViewSource}\n${ruleConfigEditorSource}\n${ruleConfigPreviewSource}`).not.toMatch(/overflow-x:\s*auto/);
   });
 });

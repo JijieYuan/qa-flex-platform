@@ -27,7 +27,7 @@ const emit = defineEmits<{
 
 const activeRules = computed(() => listActiveCodeReviewRuleConditions(props.modelValue));
 const inactiveFields = computed(() => listInactiveCodeReviewRuleFields(props.modelValue, props.fields));
-const activeCountText = computed(() => `${activeRules.value.length} 条规则正在生效`);
+const activeCountText = computed(() => `${activeRules.value.length} 条生效`);
 
 function findField(fieldKey: string) {
   return props.fields.find((item) => item.key === fieldKey) ?? null;
@@ -42,7 +42,7 @@ function updateConditions(conditions: CodeReviewRuleCondition[]) {
 }
 
 function addRule(field: CodeReviewRuleFieldDefinition) {
-  updateConditions([...activeRules.value, createCodeReviewRuleCondition(field)]);
+  updateConditions([createCodeReviewRuleCondition(field), ...activeRules.value]);
 }
 
 function removeRule(conditionId: string) {
@@ -119,9 +119,9 @@ function ruleSentence(condition: CodeReviewRuleCondition) {
   <section class="rule-editor-shell">
     <header class="rule-editor-head">
       <div class="rule-editor-head-main">
-        <h3 class="rule-editor-title">当前正在生效的规则</h3>
+        <h3 class="rule-editor-title">生效规则</h3>
         <p class="rule-editor-subtitle">
-          表格会按下面这些规则重新判定非法数据。关闭或新增规则后，右侧会立即预览结果变化。
+          下方规则决定非法数据范围，右侧实时预览。
         </p>
       </div>
       <div class="rule-editor-head-actions">
@@ -141,7 +141,7 @@ function ruleSentence(condition: CodeReviewRuleCondition) {
                 @click="addRule(field)"
               >
                 <span>{{ field.label }}</span>
-                <small>加入当前判定规则</small>
+                <small>加入生效规则</small>
               </button>
             </div>
             <el-empty v-else description="所有可配置规则都已经在生效列表中。" :image-size="80" />
@@ -151,9 +151,14 @@ function ruleSentence(condition: CodeReviewRuleCondition) {
     </header>
 
     <div v-if="activeRules.length" class="rule-card-list">
-      <article v-for="condition in activeRules" :key="condition.id" class="rule-card">
+      <article
+        v-for="condition in activeRules"
+        :key="condition.id"
+        class="rule-card"
+        :class="{ 'rule-card--fixed': !usesConditionValue(condition.operator) }"
+      >
         <div class="rule-card-main">
-          <div class="rule-card-kicker">已启用</div>
+          <div class="rule-card-kicker">生效中</div>
           <div class="rule-card-title">{{ findField(condition.fieldKey)?.label || '未知规则' }}</div>
           <div class="rule-card-sentence">{{ ruleSentence(condition) }}</div>
           <div class="rule-card-summary">{{ describeCodeReviewRuleCondition(condition, fields) }}</div>
@@ -178,11 +183,11 @@ function ruleSentence(condition: CodeReviewRuleCondition) {
             @input="updateConditionValue(condition.id, String($event ?? ''))"
           />
 
-          <div v-else class="rule-card-fixed">这条规则不需要填写额外值</div>
+          <div v-else class="rule-card-fixed">无需配置</div>
         </div>
 
         <el-button text :icon="Delete" class="rule-card-remove" @click="removeRule(condition.id)">
-          停用
+          移除
         </el-button>
       </article>
     </div>
@@ -197,19 +202,19 @@ function ruleSentence(condition: CodeReviewRuleCondition) {
 <style scoped>
 .rule-editor-shell {
   display: grid;
-  gap: 16px;
+  gap: 8px;
 }
 
 .rule-editor-head {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: 12px;
 }
 
 .rule-editor-head-main {
   display: grid;
-  gap: 6px;
+  gap: 3px;
 }
 
 .rule-editor-head-actions {
@@ -222,7 +227,7 @@ function ruleSentence(condition: CodeReviewRuleCondition) {
 
 .rule-editor-title {
   margin: 0;
-  font-size: 18px;
+  font-size: 17px;
   font-weight: 700;
   color: #1f2937;
 }
@@ -230,79 +235,144 @@ function ruleSentence(condition: CodeReviewRuleCondition) {
 .rule-editor-subtitle {
   margin: 0;
   font-size: 13px;
-  line-height: 1.6;
+  line-height: 1.35;
   color: rgba(31, 41, 55, 0.64);
 }
 
 .rule-card-list {
   display: grid;
-  gap: 12px;
+  gap: 9px;
+  max-height: clamp(320px, calc(100vh - 390px), 560px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding-right: 4px;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.22) transparent;
+  transition: scrollbar-color 0.18s ease;
+}
+
+.rule-card-list:hover {
+  scrollbar-color: rgba(100, 116, 139, 0.42) transparent;
+}
+
+.rule-card-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.rule-card-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.rule-card-list::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.2);
+}
+
+.rule-card-list:hover::-webkit-scrollbar-thumb {
+  background: rgba(100, 116, 139, 0.38);
 }
 
 .rule-card {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(220px, 320px) auto;
-  gap: 14px;
+  grid-template-columns: minmax(0, 1fr) minmax(160px, 235px) auto;
+  gap: 12px;
   align-items: center;
-  padding: 16px;
+  min-height: 80px;
+  padding: 12px 14px;
   border: 1px solid rgba(15, 23, 42, 0.08);
-  border-radius: 18px;
+  border-radius: 16px;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(249, 250, 251, 0.96)),
     radial-gradient(circle at top left, rgba(219, 234, 254, 0.5), transparent 36%);
-  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.04);
+  box-shadow:
+    0 1px 2px rgba(15, 23, 42, 0.04),
+    0 10px 22px rgba(15, 23, 42, 0.045);
+}
+
+.rule-card--fixed {
+  grid-template-columns: minmax(0, 1fr) auto auto;
 }
 
 .rule-card-main {
   display: grid;
-  gap: 6px;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 4px 10px;
+  align-content: center;
+  align-items: start;
+  min-width: 0;
 }
 
 .rule-card-kicker {
+  grid-row: 1 / span 3;
   width: fit-content;
-  padding: 2px 8px;
+  margin-top: 1px;
+  padding: 3px 8px;
   border-radius: 999px;
   background: rgba(22, 163, 74, 0.1);
   color: #15803d;
   font-size: 11px;
   font-weight: 700;
+  white-space: nowrap;
 }
 
 .rule-card-title {
+  min-width: 0;
   font-size: 15px;
+  line-height: 1.3;
   font-weight: 700;
   color: #111827;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .rule-card-sentence {
+  min-width: 0;
   font-size: 13px;
-  line-height: 1.6;
+  line-height: 1.42;
   color: rgba(31, 41, 55, 0.8);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .rule-card-summary {
+  grid-column: 2;
+  min-width: 0;
+  max-width: 100%;
   font-size: 12px;
+  line-height: 1.45;
   color: rgba(31, 41, 55, 0.56);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .rule-card-control {
   min-width: 0;
 }
 
+.rule-card-control :deep(.el-input__wrapper) {
+  min-height: 30px;
+}
+
 .rule-card-fixed {
   display: flex;
   align-items: center;
-  min-height: 40px;
-  padding: 0 12px;
-  border-radius: 10px;
-  border: 1px dashed rgba(148, 163, 184, 0.5);
-  background: rgba(248, 250, 252, 0.9);
+  min-height: 26px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  background: rgba(248, 250, 252, 0.95);
   font-size: 12px;
   color: rgba(71, 85, 105, 0.8);
+  white-space: nowrap;
 }
 
 .rule-card-remove {
   justify-self: end;
+  padding: 4px 8px;
 }
 
 .rule-add-panel {

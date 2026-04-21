@@ -28,7 +28,53 @@ class CodeReviewRuleConfigSupportTest {
 
     assertThat(CodeReviewRuleConfigSupport.hasReadyConfig(config)).isTrue();
     assertThat(CodeReviewRuleConfigSupport.apply(List.of(row), config)).containsExactly(row);
-    assertThat(CodeReviewRuleConfigSupport.explainRow(row, config).get(0)).contains("目标分支不在允许范围内");
+    assertThat(CodeReviewRuleConfigSupport.explainRow(row, config))
+        .containsExactly("\u76ee\u6807\u5206\u652f\u4e0d\u5728\u5141\u8bb8\u8303\u56f4");
+  }
+
+  @Test
+  void shouldExplainOnlyActuallyMatchedConditionForAnyGroup() {
+    CodeReviewIllegalRecordView row = row("", "owner-a", "master");
+    CodeReviewRuleConfig config =
+        new CodeReviewRuleConfig(
+            true,
+            List.of(new CodeReviewRuleConfigGroup(
+                "g1",
+                "any",
+                List.of(
+                    new CodeReviewRuleConfigCondition("c1", "moduleName", "isEmpty", ""),
+                    new CodeReviewRuleConfigCondition("c2", "owner", "isEmpty", "")))),
+            null);
+
+    assertThat(CodeReviewRuleConfigSupport.explainRow(row, config))
+        .containsExactly("\u7f3a\u5c11\u6a21\u5757\u540d");
+  }
+
+  @Test
+  void shouldExplainAllActuallyMatchedConditionsForAnyGroup() {
+    CodeReviewIllegalRecordView row = row("", "", "master");
+    CodeReviewRuleConfig config =
+        new CodeReviewRuleConfig(
+            true,
+            List.of(new CodeReviewRuleConfigGroup(
+                "g1",
+                "any",
+                List.of(
+                    new CodeReviewRuleConfigCondition("c1", "moduleName", "isEmpty", ""),
+                    new CodeReviewRuleConfigCondition("c2", "owner", "isEmpty", "")))),
+            null);
+
+    assertThat(CodeReviewRuleConfigSupport.explainRow(row, config))
+        .containsExactly("\u7f3a\u5c11\u6a21\u5757\u540d", "\u7f3a\u5c11\u8d23\u4efb\u4eba");
+  }
+
+  @Test
+  void shouldUseOriginalIllegalReasonsWhenCustomRuleIsNotEnabled() {
+    CodeReviewIllegalRecordView row =
+        row("", "", "master", List.of("\u7f3a\u5c11\u6a21\u5757\u540d", "\u7f3a\u5c11\u8d23\u4efb\u4eba"));
+
+    assertThat(CodeReviewRuleConfigSupport.explainRow(row, null))
+        .containsExactly("\u7f3a\u5c11\u6a21\u5757\u540d", "\u7f3a\u5c11\u8d23\u4efb\u4eba");
   }
 
   private CodeReviewRuleConfig config(String fieldKey, String operator, String value) {
@@ -42,6 +88,11 @@ class CodeReviewRuleConfigSupportTest {
   }
 
   private CodeReviewIllegalRecordView row(String moduleName, String owner, String targetBranch) {
+    return row(moduleName, owner, targetBranch, List.of());
+  }
+
+  private CodeReviewIllegalRecordView row(
+      String moduleName, String owner, String targetBranch, List<String> illegalTypes) {
     return new CodeReviewIllegalRecordView(
         "merge_request",
         1001L,
@@ -56,7 +107,7 @@ class CodeReviewRuleConfigSupportTest {
         "Alice",
         moduleName,
         targetBranch,
-        List.of(),
+        illegalTypes,
         "DONE",
         20,
         "SCANNED",

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { ArrowLeft, RefreshLeft, Select, Setting } from '@element-plus/icons-vue';
-import { ElMessage } from 'element-plus';
+import { ElMessage, ElMessageBox } from 'element-plus';
 import { useRoute, useRouter } from 'vue-router';
 import CodeReviewRuleConfigEditor from '../components/rule-config/CodeReviewRuleConfigEditor.vue';
 import CodeReviewRuleConfigPreview from '../components/rule-config/CodeReviewRuleConfigPreview.vue';
@@ -40,6 +40,7 @@ const preview = ref<CodeReviewRulePreviewResponse | null>(null);
 const draftConfig = ref<CodeReviewRuleConfig>(createDefaultCodeReviewRuleConfig());
 const savedConfig = ref<CodeReviewRuleConfig>(createDefaultCodeReviewRuleConfig());
 let previewTimer: number | null = null;
+let removeLeaveGuard: (() => void) | null = null;
 
 const fields = computed(() => buildCodeReviewRuleFields(filterOptions.value));
 const dirty = computed(() => JSON.stringify(draftConfig.value) !== JSON.stringify(savedConfig.value));
@@ -75,9 +76,9 @@ const scopeTags = computed(() => {
 
 const scopeDescription = computed(() => {
   if (!scopeTags.value.length) {
-    return '当前会以“代码走查非法数据”页面的默认数据范围作为判定基础。';
+    return '按代码走查默认数据范围预览。';
   }
-  return '当前预览会沿用你从列表页带过来的数据范围，再按“我的规则”重新判定哪些记录属于非法数据。';
+  return '沿用列表页带入的数据范围，再按编辑区规则重新判定。';
 });
 
 async function loadFilterOptions() {
@@ -150,6 +151,7 @@ async function initialize() {
 
 function handleReset() {
   draftConfig.value = createDefaultCodeReviewRuleConfig(fields.value);
+  ElMessage.info('已恢复到默认规则，保存或应用后生效');
 }
 
 function handleSave() {
@@ -163,7 +165,7 @@ function handleSave() {
   savedConfig.value = cloneCodeReviewRuleConfig(nextConfig);
   draftConfig.value = cloneCodeReviewRuleConfig(nextConfig);
   saving.value = false;
-  ElMessage.success('我的规则已保存');
+  ElMessage.success('已保存为我的规则');
 }
 
 function handleApply() {
@@ -175,7 +177,7 @@ function handleApply() {
   saveStoredCodeReviewRuleConfig(nextConfig);
   savedConfig.value = cloneCodeReviewRuleConfig(nextConfig);
   draftConfig.value = cloneCodeReviewRuleConfig(nextConfig);
-  ElMessage.success('已按我的规则重新展示当前列表');
+  ElMessage.success('已保存并应用到列表');
   void router.push({
     path: '/code-review/illegal-records',
     query: {
@@ -192,6 +194,33 @@ function handleBack() {
   });
 }
 
+async function confirmLeaveWithUnsavedChanges() {
+  if (!dirty.value) {
+    return true;
+  }
+  try {
+    await ElMessageBox.confirm(
+      '当前规则有未保存修改，离开后这些修改不会保留。是否继续离开？',
+      '离开规则配置',
+      {
+        confirmButtonText: '继续离开',
+        cancelButtonText: '留在当前页',
+        type: 'warning',
+      },
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+removeLeaveGuard = router.beforeEach(async (_to, from) => {
+  if (from.path !== route.path) {
+    return true;
+  }
+  return confirmLeaveWithUnsavedChanges();
+});
+
 watch(
   draftConfig,
   () => {
@@ -204,6 +233,7 @@ onBeforeUnmount(() => {
   if (previewTimer != null) {
     window.clearTimeout(previewTimer);
   }
+  removeLeaveGuard?.();
 });
 
 void initialize();
@@ -213,53 +243,50 @@ void initialize();
   <section class="rule-config-page">
     <header class="rule-config-page-head">
       <div class="rule-config-page-head-main">
-        <el-button text :icon="ArrowLeft" @click="handleBack">返回非法数据列表</el-button>
-        <div class="rule-config-page-kicker">规则配置</div>
+        <div class="rule-config-title-row">
+          <div class="rule-config-page-kicker">规则配置</div>
+          <el-button class="rule-config-back" :icon="ArrowLeft" link @click="handleBack">返回列表</el-button>
+        </div>
         <h1 class="rule-config-page-title">代码走查判定规则工作台</h1>
         <p class="rule-config-page-desc">
-          这里配置的是“我的判定规则”，不会改动原始数据。你可以先看右侧结果，再决定是否让非法数据列表按这套规则重新展示。
+          调整个人判定规则并预览结果。保存只保留配置；应用后返回列表展示。
         </p>
       </div>
       <div class="rule-config-page-head-actions">
-        <el-button :icon="RefreshLeft" @click="handleReset">恢复当前规则</el-button>
-        <el-button :icon="Select" :loading="saving" @click="handleSave">保存我的规则</el-button>
-        <el-button type="primary" :icon="Setting" @click="handleApply">按我的规则展示</el-button>
+        <el-button :icon="RefreshLeft" @click="handleReset">恢复默认规则</el-button>
+        <el-button :icon="Select" :loading="saving" @click="handleSave">保存为我的规则</el-button>
+        <el-button type="primary" :icon="Setting" @click="handleApply">保存并应用到列表</el-button>
       </div>
     </header>
 
     <div class="rule-config-layout">
-      <aside class="rule-config-sidebar">
-        <section class="rule-config-panel">
-          <div class="rule-config-panel-title">我正在配置什么</div>
-          <div class="rule-config-status-list">
-            <div class="rule-config-status-item">
-              <span class="rule-config-status-label">当前状态</span>
-              <strong class="rule-config-status-value">{{ dirty ? '有未保存修改' : '已与本地保存内容一致' }}</strong>
+      <main class="rule-config-main">
+        <div class="rule-config-context-grid">
+          <section class="rule-config-context-strip" v-loading="filterLoading">
+            <div class="rule-config-context-group">
+              <span class="rule-config-context-title">配置状态</span>
+              <span class="rule-config-status-chip" :class="{ 'is-dirty': dirty }">
+                {{ dirty ? '有未保存修改' : '已保存' }}
+              </span>
+              <span class="rule-config-context-meta">列表：{{ savedConfig.enabled ? '我的规则' : '当前规则' }}</span>
+              <span class="rule-config-context-meta">
+                最近：{{ savedConfig.updatedAt ? savedConfig.updatedAt.replace('T', ' ').slice(0, 16) : '未保存' }}
+              </span>
             </div>
-            <div class="rule-config-status-item">
-              <span class="rule-config-status-label">当前列表</span>
-              <strong class="rule-config-status-value">{{ savedConfig.enabled ? '会按我的规则重新判定' : '仍按当前规则展示' }}</strong>
-            </div>
-            <div class="rule-config-status-item">
-              <span class="rule-config-status-label">最近保存</span>
-              <strong class="rule-config-status-value">{{ savedConfig.updatedAt ? savedConfig.updatedAt.replace('T', ' ').slice(0, 19) : '还没有保存过' }}</strong>
-            </div>
-          </div>
-        </section>
 
-        <section class="rule-config-panel" v-loading="filterLoading">
-          <div class="rule-config-panel-title">当前数据范围</div>
-          <p class="rule-config-panel-desc">{{ scopeDescription }}</p>
-          <div class="rule-config-scope-tags">
-            <el-tag v-for="tag in scopeTags" :key="`${tag.label}-${tag.value}`" effect="plain" class="rule-config-scope-tag">
-              {{ tag.label }}：{{ tag.value }}
-            </el-tag>
-            <span v-if="!scopeTags.length" class="rule-config-scope-empty">当前没有额外数据范围限制。</span>
-          </div>
-        </section>
-      </aside>
+            <div class="rule-config-context-group rule-config-scope-group">
+              <span class="rule-config-context-title">数据范围</span>
+              <span class="rule-config-scope-desc">{{ scopeDescription }}</span>
+              <div class="rule-config-scope-tags">
+                <el-tag v-for="tag in scopeTags" :key="`${tag.label}-${tag.value}`" effect="plain" class="rule-config-scope-tag">
+                  {{ tag.label }}：{{ tag.value }}
+                </el-tag>
+                <span v-if="!scopeTags.length" class="rule-config-scope-empty">无额外限制</span>
+              </div>
+            </div>
+          </section>
+        </div>
 
-      <main class="rule-config-editor">
         <section class="rule-config-panel">
           <CodeReviewRuleConfigEditor v-model="draftConfig" :fields="fields" />
         </section>
@@ -277,16 +304,49 @@ void initialize();
 <style scoped>
 .rule-config-page {
   display: grid;
-  gap: 16px;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 10px;
+  height: calc(100vh - 98px);
+  min-height: 0;
+  overflow: hidden;
+}
+
+.rule-config-title-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.rule-config-back {
+  height: 26px;
+  padding: 0 8px;
+  border-radius: 999px;
+  color: #2563eb;
+  background: rgba(239, 246, 255, 0.86);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.rule-config-back:hover {
+  color: #1d4ed8;
+  background: rgba(219, 234, 254, 0.92);
+}
+
+.rule-config-back :deep(.el-icon) {
+  width: 16px;
+  height: 16px;
+  margin-right: 3px;
+  border-radius: 999px;
+  background: rgba(37, 99, 235, 0.12);
 }
 
 .rule-config-page-head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 16px;
-  padding: 18px 20px;
-  border-radius: 22px;
+  gap: 14px;
+  padding: 12px 16px;
+  border-radius: 18px;
   border: 1px solid rgba(15, 23, 42, 0.08);
   background:
     radial-gradient(circle at top left, rgba(219, 234, 254, 0.72), transparent 30%),
@@ -298,7 +358,7 @@ void initialize();
 
 .rule-config-page-head-main {
   display: grid;
-  gap: 8px;
+  gap: 5px;
 }
 
 .rule-config-page-kicker {
@@ -310,16 +370,16 @@ void initialize();
 
 .rule-config-page-title {
   margin: 0;
-  font-size: 28px;
+  font-size: 25px;
   line-height: 1.1;
   color: #111827;
 }
 
 .rule-config-page-desc {
   margin: 0;
-  max-width: 760px;
+  max-width: 700px;
   font-size: 14px;
-  line-height: 1.7;
+  line-height: 1.35;
   color: rgba(31, 41, 55, 0.7);
 }
 
@@ -333,23 +393,40 @@ void initialize();
 
 .rule-config-layout {
   display: grid;
-  grid-template-columns: minmax(240px, 280px) minmax(0, 1.25fr) minmax(340px, 420px);
-  gap: 16px;
+  grid-template-columns: minmax(720px, 1fr) minmax(330px, 380px);
+  gap: 12px;
   align-items: start;
+  min-height: 0;
+  overflow: hidden;
 }
 
-.rule-config-sidebar,
-.rule-config-editor,
+.rule-config-main,
 .rule-config-preview {
   display: grid;
-  gap: 16px;
+  gap: 12px;
+  min-height: 0;
+}
+
+.rule-config-main {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.rule-config-preview > .rule-config-panel {
+  overflow-x: hidden;
+  overflow-y: visible;
+}
+
+.rule-config-context-grid {
+  display: grid;
+  grid-template-columns: 1fr;
 }
 
 .rule-config-panel {
   display: grid;
-  gap: 14px;
-  padding: 18px;
-  border-radius: 22px;
+  gap: 10px;
+  min-width: 0;
+  padding: 14px;
+  border-radius: 18px;
   border: 1px solid rgba(15, 23, 42, 0.08);
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.99), rgba(249, 250, 251, 0.96));
   box-shadow:
@@ -357,44 +434,62 @@ void initialize();
     0 12px 28px rgba(15, 23, 42, 0.04);
 }
 
-.rule-config-panel-title {
-  font-size: 15px;
+.rule-config-context-strip {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 48px;
+  padding: 9px 12px;
+  border-radius: 16px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.035);
+}
+
+.rule-config-context-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.rule-config-scope-group {
+  flex: 1;
+}
+
+.rule-config-context-title {
+  font-size: 13px;
   font-weight: 700;
   color: #111827;
 }
 
-.rule-config-panel-desc {
-  margin: 0;
-  font-size: 13px;
-  line-height: 1.7;
-  color: rgba(31, 41, 55, 0.64);
-}
-
-.rule-config-status-list {
-  display: grid;
-  gap: 12px;
-}
-
-.rule-config-status-item {
-  display: grid;
-  gap: 4px;
-}
-
-.rule-config-status-label {
+.rule-config-status-chip {
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(22, 163, 74, 0.1);
+  color: #15803d;
   font-size: 12px;
-  color: rgba(31, 41, 55, 0.52);
+  font-weight: 700;
 }
 
-.rule-config-status-value {
-  font-size: 14px;
-  color: #111827;
+.rule-config-status-chip.is-dirty {
+  background: rgba(245, 158, 11, 0.12);
+  color: #b45309;
+}
+
+.rule-config-context-meta,
+.rule-config-scope-desc {
+  font-size: 12px;
+  color: rgba(31, 41, 55, 0.62);
 }
 
 .rule-config-scope-tags {
   display: flex;
   align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .rule-config-scope-tag {
@@ -406,9 +501,30 @@ void initialize();
   color: rgba(31, 41, 55, 0.56);
 }
 
-@media (max-width: 1400px) {
+@media (max-width: 1180px) {
+  .rule-config-page {
+    height: auto;
+    overflow: visible;
+  }
+
   .rule-config-layout {
     grid-template-columns: 1fr;
+  }
+
+  .rule-config-context-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 900px) {
+  .rule-config-context-strip {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .rule-config-context-group {
+    flex-wrap: wrap;
+    white-space: normal;
   }
 }
 </style>

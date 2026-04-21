@@ -4,6 +4,7 @@ import com.data.collection.platform.entity.CodeReviewRuleConfig;
 import com.data.collection.platform.entity.CodeReviewRuleConfigCondition;
 import com.data.collection.platform.entity.CodeReviewRuleConfigGroup;
 import java.util.Arrays;
+import java.util.LinkedHashSet;
 import java.util.List;
 import org.springframework.util.StringUtils;
 
@@ -37,15 +38,27 @@ final class CodeReviewRuleConfigSupport {
 
   static List<String> explainRow(CodeReviewIllegalRecordView row, CodeReviewRuleConfig config) {
     if (!hasReadyConfig(config)) {
-      return List.of("当前没有启用我的判定规则");
+      return row.illegalTypes() == null || row.illegalTypes().isEmpty()
+          ? List.of("\u65e0\u5224\u5b9a\u539f\u56e0")
+          : row.illegalTypes();
     }
-    List<String> reasons =
-        config.groups().stream()
-            .filter(CodeReviewRuleConfigSupport::hasReadyGroup)
-            .filter(group -> matchesGroup(row, group))
-            .map(CodeReviewRuleConfigSupport::describeGroup)
-            .toList();
-    return reasons.isEmpty() ? List.of("满足我的判定规则") : reasons;
+    LinkedHashSet<String> reasons = new LinkedHashSet<>();
+    config.groups().stream()
+        .filter(CodeReviewRuleConfigSupport::hasReadyGroup)
+        .filter(group -> matchesGroup(row, group))
+        .forEach(group -> reasons.addAll(explainMatchedGroup(row, group)));
+    return reasons.isEmpty() ? List.of("\u6ee1\u8db3\u6211\u7684\u5224\u5b9a\u89c4\u5219") : List.copyOf(reasons);
+  }
+
+  private static List<String> explainMatchedGroup(
+      CodeReviewIllegalRecordView row, CodeReviewRuleConfigGroup group) {
+    List<CodeReviewRuleConfigCondition> readyConditions =
+        group.conditions().stream().filter(CodeReviewRuleConfigSupport::isReadyCondition).toList();
+    boolean matchAny = "any".equalsIgnoreCase(TextQuerySupport.trimToNull(group.matchMode()));
+    return readyConditions.stream()
+        .filter(condition -> !matchAny || matchesCondition(row, condition))
+        .map(CodeReviewRuleConfigSupport::describeMatchedCondition)
+        .toList();
   }
 
   private static boolean hasReadyGroup(CodeReviewRuleConfigGroup group) {
@@ -122,7 +135,7 @@ final class CodeReviewRuleConfigSupport {
   private static boolean isNotScanned(String scanStatus) {
     String normalizedStatus = TextQuerySupport.trimToNull(scanStatus);
     return normalizedStatus != null
-        && List.of("NOT_SCANNED", "UNSCANNED", "未扫描", "未代码扫描", "未进行代码扫描")
+        && List.of("NOT_SCANNED", "UNSCANNED", "\u672a\u626b\u63cf", "\u672a\u4ee3\u7801\u626b\u63cf", "\u672a\u8fdb\u884c\u4ee3\u7801\u626b\u63cf")
             .stream()
             .anyMatch(status -> TextQuerySupport.equalsNormalized(status, normalizedStatus));
   }
@@ -157,6 +170,25 @@ final class CodeReviewRuleConfigSupport {
     return rule == NumberRule.LESS_THAN ? value < expected : value > expected;
   }
 
+  private static String describeMatchedCondition(CodeReviewRuleConfigCondition condition) {
+    return switch (condition.fieldKey()) {
+      case "moduleName" -> "\u7f3a\u5c11\u6a21\u5757\u540d";
+      case "owner" -> "\u7f3a\u5c11\u8d23\u4efb\u4eba";
+      case "reviewRecordMissing" -> "\u7f3a\u5c11\u4ee3\u7801\u8d70\u67e5\u8bb0\u5f55";
+      case "scanNotDone" -> "\u672a\u5b8c\u6210\u4ee3\u7801\u626b\u63cf";
+      case "scanIssueOpen" -> "\u626b\u63cf\u95ee\u9898\u672a\u5173\u95ed";
+      case "targetBranch" -> "\u76ee\u6807\u5206\u652f\u4e0d\u5728\u5141\u8bb8\u8303\u56f4";
+      case "mergeRequestContent" -> "\u5408\u5e76\u5185\u5bb9\u5305\u542b\u98ce\u9669\u8bcd";
+      case "commentRateMissing" -> "\u6ce8\u91ca\u7387\u7f3a\u5931";
+      case "commentRateLow" -> "\u6ce8\u91ca\u7387\u8fc7\u4f4e";
+      case "defectCountMissing" -> "\u7f3a\u9677\u6570\u7f3a\u5931";
+      case "defectCountHigh" -> "\u7f3a\u9677\u6570\u8fc7\u9ad8";
+      case "addedLinesMissing" -> "\u65b0\u589e\u4ee3\u7801\u884c\u6570\u7f3a\u5931";
+      case "addedLinesHigh" -> "\u65b0\u589e\u4ee3\u7801\u884c\u6570\u8fc7\u9ad8";
+      default -> "\u6ee1\u8db3\u6211\u7684\u89c4\u5219";
+    };
+  }
+
   private static Double parseNumber(String value) {
     try {
       return Double.parseDouble(value.trim());
@@ -170,40 +202,10 @@ final class CodeReviewRuleConfigSupport {
   }
 
   private static List<String> splitValues(String value) {
-    return Arrays.stream(String.valueOf(value == null ? "" : value).split("[,，、\\n]"))
+    return Arrays.stream(String.valueOf(value == null ? "" : value).split("[,\uff0c\u3001\n]"))
         .map(String::trim)
         .filter(StringUtils::hasText)
         .toList();
-  }
-
-  private static String describeGroup(CodeReviewRuleConfigGroup group) {
-    String joiner = "any".equalsIgnoreCase(TextQuerySupport.trimToNull(group.matchMode())) ? "，或者" : "，并且";
-    String description =
-        group.conditions().stream()
-            .filter(CodeReviewRuleConfigSupport::isReadyCondition)
-            .map(CodeReviewRuleConfigSupport::describeCondition)
-            .reduce((left, right) -> left + joiner + right)
-            .orElse("当前规则还没有填写完整");
-    return "满足：" + description;
-  }
-
-  private static String describeCondition(CodeReviewRuleConfigCondition condition) {
-    return switch (condition.fieldKey()) {
-      case "moduleName" -> "模块名为空";
-      case "owner" -> "责任人为空";
-      case "reviewRecordMissing" -> "缺少代码走查记录";
-      case "scanNotDone" -> "未完成代码扫描";
-      case "scanIssueOpen" -> "扫描问题数大于 0";
-      case "targetBranch" -> "目标分支不在允许范围内：" + condition.value();
-      case "mergeRequestContent" -> "合并内容包含风险词：" + condition.value();
-      case "commentRateMissing" -> "注释率缺失";
-      case "commentRateLow" -> "注释率低于 " + condition.value();
-      case "defectCountMissing" -> "缺陷数缺失";
-      case "defectCountHigh" -> "缺陷数高于 " + condition.value();
-      case "addedLinesMissing" -> "新增代码行数缺失";
-      case "addedLinesHigh" -> "新增代码行数高于 " + condition.value();
-      default -> "满足我的规则";
-    };
   }
 
   private enum NumberRule {
