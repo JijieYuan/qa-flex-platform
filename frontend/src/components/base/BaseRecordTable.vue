@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, useSlots, watch } from 'vue';
+import { computed, onBeforeUnmount, ref, useSlots, watch } from 'vue';
 import { Refresh } from '@element-plus/icons-vue';
 import SmartSelect from './SmartSelect.vue';
 import BaseSearchInput from './BaseSearchInput.vue';
@@ -35,6 +35,8 @@ const props = withDefaults(
     activeFilterTags?: RecordTableActiveFilterTag[];
     advancedVisible?: boolean;
     queryButtonText?: string;
+    keywordAutoSearch?: boolean;
+    keywordAutoSearchDelay?: number;
   }>(),
   {
     loading: false,
@@ -54,6 +56,8 @@ const props = withDefaults(
     activeFilterTags: () => [],
     advancedVisible: false,
     queryButtonText: '查询',
+    keywordAutoSearch: false,
+    keywordAutoSearchDelay: 400,
   },
 );
 
@@ -73,6 +77,7 @@ const emit = defineEmits<{
 
 const keywordDraft = ref(props.keyword);
 const inputFilterDrafts = ref<Record<string, string>>({});
+let keywordAutoSearchTimer: number | null = null;
 
 watch(
   () => props.keyword,
@@ -106,6 +111,7 @@ const hasToolbarActions = computed(() => Boolean(slots['toolbar-actions']));
 const hasPrimaryFilters = computed(() => props.primaryFilters.length > 0);
 const hasAdvancedFilters = computed(() => props.advancedFilters.length > 0);
 const hasActiveFilterTags = computed(() => props.activeFilterTags.length > 0);
+const hasStandaloneSearch = computed(() => props.showSearch && !props.primaryFilters.some((item) => item.key === 'keyword'));
 
 function normalizeTagList(value: unknown): RecordTableTagValue[] {
   if (!Array.isArray(value)) {
@@ -173,6 +179,7 @@ function handleSearch() {
 }
 
 function handleReset() {
+  clearKeywordAutoSearchTimer();
   keywordDraft.value = '';
   const nextDrafts = { ...inputFilterDrafts.value };
   for (const key of Object.keys(nextDrafts)) {
@@ -196,6 +203,21 @@ function toggleAdvancedVisible() {
 
 function getFilterValue(key: string) {
   return props.filterValues[key];
+}
+
+function clearKeywordAutoSearchTimer() {
+  if (keywordAutoSearchTimer != null) {
+    window.clearTimeout(keywordAutoSearchTimer);
+    keywordAutoSearchTimer = null;
+  }
+}
+
+function scheduleKeywordAutoSearch(callback: () => void) {
+  clearKeywordAutoSearchTimer();
+  keywordAutoSearchTimer = window.setTimeout(() => {
+    keywordAutoSearchTimer = null;
+    callback();
+  }, props.keywordAutoSearchDelay);
 }
 
 function getInputFilterDraft(key: string) {
@@ -235,14 +257,68 @@ function resolveQueryKeyword(committedInputFilters: Record<string, string>) {
 }
 
 function handleQueryClick() {
+  clearKeywordAutoSearchTimer();
   const committedInputFilters = commitAllInputFilters();
   emit('query', resolveQueryKeyword(committedInputFilters));
 }
 
 function handleInputFilterSearch(key: string) {
+  clearKeywordAutoSearchTimer();
   commitInputFilterValue(key);
-  handleQueryClick();
+  if (!props.keywordAutoSearch || key !== 'keyword') {
+    handleQueryClick();
+  }
 }
+
+function handleInputFilterUpdate(key: string, value: string) {
+  updateInputFilterDraft(key, value);
+  if (props.keywordAutoSearch && key === 'keyword') {
+    scheduleKeywordAutoSearch(() => {
+      commitInputFilterValue(key, value);
+    });
+  }
+}
+
+function handleInputFilterClear(key: string) {
+  clearKeywordAutoSearchTimer();
+  commitInputFilterValue(key, '');
+}
+
+function emitStandaloneKeywordSearch(value = keywordDraft.value) {
+  emit('search', String(value ?? '').trim());
+}
+
+function handleStandaloneKeywordUpdate(value: string) {
+  keywordDraft.value = value;
+  if (props.keywordAutoSearch && hasStandaloneSearch.value) {
+    scheduleKeywordAutoSearch(() => {
+      emitStandaloneKeywordSearch(value);
+    });
+  }
+}
+
+function handleStandaloneKeywordSearch() {
+  clearKeywordAutoSearchTimer();
+  if (props.keywordAutoSearch && hasStandaloneSearch.value) {
+    emitStandaloneKeywordSearch();
+    return;
+  }
+  handleSearch();
+}
+
+function handleStandaloneKeywordClear() {
+  clearKeywordAutoSearchTimer();
+  keywordDraft.value = '';
+  if (props.keywordAutoSearch && hasStandaloneSearch.value) {
+    emitStandaloneKeywordSearch('');
+    return;
+  }
+  handleReset();
+}
+
+onBeforeUnmount(() => {
+  clearKeywordAutoSearchTimer();
+});
 </script>
 
 <template>
@@ -259,10 +335,10 @@ function handleInputFilterSearch(key: string) {
             :style="{ width: `${filter.width ?? (filter.key === 'keyword' ? 260 : 168)}px` }"
             :placeholder="filter.placeholder || filter.label"
             :clearable="filter.clearable ?? true"
-            @update:model-value="updateInputFilterDraft(filter.key, String($event ?? ''))"
+            @update:model-value="handleInputFilterUpdate(filter.key, String($event ?? ''))"
             @change="commitInputFilterValue(filter.key, String($event ?? ''))"
             @search="handleInputFilterSearch(filter.key)"
-            @clear="commitInputFilterValue(filter.key, '')"
+            @clear="handleInputFilterClear(filter.key)"
           />
 
           <SmartSelect
@@ -291,31 +367,30 @@ function handleInputFilterSearch(key: string) {
         </template>
 
         <BaseSearchInput
-          v-if="showSearch && !primaryFilters.some((item) => item.key === 'keyword')"
+          v-if="hasStandaloneSearch"
           :model-value="keywordDraft"
           class="record-table-search"
           :placeholder="searchPlaceholder"
-          @update:model-value="keywordDraft = $event"
-          @search="handleSearch"
-          @clear="handleReset"
+          @update:model-value="handleStandaloneKeywordUpdate"
+          @search="handleStandaloneKeywordSearch"
+          @clear="handleStandaloneKeywordClear"
         />
 
         <div
           class="record-filter-primary-actions"
           :class="{ 'record-filter-primary-actions-inline': hasFilterBuilder }"
         >
-          <slot name="primary-actions" />
           <el-button v-if="hasAdvancedFilters" @click="toggleAdvancedVisible">
             {{ advancedVisible ? '收起高级筛选' : '高级筛选' }}
           </el-button>
           <el-button @click="handleReset">重置</el-button>
-          <el-button
-            type="primary"
-            :class="{ 'record-filter-query-button-separated': hasFilterBuilder }"
-            @click="handleQueryClick"
-          >
+          <el-button type="primary" @click="handleQueryClick">
             {{ queryButtonText }}
           </el-button>
+        </div>
+
+        <div v-if="hasPrimaryActions" class="record-filter-slot-actions">
+          <slot name="primary-actions" />
         </div>
       </div>
 
@@ -329,10 +404,10 @@ function handleInputFilterSearch(key: string) {
               :style="{ width: `${filter.width ?? 168}px` }"
               :placeholder="filter.placeholder || filter.label"
               :clearable="filter.clearable ?? true"
-              @update:model-value="updateInputFilterDraft(filter.key, String($event ?? ''))"
+              @update:model-value="handleInputFilterUpdate(filter.key, String($event ?? ''))"
               @change="commitInputFilterValue(filter.key, String($event ?? ''))"
               @search="handleInputFilterSearch(filter.key)"
-              @clear="commitInputFilterValue(filter.key, '')"
+              @clear="handleInputFilterClear(filter.key)"
             />
 
             <SmartSelect
@@ -519,19 +594,19 @@ function handleInputFilterSearch(key: string) {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
+}
+
+.record-filter-slot-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin-left: auto;
   flex-wrap: wrap;
 }
 
 .record-filter-primary-actions-inline {
-  margin-left: 0;
-  flex: 1 1 auto;
-}
-
-.record-filter-query-button-separated {
-  order: -1;
-  margin-left: 0;
-  margin-right: auto;
+  flex: 0 0 auto;
 }
 
 .record-filter-advanced {

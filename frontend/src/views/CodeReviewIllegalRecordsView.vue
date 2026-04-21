@@ -520,6 +520,7 @@ function metricFormulaSummary(metric: { label: string; definition: string; formu
       :columns="columns"
       :rows="tableRows"
       :loading="isTableLoading"
+      :keyword-auto-search="true"
       :page="page"
       :page-size="pageSize"
       :total="total"

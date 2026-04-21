@@ -59,7 +59,7 @@ import {
   type ReviewRecordFormModel,
 } from './review-data-management';
 
-const { route, page, pageSize, sortBy, sortOrder, keyword, patchQuery, bindLoader, isTableLoading } = useRouteTableState({
+const { route, page, pageSize, sortBy, sortOrder, keyword, patchQuery, debouncedPatchQuery, bindLoader, isTableLoading } = useRouteTableState({
   defaults: {
     page: 1,
     pageSize: 20,
@@ -282,6 +282,13 @@ async function handleQuery(nextKeyword = keyword.value) {
   if (!queryChanged) {
     await loadRows();
   }
+}
+
+function handleKeywordSearch(nextKeyword: string) {
+  debouncedPatchQuery({
+    keyword: nextKeyword.trim(),
+    page: 1,
+  });
 }
 
 async function handleSortChange(payload: { prop: string; order: 'ascending' | 'descending' | null }) {
@@ -577,6 +584,7 @@ function formatDate(value?: string | null) {
       :rows="tableRows"
       :loading="isTableLoading"
       :keyword="keyword"
+      :keyword-auto-search="true"
       :page="page"
       :page-size="pageSize"
       :total="total"
@@ -587,6 +595,7 @@ function formatDate(value?: string | null) {
       query-button-text="查询"
       empty-description="当前筛选条件下没有可展示的评审记录。"
       @reset="handleReset"
+      @search="handleKeywordSearch"
       @query="handleQuery"
       @sort-change="handleSortChange"
       @current-change="handlePageChange"
