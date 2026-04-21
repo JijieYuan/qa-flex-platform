@@ -30,4 +30,8 @@ describe('smart-select-search', () => {
       ),
     ).toBe(true);
   });
+  it('matches common Chinese words by initials and full pinyin', () => {
+    expect(matchesSmartSelectOption({ label: '\u6d4b\u8bd5', value: '\u6d4b\u8bd5' }, 'cs')).toBe(true);
+    expect(matchesSmartSelectOption({ label: '\u6d4b\u8bd5', value: '\u6d4b\u8bd5' }, 'ceshi')).toBe(true);
+  });
 });

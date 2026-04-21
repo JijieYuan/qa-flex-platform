@@ -14,6 +14,8 @@ class TextQuerySupportTest {
     assertTrue(TextQuerySupport.containsAbstractSearch("王强", "wq"));
     assertTrue(TextQuerySupport.containsAbstractSearch("王qiang", "wq"));
     assertTrue(TextQuerySupport.containsAbstractSearch("[草图模块] 算数功能设计说明书评审", "ct"));
+    assertTrue(TextQuerySupport.containsAbstractSearch("\u6d4b\u8bd5", "cs"));
+    assertTrue(TextQuerySupport.containsAbstractSearch("\u6d4b\u8bd5", "ceshi"));
     assertTrue(TextQuerySupport.containsAbstractSearch("Wang Qiang", "wangqiang"));
     assertFalse(TextQuerySupport.containsAbstractSearch("发布模块", "wq"));
   }

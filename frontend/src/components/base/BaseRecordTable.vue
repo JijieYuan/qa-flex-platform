@@ -72,12 +72,28 @@ const emit = defineEmits<{
 }>();
 
 const keywordDraft = ref(props.keyword);
+const inputFilterDrafts = ref<Record<string, string>>({});
 
 watch(
   () => props.keyword,
   (value) => {
     keywordDraft.value = value;
   },
+);
+
+watch(
+  [() => props.primaryFilters, () => props.advancedFilters, () => props.filterValues],
+  () => {
+    const nextDrafts: Record<string, string> = {};
+    for (const filter of [...props.primaryFilters, ...props.advancedFilters]) {
+      if (filter.type !== 'input') {
+        continue;
+      }
+      nextDrafts[filter.key] = String(props.filterValues[filter.key] ?? '');
+    }
+    inputFilterDrafts.value = nextDrafts;
+  },
+  { immediate: true, deep: true },
 );
 
 const slots = useSlots();
@@ -158,6 +174,11 @@ function handleSearch() {
 
 function handleReset() {
   keywordDraft.value = '';
+  const nextDrafts = { ...inputFilterDrafts.value };
+  for (const key of Object.keys(nextDrafts)) {
+    nextDrafts[key] = '';
+  }
+  inputFilterDrafts.value = nextDrafts;
   emit('reset');
 }
 
@@ -176,6 +197,52 @@ function toggleAdvancedVisible() {
 function getFilterValue(key: string) {
   return props.filterValues[key];
 }
+
+function getInputFilterDraft(key: string) {
+  return inputFilterDrafts.value[key] ?? String(getFilterValue(key) ?? '');
+}
+
+function updateInputFilterDraft(key: string, value: string) {
+  inputFilterDrafts.value = {
+    ...inputFilterDrafts.value,
+    [key]: value,
+  };
+}
+
+function commitInputFilterValue(key: string, value = getInputFilterDraft(key)) {
+  const normalizedValue = String(value ?? '').trim();
+  updateInputFilterDraft(key, normalizedValue);
+  emit('filter-change', { key, value: normalizedValue });
+  return normalizedValue;
+}
+
+function commitAllInputFilters() {
+  const committedValues: Record<string, string> = {};
+  for (const filter of [...props.primaryFilters, ...props.advancedFilters]) {
+    if (filter.type !== 'input') {
+      continue;
+    }
+    committedValues[filter.key] = commitInputFilterValue(filter.key);
+  }
+  return committedValues;
+}
+
+function resolveQueryKeyword(committedInputFilters: Record<string, string>) {
+  if ('keyword' in committedInputFilters) {
+    return committedInputFilters.keyword;
+  }
+  return keywordDraft.value.trim();
+}
+
+function handleQueryClick() {
+  const committedInputFilters = commitAllInputFilters();
+  emit('query', resolveQueryKeyword(committedInputFilters));
+}
+
+function handleInputFilterSearch(key: string) {
+  commitInputFilterValue(key);
+  handleQueryClick();
+}
 </script>
 
 <template>
@@ -187,13 +254,15 @@ function getFilterValue(key: string) {
         <template v-for="filter in primaryFilters" :key="filter.key">
           <BaseSearchInput
             v-if="filter.type === 'input'"
-            :model-value="String(getFilterValue(filter.key) ?? '')"
+            :model-value="getInputFilterDraft(filter.key)"
             :class="['record-filter-input', { 'record-filter-main-keyword': filter.key === 'keyword' }]"
             :style="{ width: `${filter.width ?? (filter.key === 'keyword' ? 260 : 168)}px` }"
             :placeholder="filter.placeholder || filter.label"
             :clearable="filter.clearable ?? true"
-            @change="handleFilterChange(filter.key, String($event ?? ''))"
-            @clear="handleFilterChange(filter.key, '')"
+            @update:model-value="updateInputFilterDraft(filter.key, String($event ?? ''))"
+            @change="commitInputFilterValue(filter.key, String($event ?? ''))"
+            @search="handleInputFilterSearch(filter.key)"
+            @clear="commitInputFilterValue(filter.key, '')"
           />
 
           <SmartSelect
@@ -243,7 +312,7 @@ function getFilterValue(key: string) {
           <el-button
             type="primary"
             :class="{ 'record-filter-query-button-separated': hasFilterBuilder }"
-            @click="emit('query', keywordDraft.trim())"
+            @click="handleQueryClick"
           >
             {{ queryButtonText }}
           </el-button>
@@ -255,13 +324,15 @@ function getFilterValue(key: string) {
           <template v-for="filter in advancedFilters" :key="filter.key">
             <BaseSearchInput
               v-if="filter.type === 'input'"
-              :model-value="String(getFilterValue(filter.key) ?? '')"
+              :model-value="getInputFilterDraft(filter.key)"
               class="record-filter-input"
               :style="{ width: `${filter.width ?? 168}px` }"
               :placeholder="filter.placeholder || filter.label"
               :clearable="filter.clearable ?? true"
-              @change="handleFilterChange(filter.key, String($event ?? ''))"
-              @clear="handleFilterChange(filter.key, '')"
+              @update:model-value="updateInputFilterDraft(filter.key, String($event ?? ''))"
+              @change="commitInputFilterValue(filter.key, String($event ?? ''))"
+              @search="handleInputFilterSearch(filter.key)"
+              @clear="commitInputFilterValue(filter.key, '')"
             />
 
             <SmartSelect

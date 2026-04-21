@@ -29,4 +29,40 @@ describe('BaseRecordTable', () => {
     expect(wrapper.emitted('query')).toBeTruthy();
     expect(wrapper.emitted('query')?.[0]).toEqual(['review']);
   });
+
+  it('commits primary keyword draft before query is triggered', async () => {
+    const wrapper = mount(BaseRecordTable, {
+      props: {
+        columns: [],
+        rows: [],
+        page: 1,
+        pageSize: 20,
+        total: 0,
+        primaryFilters: [
+          {
+            key: 'keyword',
+            label: '关键字',
+            type: 'input',
+            placeholder: '搜索标题',
+          },
+        ],
+        filterValues: {
+          keyword: '',
+        },
+      },
+      global: {
+        plugins: [ElementPlus],
+      },
+    });
+
+    const input = wrapper.find('input');
+    await input.setValue('ceshi');
+    const queryButton = wrapper.find('button.el-button--primary');
+
+    expect(queryButton.exists()).toBe(true);
+    await queryButton.trigger('click');
+
+    expect(wrapper.emitted('filter-change')?.at(-1)).toEqual([{ key: 'keyword', value: 'ceshi' }]);
+    expect(wrapper.emitted('query')).toEqual([['ceshi']]);
+  });
 });
