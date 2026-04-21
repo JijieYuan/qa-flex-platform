@@ -149,12 +149,16 @@ public class ReviewDataRecordService {
     String safeSortOrder = normalizeSortOrder(sortOrder);
 
     List<ReviewDataRecordRowResponse> legacyFiltered =
-        loadRecords(keyword, title, projectName, moduleName, reviewOwner, reviewType, problemStatus, reviewExpert);
+        loadRecords(title, projectName, moduleName, reviewOwner, reviewType, problemStatus, reviewExpert);
+    List<ReviewDataRecordRowResponse> keywordFiltered =
+        legacyFiltered.stream()
+            .filter(row -> ReviewDataSearchSupport.matchesKeyword(row, keyword))
+            .toList();
     StatisticFilterGroup filterGroup = parseFilterGroup(filterGroupJson);
     Map<Long, List<String>> problemStatusesByRecordId =
-        needsField(filterGroup, "problemStatus") ? loadProblemStatusesByRecordIds(legacyFiltered) : Map.of();
+        needsField(filterGroup, "problemStatus") ? loadProblemStatusesByRecordIds(keywordFiltered) : Map.of();
     List<ReviewDataRecordRowResponse> filtered =
-        legacyFiltered.stream()
+        keywordFiltered.stream()
             .filter(row -> matchesFilterGroup(row, filterGroup, problemStatusesByRecordId))
             .sorted(buildComparator(safeSortField, safeSortOrder))
             .toList();
@@ -173,7 +177,7 @@ public class ReviewDataRecordService {
   }
 
   public ReviewDataFilterOptionsResponse getFilterOptions() {
-    List<ReviewDataRecordRowResponse> records = loadRecords(null, null, null, null, null, null, null, null);
+    List<ReviewDataRecordRowResponse> records = loadRecords(null, null, null, null, null, null, null);
 
     return new ReviewDataFilterOptionsResponse(
         toOptions(records.stream().map(ReviewDataRecordRowResponse::projectName).toList()),
@@ -411,7 +415,6 @@ public class ReviewDataRecordService {
   }
 
   private List<ReviewDataRecordRowResponse> loadRecords(
-      String keyword,
       String title,
       String projectName,
       String moduleName,
@@ -422,7 +425,6 @@ public class ReviewDataRecordService {
     StringBuilder sql = new StringBuilder(BASE_LIST_SQL);
     List<Object> args = new ArrayList<>();
 
-    appendKeywordFilter(sql, args, keyword);
     appendContains(sql, args, "r.title", title);
     appendContains(sql, args, "r.project_name", projectName);
     appendContains(sql, args, "r.module_name", moduleName);
@@ -506,8 +508,8 @@ public class ReviewDataRecordService {
       case "isEmpty" -> values.stream().allMatch(value -> TextQuerySupport.trimToNull(value) == null);
       case "isNotEmpty" -> values.stream().anyMatch(value -> TextQuerySupport.trimToNull(value) != null);
       case "ne" -> values.stream().noneMatch(value -> equalsIgnoreCase(value, condition.value()));
-      case "contains" -> values.stream().anyMatch(value -> containsIgnoreCase(value, condition.value()));
-      case "notContains" -> values.stream().noneMatch(value -> containsIgnoreCase(value, condition.value()));
+      case "contains" -> values.stream().anyMatch(value -> ReviewDataSearchSupport.matchesContains(value, condition.value()));
+      case "notContains" -> values.stream().noneMatch(value -> ReviewDataSearchSupport.matchesContains(value, condition.value()));
       case "gt", "gte", "lt", "lte", "between" -> values.stream().anyMatch(value -> matchesNumber(value, condition));
       case "day" -> values.stream().anyMatch(value -> Objects.equals(firstDatePart(value), condition.value()));
       case "before" -> values.stream().anyMatch(value -> compareText(firstDatePart(value), firstDatePart(condition.value())) < 0);
@@ -591,12 +593,6 @@ public class ReviewDataRecordService {
     String safeLeft = TextQuerySupport.trimToNull(left);
     String safeRight = TextQuerySupport.trimToNull(right);
     return safeLeft != null && safeRight != null && safeLeft.equalsIgnoreCase(safeRight);
-  }
-
-  private boolean containsIgnoreCase(String left, String right) {
-    String safeLeft = TextQuerySupport.trimToNull(left);
-    String safeRight = TextQuerySupport.trimToNull(right);
-    return safeLeft != null && safeRight != null && safeLeft.toLowerCase(Locale.ROOT).contains(safeRight.toLowerCase(Locale.ROOT));
   }
 
   private int compareText(String left, String right) {
@@ -828,37 +824,6 @@ public class ReviewDataRecordService {
     }
     sql.append(" and lower(coalesce(").append(column).append(", '')) like ?");
     args.add("%" + normalized.toLowerCase(Locale.ROOT) + "%");
-  }
-
-  private void appendKeywordFilter(StringBuilder sql, List<Object> args, String keyword) {
-    String normalized = TextQuerySupport.trimToNull(keyword);
-    if (normalized == null) {
-      return;
-    }
-    String likeValue = "%" + normalized.toLowerCase(Locale.ROOT) + "%";
-    sql.append(
-        """
-         and (
-          lower(coalesce(r.title, '')) like ?
-          or lower(coalesce(r.project_name, '')) like ?
-          or lower(coalesce(r.module_name, '')) like ?
-          or lower(coalesce(r.review_owner, '')) like ?
-          or lower(coalesce(r.review_type, '')) like ?
-          or exists (
-            select 1
-            from review_record_experts keyword_expert
-            where keyword_expert.review_record_id = r.id
-              and keyword_expert.deleted = false
-              and lower(coalesce(keyword_expert.expert_name, '')) like ?
-          )
-        )
-        """);
-    args.add(likeValue);
-    args.add(likeValue);
-    args.add(likeValue);
-    args.add(likeValue);
-    args.add(likeValue);
-    args.add(likeValue);
   }
 
   private void appendEqText(StringBuilder sql, List<Object> args, String column, String value) {

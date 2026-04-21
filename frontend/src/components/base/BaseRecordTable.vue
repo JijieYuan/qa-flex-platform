@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, ref, useSlots, watch } from 'vue';
-import { Refresh, Search } from '@element-plus/icons-vue';
+import { Refresh } from '@element-plus/icons-vue';
 import SmartSelect from './SmartSelect.vue';
+import BaseSearchInput from './BaseSearchInput.vue';
 import type {
   RecordTableActiveFilterTag,
   RecordTableColumn,
@@ -184,7 +185,7 @@ function getFilterValue(key: string) {
         <slot name="filter-builder" />
 
         <template v-for="filter in primaryFilters" :key="filter.key">
-          <el-input
+          <BaseSearchInput
             v-if="filter.type === 'input'"
             :model-value="String(getFilterValue(filter.key) ?? '')"
             :class="['record-filter-input', { 'record-filter-main-keyword': filter.key === 'keyword' }]"
@@ -220,19 +221,15 @@ function getFilterValue(key: string) {
           />
         </template>
 
-        <el-input
+        <BaseSearchInput
           v-if="showSearch && !primaryFilters.some((item) => item.key === 'keyword')"
-          v-model="keywordDraft"
+          :model-value="keywordDraft"
           class="record-table-search"
           :placeholder="searchPlaceholder"
-          clearable
-          @keyup.enter="handleSearch"
+          @update:model-value="keywordDraft = $event"
+          @search="handleSearch"
           @clear="handleReset"
-        >
-          <template #prefix>
-            <el-icon><Search /></el-icon>
-          </template>
-        </el-input>
+        />
 
         <div
           class="record-filter-primary-actions"
@@ -256,7 +253,7 @@ function getFilterValue(key: string) {
       <el-collapse-transition>
         <div v-show="advancedVisible && hasAdvancedFilters" class="record-filter-advanced">
           <template v-for="filter in advancedFilters" :key="filter.key">
-            <el-input
+            <BaseSearchInput
               v-if="filter.type === 'input'"
               :model-value="String(getFilterValue(filter.key) ?? '')"
               class="record-filter-input"

@@ -16,4 +16,18 @@ describe('smart-select-search', () => {
     expect(matchesSmartSelectOption({ label: 'Wang Qing', value: 'Wang Qing' }, 'wangqing')).toBe(true);
     expect(matchesSmartSelectOption({ label: 'Wang Qing', value: 'Wang Qing' }, 'wq')).toBe(true);
   });
+
+  it('matches mixed Chinese and English content through shared abstract search', () => {
+    expect(matchesSmartSelectOption({ label: '王qiang', value: '王qiang' }, 'wq')).toBe(true);
+    expect(matchesSmartSelectOption({ label: '王qiang', value: '王qiang' }, 'wangqiang')).toBe(true);
+  });
+
+  it('matches long Chinese title by initials', () => {
+    expect(
+      matchesSmartSelectOption(
+        { label: '[草图模块] 算数功能设计说明书评审', value: '[草图模块] 算数功能设计说明书评审' },
+        'ct',
+      ),
+    ).toBe(true);
+  });
 });

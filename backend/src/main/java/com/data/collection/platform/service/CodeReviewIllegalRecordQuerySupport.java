@@ -94,13 +94,13 @@ final class CodeReviewIllegalRecordQuerySupport {
   }
 
   static boolean matchesKeyword(CodeReviewIllegalRecordView row, String keyword) {
-    return TextQuerySupport.containsIgnoreCase(row.mergeRequestContent(), keyword)
-        || TextQuerySupport.containsIgnoreCase(row.owner(), keyword)
-        || TextQuerySupport.containsIgnoreCase(row.projectName(), keyword)
-        || TextQuerySupport.containsIgnoreCase(row.repositoryName(), keyword)
-        || TextQuerySupport.containsIgnoreCase(row.moduleName(), keyword)
-        || TextQuerySupport.containsIgnoreCase(row.targetBranch(), keyword)
-        || TextQuerySupport.containsIgnoreCase(row.mergedBy(), keyword);
+    return TextQuerySupport.containsAbstractSearch(row.mergeRequestContent(), keyword)
+        || TextQuerySupport.containsAbstractSearch(row.owner(), keyword)
+        || TextQuerySupport.containsAbstractSearch(row.projectName(), keyword)
+        || TextQuerySupport.containsAbstractSearch(row.repositoryName(), keyword)
+        || TextQuerySupport.containsAbstractSearch(row.moduleName(), keyword)
+        || TextQuerySupport.containsAbstractSearch(row.targetBranch(), keyword)
+        || TextQuerySupport.containsAbstractSearch(row.mergedBy(), keyword);
   }
 
   private static void putIfPresent(Map<String, String> filters, String key, String value) {

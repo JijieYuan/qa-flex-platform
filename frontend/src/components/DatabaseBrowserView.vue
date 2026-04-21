@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { ElMessage } from 'element-plus';
-import { Edit, Refresh, Search, WarningFilled } from '@element-plus/icons-vue';
+import { Edit, Refresh, WarningFilled } from '@element-plus/icons-vue';
 import { api, type DatabaseTableOption, type DatabaseTableRowsResponse } from '../api';
 import SyncMetaBadge from './realtime/SyncMetaBadge.vue';
 import SmartSelect from './base/SmartSelect.vue';
+import BaseSearchInput from './base/BaseSearchInput.vue';
 import { useRouteTableState } from '../composables/useRouteTableState';
 
 const tablesLoading = ref(false);
@@ -299,18 +300,14 @@ onBeforeUnmount(() => {
           @change="handleTableSelectChange"
         />
 
-        <el-input
-          v-model="keywordDraft"
+        <BaseSearchInput
+          :model-value="keywordDraft"
           class="db-search-input"
           placeholder="输入关键字搜索当前表"
-          clearable
-          @keyup.enter="handleSearch"
+          @update:model-value="keywordDraft = $event"
+          @search="handleSearch"
           @clear="handleReset"
-        >
-          <template #prefix>
-            <el-icon><Search /></el-icon>
-          </template>
-        </el-input>
+        />
       </div>
 
       <div class="db-toolbar-actions">
