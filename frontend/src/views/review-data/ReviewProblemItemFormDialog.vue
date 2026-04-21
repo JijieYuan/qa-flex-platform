@@ -12,6 +12,7 @@ const props = defineProps<{
   modelValue: ReviewProblemItemFormModel;
   filterOptions: ReviewDataFilterOptionsResponse;
   expertOptionsOverride?: string[];
+  tipText?: string;
   editMode: boolean;
 }>();
 
@@ -114,6 +115,7 @@ function handleClose() {
       show-icon
       title="先选评审专家和问题状态，再补充位置、问题描述和建议方案。保存后会立即回写到当前评审记录下的清单。"
     />
+    <div v-if="tipText" class="problem-form-tip-note">{{ tipText }}</div>
 
     <el-form ref="formRef" :model="form" :rules="rules" label-width="108px">
       <div class="problem-form-grid">
@@ -168,6 +170,16 @@ function handleClose() {
 
 .problem-form-tip {
   margin-bottom: 16px;
+}
+
+.problem-form-tip-note {
+  margin: -4px 0 16px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(37, 99, 235, 0.06);
+  font-size: 12px;
+  line-height: 1.7;
+  color: rgba(30, 64, 175, 0.92);
 }
 
 .span-2 {

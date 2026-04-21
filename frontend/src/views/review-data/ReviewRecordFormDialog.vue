@@ -11,6 +11,7 @@ const props = defineProps<{
   saving: boolean;
   modelValue: ReviewRecordFormModel;
   filterOptions: ReviewDataFilterOptionsResponse;
+  tipText?: string;
   editMode: boolean;
 }>();
 
@@ -115,6 +116,7 @@ function handleClose() {
       show-icon
       title="先补齐评审主记录，保存后再到列表展开行里维护“评审问题清单”。项目、模块、负责人和专家都支持首字母搜索。"
     />
+    <div v-if="tipText" class="review-form-tip-note">{{ tipText }}</div>
 
     <el-form ref="formRef" :model="form" :rules="rules" label-width="112px" class="review-form">
       <div class="review-form-grid">
@@ -179,6 +181,16 @@ function handleClose() {
 
 .review-form-tip {
   margin-bottom: 16px;
+}
+
+.review-form-tip-note {
+  margin: -4px 0 16px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(37, 99, 235, 0.06);
+  font-size: 12px;
+  line-height: 1.7;
+  color: rgba(30, 64, 175, 0.92);
 }
 
 .review-form-number {

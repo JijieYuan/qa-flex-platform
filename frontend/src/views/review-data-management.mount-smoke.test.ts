@@ -10,7 +10,7 @@ function jsonResponse(data: unknown) {
 }
 
 describe('ReviewDataManagementView mount smoke', () => {
-  it('mounts without route errors', async () => {
+  it('mounts without route errors and opens the rule explanation drawer', async () => {
     vi.stubGlobal('fetch', vi.fn((url: string) => {
       if (url.includes('/filter-options')) {
         return jsonResponse({
@@ -34,10 +34,17 @@ describe('ReviewDataManagementView mount smoke', () => {
     await router.push('/review-data/home');
     await router.isReady();
     const wrapper = mount(ReviewDataManagementView, {
+      attachTo: document.body,
       global: { plugins: [router, ElementPlus] },
     });
     await flushPromises();
     expect(wrapper.exists()).toBe(true);
+    const trigger = wrapper.get('[data-testid="review-rule-explanation-trigger"]');
+    await trigger.trigger('click');
+    await flushPromises();
+    expect(document.body.textContent).toContain('评审缺陷密度');
+    expect(document.body.textContent).toContain('评审问题 = Σ 每条评审记录的问题总计');
+    wrapper.unmount();
     vi.unstubAllGlobals();
   });
 });

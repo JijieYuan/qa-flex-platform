@@ -12,11 +12,12 @@ import {
   ElMessageBox,
   ElTag,
 } from 'element-plus';
-import { ArrowDown, Document, Download, EditPen, Plus, Refresh } from '@element-plus/icons-vue';
+import { ArrowDown, Document, Download, EditPen, InfoFilled, Plus, Refresh } from '@element-plus/icons-vue';
 import BaseRecordTable from '../components/base/BaseRecordTable.vue';
 import StatisticFilterBuilder from '../components/StatisticFilterBuilder.vue';
 import ReviewProblemItemFormDialog from './review-data/ReviewProblemItemFormDialog.vue';
 import ReviewRecordFormDialog from './review-data/ReviewRecordFormDialog.vue';
+import { reviewDataRuleExplanationContent } from './review-data/review-data-rule-explanation';
 import {
   api,
   type ReviewDataFilterOptionsResponse,
@@ -84,6 +85,7 @@ const filterOptions = ref<ReviewDataFilterOptionsResponse>({
 
 const detailVisible = ref(false);
 const detailData = ref<ReviewDataRecordDetailResponse | null>(null);
+const ruleExplanationVisible = ref(false);
 
 const recordDialogVisible = ref(false);
 const recordDialogSaving = ref(false);
@@ -568,6 +570,10 @@ function displayText(value: unknown) {
 function formatDate(value?: string | null) {
   return value ? value.slice(0, 10) : '-';
 }
+
+function openRuleExplanation() {
+  ruleExplanationVisible.value = true;
+}
 </script>
 
 <template>
@@ -610,6 +616,19 @@ function formatDate(value?: string | null) {
         <el-button type="primary" :icon="Plus" @click="handleCreateRecord">新增评审</el-button>
         <el-button plain :icon="Download" :loading="exportLoading" @click="handleExportExcel">导出Excel</el-button>
         <el-button :icon="Refresh" @click="handleRefresh">刷新</el-button>
+      </template>
+
+      <template #toolbar-actions>
+        <el-button
+          class="review-rule-trigger"
+          data-testid="review-rule-explanation-trigger"
+          plain
+          size="small"
+          :icon="InfoFilled"
+          @click="openRuleExplanation"
+        >
+          规则说明
+        </el-button>
       </template>
 
       <template #cell-title="{ row }">
@@ -766,11 +785,99 @@ function formatDate(value?: string | null) {
       </template>
     </el-drawer>
 
+    <el-drawer
+      v-model="ruleExplanationVisible"
+      :title="reviewDataRuleExplanationContent.title"
+      size="620px"
+      append-to-body
+      class="review-data-drawer review-rule-drawer"
+    >
+      <section class="detail-section">
+        <header class="detail-section-head">
+          <el-icon><InfoFilled /></el-icon>
+          <span>先看结论</span>
+        </header>
+        <div class="rule-summary-card">
+          <div class="rule-summary-main">{{ reviewDataRuleExplanationContent.summary }}</div>
+          <div class="rule-summary-sub">{{ reviewDataRuleExplanationContent.scopeDescription }}</div>
+          <div class="rule-summary-meta">
+            <el-tag size="small" effect="plain" type="success">版本 {{ reviewDataRuleExplanationContent.version }}</el-tag>
+            <el-tag size="small" effect="plain" type="info">关键字段优先</el-tag>
+          </div>
+        </div>
+      </section>
+
+      <section class="detail-section">
+        <header class="detail-section-head">
+          <span>关键字段填写口径</span>
+        </header>
+        <div class="rule-card-grid">
+          <article
+            v-for="field in reviewDataRuleExplanationContent.fieldDefinitions"
+            :key="field.key"
+            class="rule-card"
+          >
+            <div class="rule-card-head">
+              <strong class="rule-card-title">{{ field.label }}</strong>
+              <el-tag size="small" effect="plain" type="info">关键字段</el-tag>
+            </div>
+            <div class="rule-card-definition">{{ field.definition }}</div>
+            <div class="rule-card-line">
+              <span class="rule-card-label">录入时</span>
+              <span>{{ field.entryGuideline }}</span>
+            </div>
+            <div class="rule-card-line">
+              <span class="rule-card-label">查看时</span>
+              <span>{{ field.viewerGuideline }}</span>
+            </div>
+            <div v-if="field.note" class="rule-card-note">{{ field.note }}</div>
+          </article>
+        </div>
+      </section>
+
+      <section class="detail-section">
+        <header class="detail-section-head">
+          <span>指标计算公式</span>
+        </header>
+        <div class="rule-card-grid">
+          <article
+            v-for="metric in reviewDataRuleExplanationContent.metricDefinitions"
+            :key="metric.key"
+            class="rule-card"
+          >
+            <div class="rule-card-head">
+              <strong class="rule-card-title">{{ metric.label }}</strong>
+            </div>
+            <div class="rule-card-definition">{{ metric.definition }}</div>
+            <div class="rule-card-formula">{{ metric.formula }}</div>
+            <div v-if="metric.note" class="rule-card-note">{{ metric.note }}</div>
+          </article>
+        </div>
+      </section>
+
+      <section class="detail-section">
+        <header class="detail-section-head">
+          <span>常见误解</span>
+        </header>
+        <div class="rule-question-list">
+          <article
+            v-for="question in reviewDataRuleExplanationContent.commonQuestions"
+            :key="question.key"
+            class="rule-question-card"
+          >
+            <div class="rule-question-title">{{ question.title }}</div>
+            <div class="rule-question-description">{{ question.description }}</div>
+          </article>
+        </div>
+      </section>
+    </el-drawer>
+
     <ReviewRecordFormDialog
       v-model:visible="recordDialogVisible"
       :saving="recordDialogSaving"
       :model-value="recordForm"
       :filter-options="filterOptions"
+      :tip-text="reviewDataRuleExplanationContent.recordDialogTip"
       :edit-mode="recordEditMode"
       @submit="submitRecord"
     />
@@ -781,6 +888,7 @@ function formatDate(value?: string | null) {
       :model-value="problemForm"
       :filter-options="filterOptions"
       :expert-options-override="currentProblemExpertOptions"
+      :tip-text="reviewDataRuleExplanationContent.problemDialogTip"
       :edit-mode="problemDialogEditMode"
       @submit="submitProblemItem"
     />
@@ -836,6 +944,19 @@ function formatDate(value?: string | null) {
 .title-sub {
   font-size: 12px;
   color: rgba(15, 23, 42, 0.48);
+}
+
+.review-rule-trigger {
+  border-color: rgba(59, 130, 246, 0.18);
+  background: rgba(59, 130, 246, 0.05);
+  color: #2563eb;
+}
+
+.review-rule-trigger:hover,
+.review-rule-trigger:focus {
+  border-color: rgba(37, 99, 235, 0.3);
+  background: rgba(37, 99, 235, 0.1);
+  color: #1d4ed8;
 }
 
 .record-actions {
@@ -995,6 +1116,105 @@ function formatDate(value?: string | null) {
   font-size: 13px;
   font-weight: 700;
   color: rgba(15, 23, 42, 0.75);
+}
+
+.rule-summary-card {
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+  border: 1px solid rgba(59, 130, 246, 0.14);
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(239, 246, 255, 0.96), rgba(248, 250, 252, 0.98));
+}
+
+.rule-summary-main {
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.7;
+  color: rgba(15, 23, 42, 0.88);
+}
+
+.rule-summary-sub {
+  font-size: 13px;
+  line-height: 1.7;
+  color: rgba(15, 23, 42, 0.68);
+}
+
+.rule-summary-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.rule-card-grid,
+.rule-question-list {
+  display: grid;
+  gap: 12px;
+}
+
+.rule-card,
+.rule-question-card {
+  display: grid;
+  gap: 10px;
+  padding: 14px 16px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 14px;
+  background: #fff;
+}
+
+.rule-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.rule-card-title,
+.rule-question-title {
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.5;
+  color: rgba(15, 23, 42, 0.88);
+}
+
+.rule-card-definition,
+.rule-question-description {
+  font-size: 13px;
+  line-height: 1.7;
+  color: rgba(15, 23, 42, 0.72);
+}
+
+.rule-card-line {
+  display: grid;
+  gap: 4px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: rgba(15, 23, 42, 0.72);
+}
+
+.rule-card-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #2563eb;
+}
+
+.rule-card-formula {
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.04);
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  color: rgba(15, 23, 42, 0.82);
+}
+
+.rule-card-note {
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(245, 158, 11, 0.1);
+  font-size: 12px;
+  line-height: 1.7;
+  color: rgba(146, 64, 14, 0.92);
 }
 
 :deep(.review-data-drawer .el-drawer__header) {
