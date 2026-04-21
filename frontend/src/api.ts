@@ -1,3 +1,5 @@
+import type { CodeReviewRuleConfig, CodeReviewRulePreviewResponse } from './types/code-review-rule-config';
+
 export type WhitelistMode = 'RECOMMENDED' | 'ALL' | 'CUSTOM';
 export type SourceMode = 'DIRECT' | 'DOCKER';
 
@@ -373,6 +375,23 @@ export interface CodeReviewIllegalRecordFilterOptionsResponse {
   projectNames: OptionItemResponse[];
 }
 
+export interface CodeReviewRulePreviewRequest {
+  projectId?: number | null;
+  repositoryName?: string;
+  mergedAtStart?: string;
+  mergedAtEnd?: string;
+  keyword?: string;
+  projectName?: string;
+  requestType?: string;
+  targetBranch?: string;
+  mergedBy?: string;
+  moduleName?: string;
+  illegalType?: string;
+  mergeRequestIid?: string;
+  owner?: string;
+  ruleConfig: CodeReviewRuleConfig;
+}
+
 export interface ReviewDataSummaryResponse {
   totalRecords: number;
   totalProblemItems: number;
@@ -686,6 +705,7 @@ export const api = {
       size?: number;
       sortBy?: string;
       sortOrder?: 'asc' | 'desc';
+      ruleConfig?: CodeReviewRuleConfig | null;
     }) {
       const query = new URLSearchParams({
         page: String(params.page ?? 1),
@@ -705,6 +725,7 @@ export const api = {
         ...(params.owner ? { owner: params.owner } : {}),
         ...(params.sortBy ? { sortBy: params.sortBy } : {}),
         ...(params.sortOrder ? { sortOrder: params.sortOrder } : {}),
+        ...(params.ruleConfig ? { ruleConfig: JSON.stringify(params.ruleConfig) } : {}),
       });
       return request<CodeReviewIllegalRecordListResponse>(`/api/code-review/illegal-records?${query.toString()}`);
     },
@@ -718,6 +739,12 @@ export const api = {
     },
     getCodeReviewIllegalRecordRuleExplanation() {
       return request<StatisticBoardRuleExplanationResponse>('/api/code-review/illegal-records/rule-explanation');
+    },
+    previewCodeReviewIllegalRecordRuleConfig(payload: CodeReviewRulePreviewRequest) {
+      return request<CodeReviewRulePreviewResponse>('/api/code-review/illegal-records/rule-config/preview', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
     },
     getCodeReviewIllegalRecordRealtimeStatus() {
       return request<RealtimeWorkspaceStatusResponse>('/api/code-review/illegal-records/status');

@@ -9,6 +9,7 @@ import ModulePlaceholderView from './views/ModulePlaceholderView.vue';
 import NotFoundView from './views/NotFoundView.vue';
 import CollectFormView from './views/CollectFormView.vue';
 import CodeReviewIllegalRecordsView from './views/CodeReviewIllegalRecordsView.vue';
+import CodeReviewIllegalRuleConfigView from './views/CodeReviewIllegalRuleConfigView.vue';
 import ReviewDataManagementView from './views/ReviewDataManagementView.vue';
 
 declare module 'vue-router' {
@@ -128,6 +129,36 @@ const routes: RouteRecordRaw[] = [
       pageKey: 'code-review-illegal-records',
       title: pageByKey.get('code-review-illegal-records')!.label,
       description: pageByKey.get('code-review-illegal-records')!.description,
+      allowedQueryKeys: [
+        'page',
+        'pageSize',
+        'sortBy',
+        'sortOrder',
+        'projectId',
+        'repositoryName',
+        'mergedAtStart',
+        'mergedAtEnd',
+        'keyword',
+        'projectName',
+        'requestType',
+        'targetBranch',
+        'mergedBy',
+        'moduleName',
+        'illegalType',
+        'mergeRequestIid',
+        'owner',
+      ],
+      persistedQueryKeys: ['projectId'],
+    },
+  },
+  {
+    path: '/code-review/illegal-records/rule-config',
+    component: CodeReviewIllegalRuleConfigView,
+    meta: {
+      moduleKey: 'code-review',
+      pageKey: 'code-review-illegal-records',
+      title: '代码走查规则配置',
+      description: '配置当前用户自己的代码走查判定规则，并即时查看结果预览。',
       allowedQueryKeys: [
         'page',
         'pageSize',

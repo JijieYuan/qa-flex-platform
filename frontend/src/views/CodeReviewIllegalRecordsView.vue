@@ -1,9 +1,9 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { computed, ref } from 'vue';
 import { ElMessage } from 'element-plus';
-import { Delete, InfoFilled, Plus } from '@element-plus/icons-vue';
+import { InfoFilled, Setting } from '@element-plus/icons-vue';
+import { useRouter } from 'vue-router';
 import BaseRecordTable from '../components/base/BaseRecordTable.vue';
-import RuleExpressionEditor from '../components/rule-config/RuleExpressionEditor.vue';
 import SyncMetaBadge from '../components/realtime/SyncMetaBadge.vue';
 import {
   api,
@@ -14,12 +14,19 @@ import {
 } from '../api';
 import { useRouteTableState } from '../composables/useRouteTableState';
 import type { RecordTableActiveFilterTag, RecordTableColumn, RecordTableFilterField } from '../types/record-table';
+import type { CodeReviewRuleConfig } from '../types/code-review-rule-config';
+import { buildCodeReviewRuleFields } from './code-review-rule-config-schema';
 import {
-  codeReviewRuleConfigDemoSupport,
-  type CodeReviewDemoRule,
-} from './code-review-rule-demo';
-import { useRuleConfigState } from './useRuleConfigState';
+  loadStoredCodeReviewRuleConfig,
+  saveStoredCodeReviewRuleConfig,
+} from './code-review-rule-config-storage';
+import {
+  createDefaultCodeReviewRuleConfig,
+  hasReadyCodeReviewRuleConfig,
+  normalizeCodeReviewRuleConfig,
+} from './code-review-rule-config-utils';
 
+const router = useRouter();
 const {
   route,
   page,
@@ -42,13 +49,12 @@ const advancedVisible = ref(false);
 const rows = ref<CodeReviewIllegalRecordRowResponse[]>([]);
 const total = ref(0);
 const detailVisible = ref(false);
-const demoSampleVisible = ref(false);
 const ruleExplanationVisible = ref(false);
 const ruleExplanationLoading = ref(false);
 const selectedRow = ref<CodeReviewIllegalRecordRowResponse | null>(null);
-const selectedDemoRuleId = ref<string | null>(null);
 const syncStatus = ref<RealtimeWorkspaceStatusResponse | null>(null);
 const ruleExplanation = ref<StatisticBoardRuleExplanationResponse | null>(null);
+const appliedRuleConfig = ref<CodeReviewRuleConfig | null>(null);
 
 const filterOptions = ref<CodeReviewIllegalRecordFilterOptionsResponse>({
   requestTypes: [{ label: '合并请求', value: 'merge_request' }],
@@ -161,6 +167,9 @@ const activeFilterTags = computed<RecordTableActiveFilterTag[]>(() => {
   if (values.mergedBy) tags.push({ key: 'mergedBy', label: '合并人', value: String(values.mergedBy) });
   if (values.moduleName) tags.push({ key: 'moduleName', label: '模块名称', value: String(values.moduleName) });
   if (values.projectName) tags.push({ key: 'projectName', label: '项目名称', value: String(values.projectName) });
+  if (appliedRuleConfig.value?.enabled) {
+    tags.push({ key: 'personalRuleConfig', label: '判定规则', value: '我的规则' });
+  }
   return tags;
 });
 
@@ -179,67 +188,14 @@ const columns = computed<RecordTableColumn[]>(() => [
   { key: 'addedLines', label: '新增代码行数(行)', type: 'number', sortable: true, width: 150, align: 'right' },
 ]);
 
-const demoRuleFields = computed(() =>
-  codeReviewRuleConfigDemoSupport.buildFields({
-    repositoryNames: filterOptions.value.repositoryNames,
-    illegalTypes: filterOptions.value.illegalTypes,
-    targetBranches: filterOptions.value.targetBranches,
-    mergedBys: filterOptions.value.mergedBys,
-    moduleNames: filterOptions.value.moduleNames,
-    projectNames: filterOptions.value.projectNames,
-  }),
-);
-
-const demoIllegalTypeOptions = computed(() => codeReviewRuleConfigDemoSupport.buildIllegalTypeOptions(filterOptions.value.illegalTypes));
-const demoRuleState = useRuleConfigState({
-  workspaceKey: 'code-review-illegal-records-demo',
-  fields: demoRuleFields,
-  schema: codeReviewRuleConfigDemoSupport,
-  createRule(fields) {
-    return codeReviewRuleConfigDemoSupport.createResultRule(demoIllegalTypeOptions.value[0]?.value ?? '', fields[0]);
-  },
-});
-const demoMatchedRows = computed(() => {
-  if (!demoRuleState.enabled.value) {
-    return rows.value;
-  }
-  return codeReviewRuleConfigDemoSupport.evaluateRows(rows.value, demoRuleState.rules.value, demoRuleFields.value);
-});
-
-const demoHasConditions = computed(() => demoRuleState.rules.value.length > 0);
-const demoMatchedCount = computed(() => demoMatchedRows.value.length);
-const demoRuleSummaryText = computed(() => {
-  if (!demoRuleState.enabled.value || !demoHasConditions.value) {
-    return '预览未启用，当前列表保持后端返回结果。';
-  }
-  return `当前页已加载 ${rows.value.length} 条记录，筛选后命中 ${demoMatchedCount.value} 条。`;
-});
-const demoSelectedRule = computed(() =>
-  demoRuleState.rules.value.find((rule) => rule.id === selectedDemoRuleId.value) ?? null,
-);
-const demoSelectedRuleMatchedRows = computed(() => {
-  if (!demoSelectedRule.value) {
-    return [];
-  }
-  return rows.value.filter((row) =>
-    codeReviewRuleConfigDemoSupport.matchesRule(row, demoSelectedRule.value as CodeReviewDemoRule, demoRuleFields.value),
-  );
-});
-const demoSelectedRuleTitle = computed(() => {
-  if (!demoSelectedRule.value) {
-    return '命中样本预览';
-  }
-  const index = demoRuleState.rules.value.findIndex((rule) => rule.id === demoSelectedRule.value?.id);
-  return index >= 0 ? `条件组 ${index + 1} 命中样本` : '命中样本预览';
-});
 const tableEmptyDescription = computed(() =>
-  demoRuleState.enabled.value && demoHasConditions.value
-    ? '当前页数据未命中筛选条件，请调整字段、关系或取值。'
+  appliedRuleConfig.value?.enabled
+    ? '当前数据范围和我的规则下没有判定出非法记录。'
     : '当前筛选条件下没有查询到非法记录。',
 );
 
 const tableRows = computed<Record<string, unknown>[]>(() =>
-  demoMatchedRows.value.map((row) => ({
+  rows.value.map((row) => ({
     __raw: row,
     mergeRequestIid: row.mergeRequestLink
       ? { label: String(row.mergeRequestIid), href: row.mergeRequestLink }
@@ -275,6 +231,7 @@ function formatPercent(value?: number | null) {
   }
   return `${value.toFixed(2)}%`;
 }
+
 const lastSyncedText = computed(() => formatDateTime(syncStatus.value?.lastSyncedAt));
 const ruleExplanationSteps = computed(() => ruleExplanation.value?.flowSteps || []);
 const ruleExplanationMetrics = computed(() => ruleExplanation.value?.metricDefinitions || []);
@@ -300,45 +257,15 @@ const qaFriendlyRuleSummary = computed(() => {
   if (!ruleExplanationSteps.value.length) {
     return ruleExplanation.value?.summary || '当前页面已经启用规则说明，但暂时没有可展示的统计过程。';
   }
-  return `当前结果一共基于 ${ruleFirstInputCount.value} 条合并请求逐步检查，最终命中 ${ruleFinalOutputCount.value} 条需要关注的记录，占原始数据的 ${ruleFinalRetainedRate.value}。`;
+  return `当前结果一共基于 ${ruleFirstInputCount.value} 条合并请求逐步检查，最终筛出 ${ruleFinalOutputCount.value} 条需要关注的记录，占原始数据的 ${ruleFinalRetainedRate.value}。`;
 });
 const ruleExclusionSteps = computed(() => ruleExplanationSteps.value.slice(1));
-const ruleConfigTitle = computed(() => (ruleExplanation.value?.title || '代码走查非法记录规则说明').replace('规则说明', '规则配置'));
-
-function demoRuleMatchCount(rule: CodeReviewDemoRule) {
-  return codeReviewRuleConfigDemoSupport.countMatches(rows.value, rule, demoRuleFields.value);
-}
-
-function ensureDemoRulesInitialized() {
-  demoRuleState.ensureInitialized();
-}
-
-function addDemoRule() {
-  demoRuleState.appendRule();
-}
-
-function removeDemoRule(ruleId: string) {
-  demoRuleState.removeRule(ruleId);
-}
-
-function resetDemoRules() {
-  demoRuleState.resetToDefault();
-}
-
-function openDemoSample(ruleId: string) {
-  selectedDemoRuleId.value = ruleId;
-  demoSampleVisible.value = true;
-}
-
-function closeDemoSample() {
-  demoSampleVisible.value = false;
-}
 
 function createFallbackRuleExplanation(reason: string): StatisticBoardRuleExplanationResponse {
   return {
     boardKey: 'code-review-illegal-records',
     supported: false,
-    title: '代码走查非法记录规则配置',
+    title: '代码走查非法记录规则说明',
     version: null,
     scopeDescription: null,
     summary: null,
@@ -348,14 +275,33 @@ function createFallbackRuleExplanation(reason: string): StatisticBoardRuleExplan
   };
 }
 
+function syncAppliedRuleConfig() {
+  const stored = loadStoredCodeReviewRuleConfig();
+  if (!stored) {
+    appliedRuleConfig.value = null;
+    return;
+  }
+  const normalized = normalizeCodeReviewRuleConfig(stored, buildCodeReviewRuleFields(filterOptions.value));
+  appliedRuleConfig.value = hasReadyCodeReviewRuleConfig(normalized, buildCodeReviewRuleFields(filterOptions.value))
+    ? normalized
+    : null;
+}
+
 function openDetailDrawer(row: Record<string, unknown>) {
   selectedRow.value = (row.__raw as CodeReviewIllegalRecordRowResponse) ?? null;
   detailVisible.value = true;
 }
 
+function openRuleConfig() {
+  void router.push({
+    path: '/code-review/illegal-records/rule-config',
+    query: route.query,
+  });
+}
+
 async function loadFilterOptions() {
   filterOptions.value = await api.getCodeReviewIllegalRecordFilterOptions(route.query.projectId as string | undefined);
-  ensureDemoRulesInitialized();
+  syncAppliedRuleConfig();
 }
 
 async function loadSyncStatus() {
@@ -371,7 +317,7 @@ async function loadRuleExplanation() {
   try {
     ruleExplanation.value = await api.getCodeReviewIllegalRecordRuleExplanation();
   } catch {
-    ruleExplanation.value = createFallbackRuleExplanation('规则配置说明加载失败，请稍后重试。');
+    ruleExplanation.value = createFallbackRuleExplanation('规则说明加载失败，请稍后重试。');
   } finally {
     ruleExplanationLoading.value = false;
   }
@@ -396,6 +342,7 @@ async function loadTableData() {
     size: pageSize.value,
     sortBy: sortBy.value || 'mergedAt',
     sortOrder: (sortOrder.value || 'desc') as 'asc' | 'desc',
+    ruleConfig: appliedRuleConfig.value?.enabled ? appliedRuleConfig.value : null,
   });
   rows.value = response.records;
   total.value = response.total;
@@ -403,8 +350,8 @@ async function loadTableData() {
 
 bindLoader(async () => {
   try {
-    await loadTableData();
     await loadFilterOptions();
+    await loadTableData();
     await loadSyncStatus();
     await loadRuleExplanation();
   } catch (error) {
@@ -472,6 +419,22 @@ async function handleSortChange(payload: { prop: string; order: 'ascending' | 'd
 }
 
 async function handleClearFilter(key: string) {
+  if (key === 'personalRuleConfig') {
+    const stored = loadStoredCodeReviewRuleConfig();
+    const cleared = normalizeCodeReviewRuleConfig(
+      stored ?? createDefaultCodeReviewRuleConfig(buildCodeReviewRuleFields(filterOptions.value)[0]),
+      buildCodeReviewRuleFields(filterOptions.value),
+    );
+    cleared.enabled = false;
+    saveStoredCodeReviewRuleConfig(cleared);
+    appliedRuleConfig.value = null;
+    if (page.value === 1) {
+      await loadTableData();
+      return;
+    }
+    await patchQuery({ page: 1 });
+    return;
+  }
   if (key === 'mergedAtRange') {
     await patchQuery({ page: 1, mergedAtStart: null, mergedAtEnd: null });
     return;
@@ -481,17 +444,12 @@ async function handleClearFilter(key: string) {
 
 function openRuleExplanation() {
   if (!ruleExplanation.value) {
-    ruleExplanation.value = createFallbackRuleExplanation('规则配置说明暂未加载完成，请稍后再试。');
+    ruleExplanation.value = createFallbackRuleExplanation('规则说明暂未加载完成，请稍后再试。');
   }
-  ensureDemoRulesInitialized();
   if (!ruleExplanation.value.supported) {
-    ElMessage.warning(ruleExplanation.value.unsupportedReason || '当前页面暂不支持规则配置说明');
+    ElMessage.warning(ruleExplanation.value.unsupportedReason || '当前页面暂不支持规则说明');
   }
   ruleExplanationVisible.value = true;
-}
-
-function ruleStepRemovedCount(step: { inputCount: number; outputCount: number }) {
-  return Math.max(step.inputCount - step.outputCount, 0);
 }
 
 function ruleStepRetainedRate(step: { inputCount: number; outputCount: number }) {
@@ -503,15 +461,14 @@ function ruleStepRetainedRate(step: { inputCount: number; outputCount: number })
 
 function ruleStepSummary(step: { key?: string; inputCount: number; outputCount: number }, index: number) {
   if (step.key === 'illegal-total') {
-    return `第 ${index + 1} 步检查后，识别出 ${step.outputCount} 条需要关注的记录，占原始数据的 ${ruleStepRetainedRate(step)}。`;
+    return `第 ${index + 1} 步检查后，筛出 ${step.outputCount} 条需要关注的记录，占原始数据的 ${ruleStepRetainedRate(step)}。`;
   }
-  return `在已经命中的非法记录里，有 ${step.outputCount} 条命中第 ${index} 项检查规则，占全部非法记录的 ${ruleStepRetainedRate(step)}。`;
+  return `在已经筛出的非法记录里，有 ${step.outputCount} 条符合第 ${index} 项规则，占全部非法记录的 ${ruleStepRetainedRate(step)}。`;
 }
 
 function metricFormulaSummary(metric: { label: string; definition: string; formula: string; note?: string | null }) {
   return `${metric.label}：${metric.definition}`;
 }
-
 </script>
 
 <template>
@@ -551,6 +508,9 @@ function metricFormulaSummary(metric: { label: string; definition: string; formu
       <template #toolbar-actions>
         <div class="record-page-summary">
           <SyncMetaBadge :value="lastSyncedText" />
+          <el-tag v-if="appliedRuleConfig?.enabled" effect="plain" type="success" class="record-page-config-tag">
+            已按我的规则判定
+          </el-tag>
           <el-button
             plain
             size="small"
@@ -558,6 +518,9 @@ function metricFormulaSummary(metric: { label: string; definition: string; formu
             :loading="ruleExplanationLoading"
             @click="openRuleExplanation"
           >
+            规则说明
+          </el-button>
+          <el-button plain size="small" :icon="Setting" @click="openRuleConfig">
             规则配置
           </el-button>
           <span class="record-page-summary-divider" />
@@ -682,85 +645,22 @@ function metricFormulaSummary(metric: { label: string; definition: string; formu
     >
       <template #header>
         <div class="record-detail-header">
-              <div class="record-detail-header-main">
-                <div class="record-detail-header-kicker">规则配置</div>
-                <div class="record-detail-header-title">{{ ruleConfigTitle }}</div>
-                <div class="record-detail-header-meta">
-                  <span class="record-detail-meta-item">版本 {{ ruleExplanation?.version || '-' }}</span>
-                  <span class="record-detail-meta-dot" />
-                  <span class="record-detail-meta-item">预览模式</span>
-                </div>
-              </div>
+          <div class="record-detail-header-main">
+            <div class="record-detail-header-kicker">规则说明</div>
+            <div class="record-detail-header-title">{{ ruleExplanation?.title || '代码走查非法记录规则说明' }}</div>
+            <div class="record-detail-header-meta">
+              <span class="record-detail-meta-item">版本 {{ ruleExplanation?.version || '-' }}</span>
+              <span class="record-detail-meta-dot" />
+              <span class="record-detail-meta-item">默认口径</span>
             </div>
+          </div>
+        </div>
       </template>
 
       <div v-loading="ruleExplanationLoading" class="record-rule-panel">
-        <section class="record-detail-section">
-          <div class="record-detail-section-title">组合筛选</div>
-          <div class="rule-editor-panel">
-            <div class="rule-editor-toolbar">
-              <div class="rule-editor-toolbar-main">
-                <div class="rule-editor-title">非法记录筛选</div>
-                <div class="rule-editor-subtitle">{{ demoRuleSummaryText }}</div>
-              </div>
-              <div class="rule-editor-toolbar-actions">
-                <div class="rule-editor-switch">
-                  <span class="rule-editor-switch-label">预览</span>
-                  <el-switch v-model="demoRuleState.enabled.value" />
-                </div>
-                <el-button size="small" :icon="Plus" @click="addDemoRule">新增条件组</el-button>
-                <el-button size="small" text @click="resetDemoRules">恢复默认</el-button>
-              </div>
-            </div>
-
-            <div v-if="demoRuleState.rules.value.length" class="rule-editor-groups">
-              <template v-for="(rule, index) in demoRuleState.rules.value" :key="rule.id">
-                <article class="rule-editor-group-shell">
-                  <div class="rule-editor-group-shell-header">
-                    <div class="rule-editor-group-shell-title">条件组 {{ index + 1 }}</div>
-                    <div class="rule-editor-group-shell-actions">
-                      <el-button class="rule-editor-hit-button" text @click="openDemoSample(rule.id)">
-                        命中 {{ demoRuleMatchCount(rule) }} 条
-                      </el-button>
-                      <el-button
-                        class="rule-editor-delete-button"
-                        text
-                        size="small"
-                        :icon="Delete"
-                        @click="removeDemoRule(rule.id)"
-                      >
-                        删除
-                      </el-button>
-                    </div>
-                  </div>
-
-                  <RuleExpressionEditor
-                    :node="rule.expression"
-                    :fields="demoRuleFields"
-                    :schema="codeReviewRuleConfigDemoSupport"
-                    :can-remove="false"
-                  />
-                </article>
-
-                <div
-                  v-if="index < demoRuleState.rules.value.length - 1"
-                  class="rule-editor-group-separator"
-                >
-                  <span>或</span>
-                </div>
-              </template>
-            </div>
-
-            <el-empty
-              v-else
-              description="暂无条件组"
-            />
-          </div>
-        </section>
-
         <el-empty
           v-if="!ruleExplanation?.supported"
-          :description="ruleExplanation?.unsupportedReason || '当前页面暂不支持规则配置说明。'"
+          :description="ruleExplanation?.unsupportedReason || '当前页面暂不支持规则说明。'"
         />
 
         <template v-else>
@@ -776,11 +676,11 @@ function metricFormulaSummary(metric: { label: string; definition: string; formu
                 <strong class="record-rule-overview-value">{{ ruleFirstInputCount }}</strong>
               </article>
               <article class="record-rule-overview-card">
-                <span class="record-rule-overview-label">最终命中</span>
+                <span class="record-rule-overview-label">最终筛出</span>
                 <strong class="record-rule-overview-value">{{ ruleFinalOutputCount }}</strong>
               </article>
               <article class="record-rule-overview-card">
-                <span class="record-rule-overview-label">命中比例</span>
+                <span class="record-rule-overview-label">筛出比例</span>
                 <strong class="record-rule-overview-value">{{ ruleFinalRetainedRate }}</strong>
               </article>
             </div>
@@ -792,7 +692,7 @@ function metricFormulaSummary(metric: { label: string; definition: string; formu
           </section>
 
           <section class="record-detail-section">
-            <div class="record-detail-section-title">当前正式口径下，哪些情况会被判定为需要关注</div>
+            <div class="record-detail-section-title">当前默认口径下，哪些情况会被筛出来</div>
             <div class="record-rule-card-grid">
               <article
                 v-for="(step, index) in ruleExclusionSteps"
@@ -803,7 +703,7 @@ function metricFormulaSummary(metric: { label: string; definition: string; formu
                 <div class="record-rule-card-description">{{ step.description }}</div>
                 <div class="record-rule-card-summary">{{ ruleStepSummary(step, index + 1) }}</div>
                 <div class="record-rule-card-stats">
-                  <span class="record-rule-card-stat">{{ step.key === 'illegal-total' ? '识别' : '命中该类' }} {{ step.outputCount }} 条</span>
+                  <span class="record-rule-card-stat">{{ step.key === 'illegal-total' ? '筛出' : '符合该类' }} {{ step.outputCount }} 条</span>
                   <span class="record-rule-card-stat">{{ step.key === 'illegal-total' ? '占原始' : '占全部非法' }} {{ ruleStepRetainedRate(step) }}</span>
                   <span class="record-rule-card-stat">检查基数 {{ step.inputCount }} 条</span>
                 </div>
@@ -823,7 +723,7 @@ function metricFormulaSummary(metric: { label: string; definition: string; formu
                 <div class="record-process-title">{{ step.title }}</div>
                 <div class="record-process-value">{{ step.outputCount }} 条</div>
                 <div class="record-process-note">
-                  {{ index === 0 ? '这是最开始纳入检查的合并请求。' : `这一轮处理后，共有 ${step.outputCount} 条被标记为需要关注。` }}
+                  {{ index === 0 ? '这是最开始纳入检查的合并请求。' : `这一轮处理后，共有 ${step.outputCount} 条被筛出来。` }}
                 </div>
               </article>
             </div>
@@ -847,46 +747,6 @@ function metricFormulaSummary(metric: { label: string; definition: string; formu
         </template>
       </div>
     </el-drawer>
-
-    <el-dialog
-      v-model="demoSampleVisible"
-      width="72%"
-      top="8vh"
-      destroy-on-close
-      class="rule-demo-sample-dialog"
-      @closed="closeDemoSample"
-    >
-      <template #header>
-        <div class="record-detail-header">
-          <div class="record-detail-header-main">
-            <div class="record-detail-header-kicker">采样预览</div>
-            <div class="record-detail-header-title">{{ demoSelectedRuleTitle }}</div>
-            <div class="record-detail-header-meta">
-              <span class="record-detail-meta-item">当前页命中 {{ demoSelectedRuleMatchedRows.length }} 条</span>
-            </div>
-          </div>
-        </div>
-      </template>
-
-      <div class="record-detail-content">
-        这里展示的是当前页被这张过滤网截留下来的样本。你可以用它快速判断：这张网抓到的是不是你真正想定义成同一类非法记录的数据。
-      </div>
-
-      <el-table
-        :data="demoSelectedRuleMatchedRows"
-        border
-        stripe
-        max-height="520"
-        class="rule-demo-sample-table"
-      >
-        <el-table-column prop="mergeRequestIid" label="MR 编号" width="110" />
-        <el-table-column prop="projectName" label="所属项目" min-width="160" />
-        <el-table-column prop="moduleName" label="模块名" min-width="140" />
-        <el-table-column prop="owner" label="标注责任人" min-width="140" />
-        <el-table-column prop="targetBranch" label="目标分支" min-width="160" />
-        <el-table-column prop="mergeRequestContent" label="合并请求内容" min-width="260" show-overflow-tooltip />
-      </el-table>
-    </el-dialog>
   </section>
 </template>
 
@@ -894,160 +754,6 @@ function metricFormulaSummary(metric: { label: string; definition: string; formu
 .record-page-shell {
   display: grid;
   gap: 12px;
-}
-
-.rule-editor-panel {
-  display: grid;
-  gap: 14px;
-  padding: 14px;
-  border-radius: 14px;
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  background: linear-gradient(180deg, rgba(250, 250, 250, 0.96) 0%, rgba(255, 255, 255, 0.98) 78%);
-  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
-}
-
-.rule-editor-toolbar {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.rule-editor-toolbar-main {
-  display: grid;
-  gap: 4px;
-}
-
-.rule-editor-title {
-  font-size: 15px;
-  font-weight: 700;
-  color: rgba(15, 23, 42, 0.92);
-}
-
-.rule-editor-subtitle {
-  font-size: 12px;
-  line-height: 1.6;
-  color: rgba(15, 23, 42, 0.48);
-}
-
-.rule-editor-toolbar-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.rule-editor-switch {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  height: 32px;
-  padding: 0 10px;
-  border-radius: 999px;
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  background: rgba(255, 255, 255, 0.92);
-}
-
-.rule-editor-switch-label {
-  font-size: 12px;
-  color: rgba(15, 23, 42, 0.6);
-}
-
-.rule-editor-switch :deep(.el-switch) {
-  --el-switch-on-color: rgba(37, 99, 235, 0.88);
-  --el-switch-off-color: rgba(15, 23, 42, 0.18);
-}
-
-.rule-editor-groups {
-  display: grid;
-  gap: 12px;
-}
-
-.rule-editor-group-shell {
-  display: grid;
-  gap: 12px;
-  padding: 12px;
-  border-radius: 12px;
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  background: rgba(255, 255, 255, 0.98);
-}
-
-.rule-editor-group-shell-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.rule-editor-group-shell-title {
-  font-size: 13px;
-  font-weight: 700;
-  color: rgba(15, 23, 42, 0.82);
-}
-
-.rule-editor-group-shell-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.rule-editor-hit-button,
-.record-rule-card-stat-link {
-  width: fit-content;
-  min-height: 28px;
-  padding: 0 10px;
-  border-radius: 999px;
-  border: 1px solid rgba(59, 130, 246, 0.16);
-  background: rgba(239, 246, 255, 0.96);
-  color: rgba(37, 99, 235, 0.8);
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.rule-editor-hit-button:hover,
-.record-rule-card-stat-link:hover {
-  color: rgba(37, 99, 235, 0.92);
-  border-color: rgba(37, 99, 235, 0.24);
-  background: rgba(219, 234, 254, 0.96);
-}
-
-.rule-editor-delete-button {
-  color: rgba(15, 23, 42, 0.48);
-}
-
-.rule-editor-group-separator {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.rule-editor-group-separator::before {
-  content: '';
-  position: absolute;
-  inset: 50% 0 auto;
-  border-top: 1px dashed rgba(15, 23, 42, 0.12);
-  transform: translateY(-50%);
-}
-
-.rule-editor-group-separator span {
-  position: relative;
-  z-index: 1;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 32px;
-  height: 22px;
-  padding: 0 10px;
-  border-radius: 999px;
-  background: #fff;
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  color: rgba(15, 23, 42, 0.5);
-  font-size: 12px;
-  font-weight: 600;
 }
 
 .record-page-toolbar-meta {
@@ -1072,6 +778,7 @@ function metricFormulaSummary(metric: { label: string; definition: string; formu
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
 }
 
 .record-page-summary-label {
@@ -1085,7 +792,8 @@ function metricFormulaSummary(metric: { label: string; definition: string; formu
   background: rgba(15, 23, 42, 0.1);
 }
 
-.record-page-sort-tag {
+.record-page-sort-tag,
+.record-page-config-tag {
   border-radius: 999px;
 }
 
@@ -1223,10 +931,6 @@ function metricFormulaSummary(metric: { label: string; definition: string; formu
   gap: 16px;
 }
 
-.rule-demo-sample-table {
-  margin-top: 14px;
-}
-
 .record-rule-summary-card {
   display: grid;
   gap: 8px;
@@ -1338,14 +1042,7 @@ function metricFormulaSummary(metric: { label: string; definition: string; formu
   color: rgba(15, 23, 42, 0.46);
 }
 
-
 @media (max-width: 960px) {
-  .rule-editor-toolbar,
-  .rule-editor-group-shell-header {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
   .record-rule-overview-grid,
   .record-detail-metrics {
     grid-template-columns: 1fr;

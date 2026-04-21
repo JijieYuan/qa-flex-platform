@@ -3,9 +3,12 @@ package com.data.collection.platform.controller;
 import com.data.collection.platform.common.response.ApiResponse;
 import com.data.collection.platform.entity.CodeReviewIllegalRecordFilterOptionsResponse;
 import com.data.collection.platform.entity.CodeReviewIllegalRecordListResponse;
+import com.data.collection.platform.entity.CodeReviewRulePreviewRequest;
+import com.data.collection.platform.entity.CodeReviewRulePreviewResponse;
 import com.data.collection.platform.entity.RealtimeWorkspaceStatusResponse;
 import com.data.collection.platform.entity.statistics.StatisticBoardRuleExplanationResponse;
 import com.data.collection.platform.service.CodeReviewIllegalRecordService;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -40,7 +43,8 @@ public class CodeReviewController {
       @RequestParam(defaultValue = "1") int page,
       @RequestParam(defaultValue = "20") int size,
       @RequestParam(required = false) String sortBy,
-      @RequestParam(required = false) String sortOrder) {
+      @RequestParam(required = false) String sortOrder,
+      @RequestParam(required = false) String ruleConfig) {
     return ApiResponse.success(
         codeReviewIllegalRecordService.listRecords(
             projectId,
@@ -59,7 +63,8 @@ public class CodeReviewController {
             page,
             size,
             sortBy,
-            sortOrder));
+            sortOrder,
+            ruleConfig));
   }
 
   @GetMapping("/illegal-records/filter-options")
@@ -71,6 +76,12 @@ public class CodeReviewController {
   @GetMapping("/illegal-records/rule-explanation")
   public ApiResponse<StatisticBoardRuleExplanationResponse> getIllegalRecordRuleExplanation() {
     return ApiResponse.success(codeReviewIllegalRecordService.getRuleExplanation());
+  }
+
+  @PostMapping("/illegal-records/rule-config/preview")
+  public ApiResponse<CodeReviewRulePreviewResponse> previewIllegalRecordRuleConfig(
+      @RequestBody CodeReviewRulePreviewRequest request) {
+    return ApiResponse.success(codeReviewIllegalRecordService.previewRuleConfig(request));
   }
 
   @GetMapping("/illegal-records/status")

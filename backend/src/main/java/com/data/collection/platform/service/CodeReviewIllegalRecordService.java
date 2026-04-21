@@ -3,12 +3,17 @@ package com.data.collection.platform.service;
 import com.data.collection.platform.entity.CodeReviewIllegalRecordFilterOptionsResponse;
 import com.data.collection.platform.entity.CodeReviewIllegalRecordListResponse;
 import com.data.collection.platform.entity.CodeReviewIllegalRecordRowResponse;
+import com.data.collection.platform.entity.CodeReviewRuleConfig;
+import com.data.collection.platform.entity.CodeReviewRulePreviewRequest;
+import com.data.collection.platform.entity.CodeReviewRulePreviewResponse;
+import com.data.collection.platform.entity.CodeReviewRulePreviewSample;
 import com.data.collection.platform.entity.OptionItemResponse;
 import com.data.collection.platform.entity.RealtimeWorkspaceStatusResponse;
 import com.data.collection.platform.entity.statistics.StatisticBoardRuleExplanationResponse;
 import com.data.collection.platform.entity.statistics.StatisticRuleFlowStep;
 import com.data.collection.platform.entity.statistics.StatisticRuleFlowStepSample;
 import com.data.collection.platform.entity.statistics.StatisticRuleMetricDefinition;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -44,17 +49,20 @@ public class CodeReviewIllegalRecordService {
   private final FactBuildService factBuildService;
   private final CodeReviewIllegalRecordSourceLoader sourceLoader;
   private final String defaultGitlabBaseUrl;
+  private final ObjectMapper objectMapper;
 
   public CodeReviewIllegalRecordService(
       GitlabMirrorSyncService gitlabMirrorSyncService,
       RealtimeWorkspaceService realtimeWorkspaceService,
       FactBuildService factBuildService,
       CodeReviewIllegalRecordSourceLoader sourceLoader,
+      ObjectMapper objectMapper,
       @Value("${gitlab-mirror.web-base-url:http://172.22.10.233}") String defaultGitlabBaseUrl) {
     this.gitlabMirrorSyncService = gitlabMirrorSyncService;
     this.realtimeWorkspaceService = realtimeWorkspaceService;
     this.factBuildService = factBuildService;
     this.sourceLoader = sourceLoader;
+    this.objectMapper = objectMapper;
     this.defaultGitlabBaseUrl = defaultGitlabBaseUrl;
   }
 
@@ -75,44 +83,43 @@ public class CodeReviewIllegalRecordService {
       int page,
       int size,
       String sortField,
-      String sortOrder) {
+      String sortOrder,
+      String ruleConfigJson) {
     int safePage = page <= 0 ? 1 : page;
     int safeSize = size <= 0 ? 20 : Math.min(size, 100);
     String safeSortField = CodeReviewIllegalRecordQuerySupport.normalizeSortField(sortField);
     String safeSortOrder = CodeReviewIllegalRecordQuerySupport.normalizeSortOrder(sortOrder);
-    Map<String, String> factFilters =
-        CodeReviewIllegalRecordQuerySupport.buildFactFilters(
+    CodeReviewRuleConfig ruleConfig = parseRuleConfig(ruleConfigJson);
+    List<CodeReviewIllegalRecordView> scopedRows =
+        loadScopedViews(
             projectId,
             repositoryName,
             mergedAtStart,
             mergedAtEnd,
+            keyword,
             projectName,
+            requestType,
             targetBranch,
+            mergedBy,
             moduleName,
             mergeRequestIid,
             owner);
-
+    List<CodeReviewIllegalRecordView> judgedRows =
+        CodeReviewRuleConfigSupport.hasReadyConfig(ruleConfig)
+            ? CodeReviewRuleConfigSupport.apply(scopedRows, ruleConfig)
+            : scopedRows.stream().filter(row -> !row.illegalTypes().isEmpty()).toList();
     List<CodeReviewIllegalRecordView> filtered =
-        sourceLoader.loadSources(factFilters).stream()
-            .map(this::toView)
-            .filter(row -> !row.illegalTypes().isEmpty())
-            .filter(row -> CodeReviewIllegalRecordQuerySupport.matchesKeyword(row, keyword))
-            .filter(
-                row ->
-                    CodeReviewIllegalRecordQuerySupport.matchesRequestType(
-                        row.requestType(), requestType))
-            .filter(row -> CodeReviewIllegalRecordQuerySupport.matchesEquals(row.mergedBy(), mergedBy))
-            .filter(
-                row ->
-                    CodeReviewIllegalRecordQuerySupport.matchesIllegalType(
-                        row.illegalTypes(), illegalType))
+        judgedRows.stream()
+            .filter(row -> CodeReviewIllegalRecordQuerySupport.matchesIllegalType(row.illegalTypes(), illegalType))
             .sorted(CodeReviewIllegalRecordQuerySupport.buildComparator(safeSortField, safeSortOrder))
             .toList();
 
     PageSlice<CodeReviewIllegalRecordView> pageSlice =
         PageSliceSupport.slice(filtered, safePage, safeSize);
+    CodeReviewRuleConfig responseRuleConfig =
+        CodeReviewRuleConfigSupport.hasReadyConfig(ruleConfig) ? ruleConfig : null;
     List<CodeReviewIllegalRecordRowResponse> records =
-        pageSlice.records().stream().map(this::toResponse).toList();
+        pageSlice.records().stream().map(row -> toResponse(row, responseRuleConfig)).toList();
 
     return new CodeReviewIllegalRecordListResponse(
         records, pageSlice.total(), pageSlice.page(), pageSlice.size(), safeSortField, safeSortOrder);
@@ -165,6 +172,103 @@ public class CodeReviewIllegalRecordService {
         buildRuleFlowSteps(views, illegalViews, total, illegalTotal),
         buildMetricDefinitions(),
         null);
+  }
+
+  public CodeReviewRulePreviewResponse previewRuleConfig(CodeReviewRulePreviewRequest request) {
+    CodeReviewRuleConfig ruleConfig = request == null ? null : request.ruleConfig();
+    List<CodeReviewIllegalRecordView> scopedRows =
+        loadScopedViews(
+            request == null ? null : request.projectId(),
+            request == null ? null : request.repositoryName(),
+            request == null ? null : request.mergedAtStart(),
+            request == null ? null : request.mergedAtEnd(),
+            request == null ? null : request.keyword(),
+            request == null ? null : request.projectName(),
+            request == null ? null : request.requestType(),
+            request == null ? null : request.targetBranch(),
+            request == null ? null : request.mergedBy(),
+            request == null ? null : request.moduleName(),
+            request == null ? null : request.mergeRequestIid(),
+            request == null ? null : request.owner());
+    List<CodeReviewIllegalRecordView> defaultRows =
+        scopedRows.stream()
+            .filter(row -> !row.illegalTypes().isEmpty())
+            .filter(row -> CodeReviewIllegalRecordQuerySupport.matchesIllegalType(row.illegalTypes(), request == null ? null : request.illegalType()))
+            .toList();
+    List<CodeReviewIllegalRecordView> filteredRows =
+        CodeReviewRuleConfigSupport.hasReadyConfig(ruleConfig)
+            ? CodeReviewRuleConfigSupport.apply(scopedRows, ruleConfig).stream()
+                .filter(row -> CodeReviewIllegalRecordQuerySupport.matchesIllegalType(row.illegalTypes(), request == null ? null : request.illegalType()))
+                .toList()
+            : defaultRows;
+    long baseTotal = scopedRows.size();
+    long filteredTotal = filteredRows.size();
+    long deltaCount = filteredTotal - defaultRows.size();
+    double retainedRate = baseTotal == 0 ? 0.0 : filteredTotal * 100.0 / baseTotal;
+    List<CodeReviewRulePreviewSample> samples =
+        filteredRows.stream()
+            .limit(8)
+            .map(row -> toRulePreviewSample(row, ruleConfig))
+            .toList();
+    return new CodeReviewRulePreviewResponse(baseTotal, filteredTotal, deltaCount, retainedRate, samples);
+  }
+
+  private List<CodeReviewIllegalRecordView> loadScopedViews(
+      Long projectId,
+      String repositoryName,
+      String mergedAtStart,
+      String mergedAtEnd,
+      String keyword,
+      String projectName,
+      String requestType,
+      String targetBranch,
+      String mergedBy,
+      String moduleName,
+      String mergeRequestIid,
+      String owner) {
+    Map<String, String> factFilters =
+        CodeReviewIllegalRecordQuerySupport.buildFactFilters(
+            projectId,
+            repositoryName,
+            mergedAtStart,
+            mergedAtEnd,
+            projectName,
+            targetBranch,
+            moduleName,
+            mergeRequestIid,
+            owner);
+    return sourceLoader.loadSources(factFilters).stream()
+        .map(this::toView)
+        .filter(row -> CodeReviewIllegalRecordQuerySupport.matchesKeyword(row, keyword))
+        .filter(row -> CodeReviewIllegalRecordQuerySupport.matchesRequestType(row.requestType(), requestType))
+        .filter(row -> CodeReviewIllegalRecordQuerySupport.matchesEquals(row.mergedBy(), mergedBy))
+        .toList();
+  }
+
+  private CodeReviewRuleConfig parseRuleConfig(String ruleConfigJson) {
+    String normalized = TextQuerySupport.trimToNull(ruleConfigJson);
+    if (normalized == null) {
+      return null;
+    }
+    try {
+      return objectMapper.readValue(normalized, CodeReviewRuleConfig.class);
+    } catch (Exception error) {
+      log.warn("Failed to parse code review rule config from query", error);
+      return null;
+    }
+  }
+
+  private CodeReviewRulePreviewSample toRulePreviewSample(
+      CodeReviewIllegalRecordView row, CodeReviewRuleConfig ruleConfig) {
+    return new CodeReviewRulePreviewSample(
+        row.mergeRequestId(),
+        row.mergeRequestIid(),
+        row.projectName(),
+        row.moduleName(),
+        row.owner(),
+        row.targetBranch(),
+        row.mergeRequestContent(),
+        CodeReviewRuleConfigSupport.explainRow(row, ruleConfig));
   }
 
   private void refreshMirrorForRealtimeView() {
@@ -315,7 +419,18 @@ public class CodeReviewIllegalRecordService {
   }
 
   private CodeReviewIllegalRecordRowResponse toResponse(CodeReviewIllegalRecordView row) {
+    return toResponse(row, null);
+  }
+
+  private CodeReviewIllegalRecordRowResponse toResponse(
+      CodeReviewIllegalRecordView row, CodeReviewRuleConfig ruleConfig) {
     String link = TextQuerySupport.trimToNull(row.mergeRequestLink());
+    List<String> illegalTypes =
+        ruleConfig == null
+            ? row.illegalTypes()
+            : CodeReviewRuleConfigSupport.explainRow(row, ruleConfig).stream()
+                .map(reason -> reason.replaceFirst("^满足：", ""))
+                .toList();
     return new CodeReviewIllegalRecordRowResponse(
         row.requestType(),
         row.mergeRequestId(),
@@ -330,7 +445,7 @@ public class CodeReviewIllegalRecordService {
         row.mergedBy(),
         row.moduleName(),
         row.targetBranch(),
-        row.illegalTypes(),
+        illegalTypes,
         row.commentRate(),
         row.defectCount(),
         row.addedLines());

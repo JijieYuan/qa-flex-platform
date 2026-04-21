@@ -2,11 +2,14 @@ package com.data.collection.platform.controller;
 
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.data.collection.platform.entity.CodeReviewIllegalRecordFilterOptionsResponse;
 import com.data.collection.platform.entity.CodeReviewIllegalRecordListResponse;
+import com.data.collection.platform.entity.CodeReviewRulePreviewResponse;
+import com.data.collection.platform.entity.CodeReviewRulePreviewSample;
 import com.data.collection.platform.entity.OptionItemResponse;
 import com.data.collection.platform.entity.statistics.StatisticBoardRuleExplanationResponse;
 import com.data.collection.platform.entity.statistics.StatisticRuleFlowStep;
@@ -85,5 +88,55 @@ class CodeReviewControllerTest {
         .andExpect(jsonPath("$.data.supported").value(true))
         .andExpect(jsonPath("$.data.flowSteps[0].key").value("source-load"))
         .andExpect(jsonPath("$.data.metricDefinitions[0].key").value("illegalTypes"));
+  }
+
+  @Test
+  void shouldPreviewIllegalRecordRuleConfig() throws Exception {
+    when(codeReviewIllegalRecordService.previewRuleConfig(org.mockito.ArgumentMatchers.any()))
+        .thenReturn(new CodeReviewRulePreviewResponse(
+            10,
+            4,
+            -6,
+            40.0,
+            List.of(new CodeReviewRulePreviewSample(
+                1L,
+                101,
+                "绀轰緥椤圭洰",
+                "鏀粯妯″潡",
+                "鐜嬭€佸笀",
+                "master",
+                "绀轰緥鍚堝苟璇锋眰鍐呭",
+                List.of("婊¤冻锛氭ā鍧楀悕涓虹┖")))));
+
+    mockMvc.perform(post("/api/code-review/illegal-records/rule-config/preview")
+            .contentType("application/json")
+            .content("""
+                {
+                  "keyword": "",
+                  "ruleConfig": {
+                    "enabled": true,
+                    "groups": [
+                      {
+                        "id": "g1",
+                        "matchMode": "all",
+                        "conditions": [
+                          {
+                            "id": "c1",
+                            "fieldKey": "moduleName",
+                            "operator": "isEmpty",
+                            "value": ""
+                          }
+                        ]
+                      }
+                    ],
+                    "updatedAt": null
+                  }
+                }
+                """))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.baseTotal").value(10))
+        .andExpect(jsonPath("$.data.filteredTotal").value(4))
+        .andExpect(jsonPath("$.data.samples[0].mergeRequestIid").value(101));
   }
 }

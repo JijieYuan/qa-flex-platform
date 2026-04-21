@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.Mockito.when;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.data.collection.platform.entity.CodeReviewIllegalRecordFilterOptionsResponse;
 import com.data.collection.platform.entity.CodeReviewIllegalRecordListResponse;
 import java.time.LocalDateTime;
@@ -38,14 +39,15 @@ class CodeReviewIllegalRecordServiceTest {
         realtimeWorkspaceService,
         factBuildService,
         sourceLoader,
+        new ObjectMapper(),
         "http://gitlab.example.com");
   }
 
   @Test
   void shouldKeepListRecordsBehaviorAfterRefactor() {
     when(sourceLoader.loadSources(anyMap())).thenReturn(List.of(
-        source(101L, 12, "repo-b", "Alice", "module-b", LocalDateTime.of(2026, 4, 8, 10, 0)),
-        source(102L, 5, "repo-a", "Bob", "module-a", LocalDateTime.of(2026, 4, 9, 10, 0))));
+        source(101L, 12, "repo-b", "Alice", "", LocalDateTime.of(2026, 4, 8, 10, 0)),
+        source(102L, 5, "repo-a", "Bob", "", LocalDateTime.of(2026, 4, 9, 10, 0))));
 
     CodeReviewIllegalRecordListResponse response = service.listRecords(
         null,
@@ -64,7 +66,8 @@ class CodeReviewIllegalRecordServiceTest {
         1,
         20,
         "mergeRequestIid",
-        "asc");
+        "asc",
+        null);
 
     assertThat(response.total()).isEqualTo(2);
     assertThat(response.sortField()).isEqualTo("mergeRequestIid");
