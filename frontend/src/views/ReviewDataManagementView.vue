@@ -621,24 +621,11 @@ function openRuleExplanation() {
           :icon="InfoFilled"
           @click="openRuleExplanation"
         >
-          规则说明
+          帮助指南
         </el-button>
         <el-button type="primary" :icon="Plus" @click="handleCreateRecord">新增评审</el-button>
         <el-button plain :icon="Download" :loading="exportLoading" @click="handleExportExcel">导出Excel</el-button>
         <el-button :icon="Refresh" @click="handleRefresh">刷新</el-button>
-      </template>
-
-      <template v-if="false" #toolbar-actions>
-        <el-button
-          class="review-rule-trigger"
-          data-testid="review-rule-explanation-trigger"
-          plain
-          size="small"
-          :icon="InfoFilled"
-          @click="openRuleExplanation"
-        >
-          规则说明
-        </el-button>
       </template>
 
       <template #cell-title="{ row }">
@@ -805,21 +792,21 @@ function openRuleExplanation() {
       <section class="detail-section">
         <header class="detail-section-head">
           <el-icon><InfoFilled /></el-icon>
-          <span>先看结论</span>
+          <span>先看说明</span>
         </header>
         <div class="rule-summary-card">
           <div class="rule-summary-main">{{ reviewDataRuleExplanationContent.summary }}</div>
           <div class="rule-summary-sub">{{ reviewDataRuleExplanationContent.scopeDescription }}</div>
           <div class="rule-summary-meta">
             <el-tag size="small" effect="plain" type="success">版本 {{ reviewDataRuleExplanationContent.version }}</el-tag>
-            <el-tag size="small" effect="plain" type="info">关键字段优先</el-tag>
+            <el-tag size="small" effect="plain" type="info">面向录入与查看</el-tag>
           </div>
         </div>
       </section>
 
       <section class="detail-section">
         <header class="detail-section-head">
-          <span>关键字段填写口径</span>
+          <span>填写指南</span>
         </header>
         <div class="rule-card-grid">
           <article
@@ -831,14 +818,10 @@ function openRuleExplanation() {
               <strong class="rule-card-title">{{ field.label }}</strong>
               <el-tag size="small" effect="plain" type="info">关键字段</el-tag>
             </div>
-            <div class="rule-card-definition">{{ field.definition }}</div>
+            <div class="rule-card-definition">{{ field.description }}</div>
             <div class="rule-card-line">
-              <span class="rule-card-label">录入时</span>
-              <span>{{ field.entryGuideline }}</span>
-            </div>
-            <div class="rule-card-line">
-              <span class="rule-card-label">查看时</span>
-              <span>{{ field.viewerGuideline }}</span>
+              <span class="rule-card-label">建议</span>
+              <span>{{ field.guidance }}</span>
             </div>
             <div v-if="field.note" class="rule-card-note">{{ field.note }}</div>
           </article>
@@ -847,7 +830,7 @@ function openRuleExplanation() {
 
       <section class="detail-section">
         <header class="detail-section-head">
-          <span>指标计算公式</span>
+          <span>数据是怎么算的</span>
         </header>
         <div class="rule-card-grid">
           <article
@@ -867,7 +850,7 @@ function openRuleExplanation() {
 
       <section class="detail-section">
         <header class="detail-section-head">
-          <span>常见误解</span>
+          <span>常见问题</span>
         </header>
         <div class="rule-question-list">
           <article

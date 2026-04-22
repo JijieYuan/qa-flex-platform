@@ -10,7 +10,7 @@ function jsonResponse(data: unknown) {
 }
 
 describe('ReviewDataManagementView mount smoke', () => {
-  it('mounts without route errors and opens the rule explanation drawer', async () => {
+  it('mounts without route errors and opens the help guide drawer', async () => {
     vi.stubGlobal('fetch', vi.fn((url: string) => {
       if (url.includes('/filter-options')) {
         return jsonResponse({
@@ -43,7 +43,8 @@ describe('ReviewDataManagementView mount smoke', () => {
     await trigger.trigger('click');
     await flushPromises();
     expect(document.body.textContent).toContain('评审缺陷密度');
-    expect(document.body.textContent).toContain('评审问题 = Σ 每条评审记录的问题总计');
+    expect(document.body.textContent).toContain('帮助指南');
+    expect(document.body.textContent).toContain('评审问题 = 当前筛选结果中每条记录的问题总计之和');
     wrapper.unmount();
     vi.unstubAllGlobals();
   });
