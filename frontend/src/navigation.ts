@@ -142,9 +142,9 @@ export const modules: ShellModule[] = [
   },
   {
     key: 'question-metrics',
-    label: '议题统计',
+    label: '系统测试',
     icon: DataAnalysis,
-    title: '议题统计',
+    title: '系统测试',
     description: '统一承载系统测试议题的汇总、分析、非法数据和查询入口。',
     pages: [
       {
@@ -162,7 +162,7 @@ export const modules: ShellModule[] = [
       {
         key: 'question-metrics-delay-analysis',
         label: '申请延期缺陷分析',
-        description: '对齐老平台申请延期缺陷分析入口，当前先补齐模块骨架。',
+        description: '展示系统测试延期原因维度下的一二三级、建议类与总计缺陷统计，并支持下钻明细。',
         path: '/question-metrics/delay-analysis',
       },
       {
@@ -174,13 +174,13 @@ export const modules: ShellModule[] = [
       {
         key: 'question-metrics-defect-cause',
         label: '缺陷原因分析',
-        description: '对齐老平台缺陷原因分析入口，当前先补齐副模块导航。',
+        description: '展示系统测试缺陷在模块维度下的原因归类统计，并支持按原因下钻明细。',
         path: '/question-metrics/defect-cause',
       },
       {
         key: 'question-metrics-phase-statistics',
         label: '议题阶段统计',
-        description: '对齐老平台议题阶段统计入口，当前先保留统一占位页面。',
+        description: '展示系统测试轮次维度的一级、二级、三级、建议类及总量统计。',
         path: '/question-metrics/phase-statistics',
       },
       {

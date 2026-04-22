@@ -11,6 +11,7 @@ import CollectFormView from './views/CollectFormView.vue';
 import CodeReviewIllegalRecordsView from './views/CodeReviewIllegalRecordsView.vue';
 import CodeReviewIllegalRuleConfigView from './views/CodeReviewIllegalRuleConfigView.vue';
 import ReviewDataManagementView from './views/ReviewDataManagementView.vue';
+import SystemTestIssueSearchView from './views/SystemTestIssueSearchView.vue';
 
 declare module 'vue-router' {
   interface RouteMeta {
@@ -197,11 +198,81 @@ const routes: RouteRecordRaw[] = [
     },
   },
   buildPlaceholderRoute('/question-metrics/multi-board', 'question-metrics', 'question-metrics-multi-board'),
-  buildPlaceholderRoute('/question-metrics/delay-analysis', 'question-metrics', 'question-metrics-delay-analysis'),
+  {
+    path: '/question-metrics/delay-analysis',
+    component: StatisticBoardPage,
+    meta: {
+      moduleKey: 'question-metrics',
+      pageKey: 'question-metrics-delay-analysis',
+      title: pageByKey.get('question-metrics-delay-analysis')!.label,
+      description: pageByKey.get('question-metrics-delay-analysis')!.description,
+      allowedQueryKeys: statisticBoardQueryKeys,
+      allowedQueryPrefixes: ['filters.'],
+      persistedQueryKeys: ['projectId'],
+    },
+  },
   buildPlaceholderRoute('/question-metrics/illegal-records', 'question-metrics', 'question-metrics-illegal-records'),
-  buildPlaceholderRoute('/question-metrics/defect-cause', 'question-metrics', 'question-metrics-defect-cause'),
-  buildPlaceholderRoute('/question-metrics/phase-statistics', 'question-metrics', 'question-metrics-phase-statistics'),
-  buildPlaceholderRoute('/question-metrics/issue-search', 'question-metrics', 'question-metrics-issue-search'),
+  {
+    path: '/question-metrics/defect-cause',
+    component: StatisticBoardPage,
+    meta: {
+      moduleKey: 'question-metrics',
+      pageKey: 'question-metrics-defect-cause',
+      title: pageByKey.get('question-metrics-defect-cause')!.label,
+      description: pageByKey.get('question-metrics-defect-cause')!.description,
+      allowedQueryKeys: statisticBoardQueryKeys,
+      allowedQueryPrefixes: ['filters.'],
+      persistedQueryKeys: ['projectId'],
+    },
+  },
+  {
+    path: '/question-metrics/phase-statistics',
+    component: StatisticBoardPage,
+    meta: {
+      moduleKey: 'question-metrics',
+      pageKey: 'question-metrics-phase-statistics',
+      title: pageByKey.get('question-metrics-phase-statistics')!.label,
+      description: pageByKey.get('question-metrics-phase-statistics')!.description,
+      allowedQueryKeys: statisticBoardQueryKeys,
+      allowedQueryPrefixes: ['filters.'],
+      persistedQueryKeys: ['projectId'],
+    },
+  },
+  {
+    path: '/question-metrics/issue-search',
+    component: SystemTestIssueSearchView,
+    meta: {
+      moduleKey: 'question-metrics',
+      pageKey: 'question-metrics-issue-search',
+      title: pageByKey.get('question-metrics-issue-search')!.label,
+      description: pageByKey.get('question-metrics-issue-search')!.description,
+      allowedQueryKeys: [
+        'page',
+        'pageSize',
+        'sortBy',
+        'sortOrder',
+        'projectId',
+        'keyword',
+        'issueIid',
+        'title',
+        'projectName',
+        'moduleName',
+        'testingPhase',
+        'authorName',
+        'assigneeName',
+        'issueState',
+        'severityLevel',
+        'bugStatus',
+        'category',
+        'milestoneTitle',
+        'createdAtStart',
+        'createdAtEnd',
+        'updatedAtStart',
+        'updatedAtEnd',
+      ],
+      persistedQueryKeys: ['projectId'],
+    },
+  },
   buildPlaceholderRoute('/customer-issues/home', 'customer-issues', 'customer-issues-home'),
   buildPlaceholderRoute('/customer-issues/illegal-records', 'customer-issues', 'customer-issues-illegal-records'),
   buildPlaceholderRoute('/customer-issues/defect-cause', 'customer-issues', 'customer-issues-defect-cause'),

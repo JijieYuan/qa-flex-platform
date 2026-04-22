@@ -528,6 +528,49 @@ export interface RealtimeWorkspaceStatusResponse {
   lastRefreshFinishedAt?: string | null;
 }
 
+export interface SystemTestIssueSearchRowResponse {
+  issueId: number;
+  issueIid: number;
+  projectId: number;
+  projectName: string;
+  title: string;
+  issueState: string;
+  testingPhase: string;
+  severityLevel: string;
+  bugStatus: string;
+  category: string;
+  milestoneTitle: string;
+  authorName: string;
+  assigneeName: string;
+  moduleNames: string;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+  closedAt?: string | null;
+  labels: string[];
+}
+
+export interface SystemTestIssueSearchListResponse {
+  records: SystemTestIssueSearchRowResponse[];
+  total: number;
+  page: number;
+  size: number;
+  sortField: string;
+  sortOrder: 'asc' | 'desc';
+}
+
+export interface SystemTestIssueSearchFilterOptionsResponse {
+  projectNames: OptionItemResponse[];
+  moduleNames: OptionItemResponse[];
+  testingPhases: OptionItemResponse[];
+  authorNames: OptionItemResponse[];
+  assigneeNames: OptionItemResponse[];
+  issueStates: OptionItemResponse[];
+  severityLevels: OptionItemResponse[];
+  bugStatuses: OptionItemResponse[];
+  categories: OptionItemResponse[];
+  milestoneTitles: OptionItemResponse[];
+}
+
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, {
@@ -832,6 +875,64 @@ export const api = {
       return request<void>(`/api/review-data/records/${recordId}/problem-items/${itemId}`, {
         method: 'DELETE',
       });
+    },
+    getSystemTestIssueSearchRecords(params: {
+      projectId?: string | number | null;
+      keyword?: string;
+      issueIid?: string;
+      title?: string;
+      projectName?: string;
+      moduleName?: string;
+      testingPhase?: string;
+      authorName?: string;
+      assigneeName?: string;
+      issueState?: string;
+      severityLevel?: string;
+      bugStatus?: string;
+      category?: string;
+      milestoneTitle?: string;
+      createdAtStart?: string;
+      createdAtEnd?: string;
+      updatedAtStart?: string;
+      updatedAtEnd?: string;
+      page?: number;
+      size?: number;
+      sortBy?: string;
+      sortOrder?: 'asc' | 'desc';
+    }) {
+      const query = new URLSearchParams({
+        page: String(params.page ?? 1),
+        size: String(params.size ?? 20),
+        ...(params.projectId != null && params.projectId !== '' ? { projectId: String(params.projectId) } : {}),
+        ...(params.keyword ? { keyword: params.keyword } : {}),
+        ...(params.issueIid ? { issueIid: params.issueIid } : {}),
+        ...(params.title ? { title: params.title } : {}),
+        ...(params.projectName ? { projectName: params.projectName } : {}),
+        ...(params.moduleName ? { moduleName: params.moduleName } : {}),
+        ...(params.testingPhase ? { testingPhase: params.testingPhase } : {}),
+        ...(params.authorName ? { authorName: params.authorName } : {}),
+        ...(params.assigneeName ? { assigneeName: params.assigneeName } : {}),
+        ...(params.issueState ? { issueState: params.issueState } : {}),
+        ...(params.severityLevel ? { severityLevel: params.severityLevel } : {}),
+        ...(params.bugStatus ? { bugStatus: params.bugStatus } : {}),
+        ...(params.category ? { category: params.category } : {}),
+        ...(params.milestoneTitle ? { milestoneTitle: params.milestoneTitle } : {}),
+        ...(params.createdAtStart ? { createdAtStart: params.createdAtStart } : {}),
+        ...(params.createdAtEnd ? { createdAtEnd: params.createdAtEnd } : {}),
+        ...(params.updatedAtStart ? { updatedAtStart: params.updatedAtStart } : {}),
+        ...(params.updatedAtEnd ? { updatedAtEnd: params.updatedAtEnd } : {}),
+        ...(params.sortBy ? { sortBy: params.sortBy } : {}),
+        ...(params.sortOrder ? { sortOrder: params.sortOrder } : {}),
+      });
+      return request<SystemTestIssueSearchListResponse>(`/api/question-metrics/issues?${query.toString()}`);
+    },
+    getSystemTestIssueSearchFilterOptions(projectId?: string | number | null) {
+      const query = new URLSearchParams(
+        projectId != null && projectId !== '' ? { projectId: String(projectId) } : {},
+      );
+      return request<SystemTestIssueSearchFilterOptionsResponse>(
+        `/api/question-metrics/issues/filter-options${query.toString() ? `?${query.toString()}` : ''}`,
+      );
     },
     getStatisticBoardRealtimeStatus(boardKey: string) {
       return request<RealtimeWorkspaceStatusResponse>(`/api/statistic-boards/${boardKey}/status`);

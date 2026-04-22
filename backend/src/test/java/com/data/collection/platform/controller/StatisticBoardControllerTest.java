@@ -86,6 +86,121 @@ class StatisticBoardControllerTest {
   }
 
   @Test
+  void shouldLoadSystemTestPhaseStatisticsBoard() {
+    StatisticBoardResponse response = controller.getBoard("system-test-phase-statistics", Map.of()).getData();
+
+    assertThat(response).isNotNull();
+    assertThat(response.definition().boardKey()).isEqualTo("system-test-phase-statistics");
+    assertThat(response.definition().rowHeaderLabel()).isEqualTo("轮次");
+    assertThat(response.definition().filters()).extracting("key").containsExactly("testingPhase");
+    assertThat(response.definition().columnGroups()).singleElement().satisfies(group -> {
+      assertThat(group.key()).isEqualTo("phase-summary");
+      assertThat(group.leafColumns()).extracting("key")
+          .containsExactly("level1", "level2", "level3", "suggestion", "total");
+    });
+    assertThat(response.meta().columnCount()).isEqualTo(5);
+  }
+
+  @Test
+  void shouldLoadSystemTestPhaseStatisticsRuleExplanation() {
+    StatisticBoardRuleExplanationResponse response =
+        controller.getRuleExplanation("system-test-phase-statistics", Map.of()).getData();
+
+    assertThat(response).isNotNull();
+    assertThat(response.boardKey()).isEqualTo("system-test-phase-statistics");
+    assertThat(response.supported()).isTrue();
+    assertThat(response.version()).isNotBlank();
+    assertThat(response.flowSteps()).isNotEmpty();
+    assertThat(response.metricDefinitions()).extracting("key")
+        .containsExactly("level1", "level2", "level3", "suggestion", "total");
+  }
+
+  @Test
+  void shouldLoadSystemTestDelayAnalysisBoard() {
+    StatisticBoardResponse response = controller.getBoard("system-test-delay-analysis", Map.of()).getData();
+
+    assertThat(response).isNotNull();
+    assertThat(response.definition().boardKey()).isEqualTo("system-test-delay-analysis");
+    assertThat(response.definition().rowHeaderLabel()).isEqualTo("延期原因");
+    assertThat(response.definition().filters()).extracting("key").containsExactly("testingPhase");
+    assertThat(response.definition().columnGroups()).singleElement().satisfies(group -> {
+      assertThat(group.key()).isEqualTo("delay-summary");
+      assertThat(group.leafColumns()).extracting("key")
+          .containsExactly("level1", "level2", "level3", "suggestion", "total");
+    });
+    assertThat(response.meta().columnCount()).isEqualTo(5);
+  }
+
+  @Test
+  void shouldLoadSystemTestDelayAnalysisRuleExplanation() {
+    StatisticBoardRuleExplanationResponse response =
+        controller.getRuleExplanation("system-test-delay-analysis", Map.of()).getData();
+
+    assertThat(response).isNotNull();
+    assertThat(response.boardKey()).isEqualTo("system-test-delay-analysis");
+    assertThat(response.supported()).isTrue();
+    assertThat(response.version()).isNotBlank();
+    assertThat(response.flowSteps()).hasSizeGreaterThanOrEqualTo(4);
+    assertThat(response.metricDefinitions()).extracting("key")
+        .containsExactly("level1", "level2", "level3", "suggestion", "total");
+  }
+
+  @Test
+  void shouldLoadSystemTestDefectCauseBoard() {
+    StatisticBoardResponse response = controller.getBoard("system-test-defect-cause", Map.of()).getData();
+
+    assertThat(response).isNotNull();
+    assertThat(response.definition().boardKey()).isEqualTo("system-test-defect-cause");
+    assertThat(response.definition().rowHeaderLabel()).isEqualTo("模块");
+    assertThat(response.definition().filters()).extracting("key").containsExactly("testingPhase");
+    assertThat(response.definition().columnGroups()).extracting("key")
+        .containsExactly("requirement-problem", "implementation-problem", "environment-problem", "summary");
+    assertThat(response.definition().columnGroups())
+        .anySatisfy(group -> {
+          assertThat(group.key()).isEqualTo("requirement-problem");
+          assertThat(group.leafColumns()).extracting("key")
+              .containsExactly("requirement_understanding", "new_requirement");
+        })
+        .anySatisfy(group -> {
+          assertThat(group.key()).isEqualTo("implementation-problem");
+          assertThat(group.leafColumns()).extracting("key")
+              .containsExactly("implementation_logic");
+        })
+        .anySatisfy(group -> {
+          assertThat(group.key()).isEqualTo("environment-problem");
+          assertThat(group.leafColumns()).extracting("key")
+              .containsExactly("environment_deployment", "algorithm_mechanism", "other_reason");
+        })
+        .anySatisfy(group -> {
+          assertThat(group.key()).isEqualTo("summary");
+          assertThat(group.leafColumns()).extracting("key")
+              .containsExactly("total");
+        });
+    assertThat(response.meta().columnCount()).isEqualTo(7);
+  }
+
+  @Test
+  void shouldLoadSystemTestDefectCauseRuleExplanation() {
+    StatisticBoardRuleExplanationResponse response =
+        controller.getRuleExplanation("system-test-defect-cause", Map.of()).getData();
+
+    assertThat(response).isNotNull();
+    assertThat(response.boardKey()).isEqualTo("system-test-defect-cause");
+    assertThat(response.supported()).isTrue();
+    assertThat(response.version()).isNotBlank();
+    assertThat(response.flowSteps()).hasSizeGreaterThanOrEqualTo(4);
+    assertThat(response.metricDefinitions()).extracting("key")
+        .containsExactly(
+            "requirement_understanding",
+            "new_requirement",
+            "implementation_logic",
+            "environment_deployment",
+            "algorithm_mechanism",
+            "other_reason",
+            "total");
+  }
+
+  @Test
   void shouldLoadMirrorTableOverviewRuleExplanation() {
     StatisticBoardRuleExplanationResponse response =
         controller.getRuleExplanation("mirror-table-overview", Map.of()).getData();
